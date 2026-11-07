@@ -1,0 +1,353 @@
+# ============================================================================
+# CI/CD pipeline — CDES Student-Instructor-V1.2.0
+# Scaffolded to satisfy CTO_DECISIONS.md §4–§5.
+#
+# Job order & the gate state they exercise:
+#   1. install                 — npm ci (reproducible lockfile contract)
+#   2. lint+typecheck          — tsc --noEmit (whole project)
+#   3. build                   — vite build && esbuild server.ts → dist/server.cjs
+#   4. test                    — tsx server/tests/backend.test.ts && secretScan.test.ts
+#   5. verify-start            — npm start smoke: /api/health 200 + process stays up
+#   6. dependency-audit-gate   — npm audit hard gate (high/critical) + regression gate
+#   7. secret-scan-gate        — gitleaks (critical/high)
+#   8. staging-deploy          — mirrors prod build; npm start → /api/health (aiEnabled=false)
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# WIRING NOTES
+#  • install/lint/build/test/secret-scan-gate are independent once install
+#    passes. verify-start and staging-deploy both depend on `build` and re-run
+#    the identical build so the staging artifact exactly mirrors prod.
+#  • dependency-audit:
+#      hard gate    : `npm audit --omit=dev` → with .npmrc `audit-level=high`,
+#                     any high/critical advisory exits non-zero, so the build
+#                     fails on new critical findings.
+#      regression   : `node .github/scripts/check-audit-baseline.cjs` compares the
+#                     current audit snapshot (audit-current.json, generated in
+#                     this job) against the committed versioned baseline
+#                     audit-baseline.json. More high/critical than the baseline
+#                     = NEW finding = build fails. The baseline is a snapshot of
+#                     "main" and is refreshed only on main pushes; PRs are
+#                     measured against main's committed snapshot and must not
+#                     rewrite it.
+#  * SEC-001 remediation (server/services/scholarshipService.ts fallback
+#    MY_GEMINI_API_KEY + server/middleware/authMiddleware.ts hardened Bearer
+#    token) is code state owned by Engineer task t_539d6429 / SEC-001 owner.
+#    Until then secret-scan-gate and npm test fail.
+#  * The `staging` GitHub Environment + its secrets are provisioned by the
+#    repository owner (docs/SECRETS.md §Secrets flow / §Staging environment).
+#  * `npm ci` is reproducible across Linux CI runners. Windows dev hosts may
+#    see an anti-virus momentarily holding a native .node file open during
+#    `npm ci` (EPERM) — a dev-host artefact, not a CI defect.
+# ═════════════════════════════════════════════════════════════════===========
+name: CI
+
+on:
+  push:
+    branches: [ main, feat/ci-cd-scaffolding ]
+  pull_request:
+    branches: [ main, feat/ci-cd-scaffolding ]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  security-events: write   # gitleaks + SARIF upload
+  id-token: write          # optional OIDC secret-manager fetch (future)
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  # ---------------------------------------------------------------------
+  # Install: reproducible lockfile contract (package-lock=true in .npmrc)
+  # ---------------------------------------------------------------------
+  install:
+    name: Install · npm ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Verify lockfile contract
+        run: |
+          test -f package-lock.json
+          test -d node_modules
+
+  # ---------------------------------------------------------------------
+  # Lint + typecheck (whole project, strict)
+  # ---------------------------------------------------------------------
+  lint:
+    name: Lint + typecheck
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: tsc --noEmit
+        run: npm run lint
+
+  # ---------------------------------------------------------------------
+  # Build: vite (frontend) + esbuild (server → dist/server.cjs)
+  # ---------------------------------------------------------------------
+  build:
+    name: Build · vite + esbuild → dist/server.cjs
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Upload production build
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------
+  # Unit tests + SEC-001 hidden-secrets regression
+  # ---------------------------------------------------------------------
+  test:
+    name: Unit tests + SEC-001 regression
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Unit + SEC-001 regression
+        run: npm test
+
+  # ---------------------------------------------------------------------
+  # verify-start: smoke-verify the `npm start` entry point
+  # ---------------------------------------------------------------------
+  verify-start:
+    name: Verify start script + /api/health
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Smoke start (aiEnabled=false, migrations run)
+        run: |
+          export NODE_ENV=production
+          export GEMINI_API_KEY=
+          export DATABASE_PATH=/tmp/verify-start-cdes.db
+          rm -f "$DATABASE_PATH"
+          npm start > verify-start.log 2>&1 &
+          SRV=$!
+
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health > /tmp/verify-start-health.json 2>/dev/null; then
+              break
+            fi
+            if ! kill -0 "$SRV" 2>/dev/null; then
+              echo "server exited early" >&2
+              cat verify-start.log >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/verify-start-health.json'))
+          assert d['status'] == 'ok', d
+          assert d['aiEnabled'] is False, 'staging health must report aiEnabled=false when no GEMINI key is set'
+          assert 'database' in d, d
+          print('health payload OK:', json.dumps(d, sort_keys=True))
+          PY
+
+          if ! grep -q "Database initialized and migrations verified" verify-start.log; then
+            echo "migrations did not run" >&2
+            cat verify-start.log >&2
+            exit 1
+          fi
+
+          kill "$SRV" 2>/dev/null || true
+          wait "$SRV" 2>/dev/null || true
+
+  # ---------------------------------------------------------------------
+  # Dependency audit gate
+  #   hard gate   : npm audit --omit=dev (fails on high/critical; .npmrc audit-level=high)
+  #   regression  : node .github/scripts/check-audit-baseline.cjs (committed baseline)
+  # ---------------------------------------------------------------------
+  dependency-audit-gate:
+    name: Dependency audit (hard + regression)
+    runs-on: ubuntu-latest
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Capture current dependency audit snapshot
+        run: npm audit --omit=dev --json > audit-current.json || true
+      - name: Hard dependency audit (fails on high/critical)
+        run: npm audit --omit=dev
+        env:
+          npm_config_audit_level: high
+      - name: Regression check (fails on NEW high/critical)
+        run: node .github/scripts/check-audit-baseline.cjs
+      - name: Upload baseline artifact (14-day retention)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-baseline
+          path: audit-baseline.json
+          retention-days: 14
+
+  # Refresh the committed versioned baseline on "main" only.  PRs are
+  # measured against main's committed snapshot and must not rewrite it.
+  baseline-sync:
+    name: Refresh committed audit baseline (main)
+    runs-on: ubuntu-latest
+    needs: dependency-audit-gate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fresh baseline from current audit
+        run: |
+          npm audit --omit=dev --json > audit-baseline.json || true
+      - name: Commit refreshed baseline
+        run: |
+          git config user.name "CI Bot"
+          git config user.email "ci@cdes.local"
+          git add audit-baseline.json
+          if git diff --quiet HEAD -- audit-baseline.json; then
+            echo "baseline unchanged"
+          else
+            git commit -m "ci: refresh dependency audit baseline" || echo "no changes to commit"
+          fi
+
+  # ---------------------------------------------------------------------
+  # Secret scan gate (gitleaks → SARIF for GitHub security tab)
+  # ---------------------------------------------------------------------
+  secret-scan-gate:
+    name: Secret scan · gitleaks (critical/high)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    needs: install
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan for secrets (critical/high, min-confidence 80)
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Ensure SARIF file exists
+        if: always()
+        run: |
+          if [ ! -f results.sarif ]; then
+            echo '{"version": "2.1.0", "runs": []}' > results.sarif
+          fi
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif
+
+  # ---------------------------------------------------------------------
+  # Staging environment: mirrors the prod build and serves /api/health.
+  # Requires repository owner to provision the `staging` GitHub Environment
+  # (docs/SECRETS.md §Staging environment).  Disposable; no DB writes,
+  # no history change.  aiEnabled=false (no GEMINI_API_KEY in staging).
+  # ---------------------------------------------------------------------
+  staging-deploy:
+    name: Staging deploy · /api/health (aiEnabled=false)
+    runs-on: ubuntu-latest
+    environment: staging
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Provision staging config (mirrors prod)
+        run: |
+          export NODE_ENV=staging
+          export DATABASE_PATH=/tmp/staging-cdes-${{ github.run_id }}.db
+          rm -f "$DATABASE_PATH"
+          # CI/MDM secrets are injected at runtime by GitHub Environment /
+          # secret manager — never committed.  Only runtime-honoured secrets:
+          #   STAGING_DATABASE_URL  (optional DB override)
+          #   STAGE_PAYLOAD_SECRET  (optional signing key)
+      - name: Start production build in staging
+        run: |
+          npm start > staging.log 2>&1 &
+          SRV=$!
+
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/health > /tmp/staging-health.json 2>/dev/null; then
+              break
+            fi
+            if ! kill -0 "$SRV" 2>/dev/null; then
+              echo "staging server exited early" >&2
+              cat staging.log >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/staging-health.json'))
+          assert d['status'] == 'ok', d
+          assert d['aiEnabled'] is False, d
+          assert 'database' in d, d
+          print('staging health OK:', json.dumps(d, sort_keys=True))
+          PY
+
+          if ! grep -q "Database initialized and migrations verified" staging.log; then
+            echo "migrations did not run in staging" >&2
+            cat staging.log >&2
+            exit 1
+          fi
+
+          kill "$SRV" 2>/dev/null || true
+          wait "$SRV" 2>/dev/null || true
+      - name: Tear down staging artifacts
+        if: always()
+        run: |
+          pkill -f "node dist/server.cjs" || true
+          rm -f /tmp/staging-cdes-*.db

@@ -1,0 +1,197 @@
+{
+  "params": {
+    "requests_per_user_month": 60,
+    "cacheable_prefix_tokens": 1800,
+    "non_cacheable_remainder_tokens": 1400,
+    "output_tokens": 600,
+    "followup_out_mult": 0.15,
+    "cache_rates": [
+      0.1,
+      0.3,
+      0.5,
+      0.7,
+      0.9
+    ],
+    "providers": {
+      "openai_gpt4o": {
+        "label": "OpenAI gpt-4o",
+        "input": 2.5,
+        "output": 10.0,
+        "write_mul": 1.25,
+        "cache_hit_mult": 0.5
+      },
+      "anthropic_claude": {
+        "label": "Anthropic Claude 3.5 Sonnet",
+        "input": 3.0,
+        "output": 15.0,
+        "write_mul": 1.25,
+        "cache_hit_mult": 0.1
+      },
+      "google_gemini": {
+        "label": "Google Gemini 1.5/2.0-flash",
+        "input": 0.3,
+        "output": 2.5,
+        "write_mul": 1.25,
+        "cache_hit_mult": 0.1
+      }
+    }
+  },
+  "results": {
+    "openai_gpt4o": [
+      {
+        "cache_rate": 0.1,
+        "input_cost_usd": 0.0087875,
+        "output_cost_usd": 0.0009,
+        "total_per_call_usd": 0.0096875,
+        "per_user_month_usd": 0.58125,
+        "cached_tokens": 180.0,
+        "written_tokens": 1620.0,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.3,
+        "input_cost_usd": 0.0081125,
+        "output_cost_usd": 0.0009,
+        "total_per_call_usd": 0.0090125,
+        "per_user_month_usd": 0.54075,
+        "cached_tokens": 540.0,
+        "written_tokens": 1260.0,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.5,
+        "input_cost_usd": 0.0074375,
+        "output_cost_usd": 0.0009,
+        "total_per_call_usd": 0.0083375,
+        "per_user_month_usd": 0.50025,
+        "cached_tokens": 900.0,
+        "written_tokens": 900.0,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.7,
+        "input_cost_usd": 0.0067625,
+        "output_cost_usd": 0.0009,
+        "total_per_call_usd": 0.0076625,
+        "per_user_month_usd": 0.45975,
+        "cached_tokens": 1260.0,
+        "written_tokens": 540.0000000000001,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.9,
+        "input_cost_usd": 0.0060875,
+        "output_cost_usd": 0.0009,
+        "total_per_call_usd": 0.0069875,
+        "per_user_month_usd": 0.41925,
+        "cached_tokens": 1620.0,
+        "written_tokens": 179.99999999999997,
+        "uncached_tokens": 1400
+      }
+    ],
+    "anthropic_claude": [
+      {
+        "cache_rate": 0.1,
+        "input_cost_usd": 0.010329,
+        "output_cost_usd": 0.00135,
+        "total_per_call_usd": 0.011679,
+        "per_user_month_usd": 0.70074,
+        "cached_tokens": 180.0,
+        "written_tokens": 1620.0,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.3,
+        "input_cost_usd": 0.009087,
+        "output_cost_usd": 0.00135,
+        "total_per_call_usd": 0.010437,
+        "per_user_month_usd": 0.62622,
+        "cached_tokens": 540.0,
+        "written_tokens": 1260.0,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.5,
+        "input_cost_usd": 0.007845,
+        "output_cost_usd": 0.00135,
+        "total_per_call_usd": 0.009195,
+        "per_user_month_usd": 0.5517,
+        "cached_tokens": 900.0,
+        "written_tokens": 900.0,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.7,
+        "input_cost_usd": 0.006603,
+        "output_cost_usd": 0.00135,
+        "total_per_call_usd": 0.007953,
+        "per_user_month_usd": 0.47718,
+        "cached_tokens": 1260.0,
+        "written_tokens": 540.0000000000001,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.9,
+        "input_cost_usd": 0.005361,
+        "output_cost_usd": 0.00135,
+        "total_per_call_usd": 0.006711,
+        "per_user_month_usd": 0.40266,
+        "cached_tokens": 1620.0,
+        "written_tokens": 179.99999999999997,
+        "uncached_tokens": 1400
+      }
+    ],
+    "google_gemini": [
+      {
+        "cache_rate": 0.1,
+        "input_cost_usd": 0.0010329,
+        "output_cost_usd": 0.000225,
+        "total_per_call_usd": 0.0012579,
+        "per_user_month_usd": 0.075474,
+        "cached_tokens": 180.0,
+        "written_tokens": 1620.0,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.3,
+        "input_cost_usd": 0.0009087,
+        "output_cost_usd": 0.000225,
+        "total_per_call_usd": 0.0011337,
+        "per_user_month_usd": 0.068022,
+        "cached_tokens": 540.0,
+        "written_tokens": 1260.0,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.5,
+        "input_cost_usd": 0.0007845,
+        "output_cost_usd": 0.000225,
+        "total_per_call_usd": 0.0010095,
+        "per_user_month_usd": 0.06057,
+        "cached_tokens": 900.0,
+        "written_tokens": 900.0,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.7,
+        "input_cost_usd": 0.0006603000000000001,
+        "output_cost_usd": 0.000225,
+        "total_per_call_usd": 0.0008853000000000001,
+        "per_user_month_usd": 0.053118000000000005,
+        "cached_tokens": 1260.0,
+        "written_tokens": 540.0000000000001,
+        "uncached_tokens": 1400
+      },
+      {
+        "cache_rate": 0.9,
+        "input_cost_usd": 0.0005361000000000001,
+        "output_cost_usd": 0.000225,
+        "total_per_call_usd": 0.0007611,
+        "per_user_month_usd": 0.045666,
+        "cached_tokens": 1620.0,
+        "written_tokens": 179.99999999999997,
+        "uncached_tokens": 1400
+      }
+    ]
+  }
+}

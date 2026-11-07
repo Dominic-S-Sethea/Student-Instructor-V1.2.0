@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Student Instructor V1.2.0",
+  "description": "Student Decision Intelligence, Education Intelligence Data Platform (EIDP), Learning Analytics, and Cambodia Digital Education Society (CDES) featuring Enterprise Data Strategy, Knowledge Lakehouse, 7-Pillars Student Intelligence Model, Sovereign Data Governance, and National Bac II / University ML Prediction Engines.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

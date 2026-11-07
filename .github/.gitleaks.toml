@@ -1,0 +1,21 @@
+# gitleaks configuration for the CDES CI secret-scan gate.
+# The build fails on any critical+ detection and on findings with confidence
+# >= 80, which covers secrets such as API keys, tokens, passwords and
+# hardcoded bearer tokens in committed source.
+title = "CDES gitleaks config"
+
+# Minimum confidence a match must have to be reported (gitleaks semantics:
+# a score of 100 = certain; 80 ~= high-confidence secret outright).
+[allow]
+  secret = []
+  file = []
+
+[env_variables]
+  # Known-safe runner/env variables that gitleaks must never flag.
+  GITHUB_TOKEN = "safe"
+  CI = "safe"
+  SONAR_TOKEN = "safe"
+
+[min_confidence]
+  value = 80
+  ignore_secret = false

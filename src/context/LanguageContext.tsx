@@ -1,0 +1,422 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { analytics } from '../utils/analytics';
+
+export type Language = 'en' | 'km';
+
+export interface Translations {
+  [key: string]: string;
+}
+
+const translations: Record<Language, Translations> = {
+  en: {
+    // Navigation
+    'nav.dashboard': 'Dashboard',
+    'nav.decisionEngine': 'Decision Engine',
+    'nav.universityIntel': 'University Intel',
+    'nav.scholarship': 'Scholarship',
+    'nav.scholarshipBadge': 'Global',
+    'nav.network': 'Network',
+    'nav.discovery': 'Discovery',
+    'nav.aiAdvisor': 'AI Advisor',
+    'nav.community': 'Community',
+    'nav.mentors': '1-on-1 Mentors',
+    'nav.alumni': 'Alumni Hub',
+    'nav.meetups': 'Study Circles',
+    'nav.applyMentor': 'Apply as Mentor',
+    'nav.stemLab': 'STEM Discovery Lab',
+    'nav.opportunities': 'Majors & Careers',
+    'nav.events': 'Conferences & AMAs',
+    'nav.searchPlaceholder': 'Search majors, universities, mentors...',
+    'nav.language': 'Language',
+    'nav.fitBadge': 'Fit',
+    'nav.dragHint': 'Drag left/right to view all navigation tabs',
+
+    // Language names
+    'lang.en': 'English',
+    'lang.km': 'ភាសាខ្មែរ',
+
+    // Dashboard Hero & Decision Banner
+    'dash.greeting': 'Welcome back',
+    'dash.decisionPromptTitle': 'Not sure what to study or which university to pick?',
+    'dash.decisionPromptDesc': 'Move beyond static directory brochures. Take our 6-stage cognitive fit assessment to evaluate majors, simulate 4-year tuition ROI, and compare top Cambodian universities side-by-side.',
+    'dash.launchEngine': 'Launch Decision Engine',
+    'dash.compareMatrix': 'University Comparison Matrix',
+    'dash.askAiPlaceholder': 'Ask the AI Advisor anything about majors, scholarships, or careers...',
+    'dash.askAiBtn': 'Ask AI',
+    'dash.heroBadge': 'AI Student Career Guidance Engine',
+    'dash.heroIntro': "Let's explore your future. Based on your interests in",
+    'dash.heroPrep': "we’ve prepared personalized mentors, majors, and events for you.",
+    'dash.popularQuestions': 'Popular questions:',
+    'dash.q1': "Should I choose Computer Science or Data Science for my bachelor's?",
+    'dash.q2': 'What math topics should I master in Grade 12 for AI scholarships?',
+    'dash.csipBadge': 'Scholarship Search Engine (CSIP)',
+    'dash.verifiedBadge': '100% Verified',
+    'dash.csipTitle': 'Looking for Verified Global & Domestic Scholarships?',
+    'dash.csipDesc': 'Search fully funded global opportunities (Chevening, Fulbright, Australia Awards, CADT MPTC, MEXT, GKS) with live deadline reminders, GPA limits, and verified grants.',
+    'dash.searchScholarships': 'Search Scholarships',
+    'dash.progressTitle': 'Your Future Exploration Progress',
+    'dash.progressSubtitle': 'Keep exploring majors, asking AI questions, and connecting with mentors to unlock badges.',
+    'dash.viewCareerMap': 'View Interest & Career Map',
+    'dash.viewMap': 'View Interest & Career Map',
+    'dash.profileComplete': 'Profile Complete',
+    'dash.interestsExplored': 'Interests Explored',
+    'dash.mentorsContacted': 'Mentors Contacted',
+    'dash.eventsAttended': 'Events Attended',
+    'dash.earnedBadges': 'Earned Badges:',
+    'dash.stemTitle': 'Play Short Challenges & Discover Your STEM Superpowers',
+    'dash.stemSubtitle': 'No boring exams or school tests! Solve river-crossing drone puzzles, decode circuit patterns, and get encouraging behavioral compliments.',
+    'dash.stemDesc': 'No boring exams or school tests! Solve river-crossing drone puzzles, decode circuit patterns, and get encouraging behavioral compliments.',
+    'dash.playStem': 'Play STEM Challenges',
+    'dash.discoverYourself': 'Discover Yourself — STEM Gaming',
+    'dash.stemBadge': 'Discover Yourself — STEM Gaming',
+    'dash.transitionTitle': 'Talk with Senior Students from ITC, CADT, and RUPP',
+    'dash.transHubTitle': 'Talk with Senior Students from ITC, CADT, and RUPP',
+    'dash.transitionDesc': 'Curious about Data Science at ITC, Software Engineering at CADT, or CS at RUPP? Ask current Year 4 seniors about entrance exams and coursework.',
+    'dash.transHubDesc': 'Curious about Data Science at ITC, Software Engineering at CADT, or CS at RUPP? Ask current Year 4 seniors about entrance exams and coursework.',
+    'dash.exploreSeniors': 'Explore All Seniors & Alumni',
+    'dash.seniorBadge': '🎓 University Transition Hub',
+    'dash.transHubBadge': '🎓 University Transition Hub',
+    'dash.gradSupport': 'High School Graduate Support',
+    'dash.transHubTag': 'High School Graduate Support',
+    'dash.recMentors': 'Recommended Mentors for You',
+    'dash.recMentorsTitle': 'Recommended Mentors for You',
+    'dash.recMentorsDesc': 'Matched deterministically against your interests in Mathematics, Coding, and Robotics.',
+    'dash.recMentorsSubtitle': 'Matched deterministically against your interests in Mathematics, Coding, and Robotics.',
+    'dash.browseAllMentors': 'Browse All Mentors',
+    'dash.match': 'Match',
+    'dash.matchBadge': 'Match',
+    'dash.whyMatched': 'Why Matched:',
+    'dash.viewProfile': 'View Profile',
+    'dash.comments': 'Comments',
+    'dash.recMajors': 'Recommended University Majors',
+    'dash.recMajorsTitle': 'Recommended University Majors',
+    'dash.recMajorsDesc': 'Academic pathways that align directly with your strengths.',
+    'dash.recMajorsSubtitle': 'Academic pathways that align directly with your strengths.',
+    'dash.exploreAllOpportunities': 'Explore All Opportunities',
+    'dash.viewRoadmap': 'View Roadmap',
+    'dash.studyCircles': 'Student Study Circles',
+    'dash.studyCirclesTitle': 'Student Study Circles',
+    'dash.studyCirclesDesc': 'Exam Reviews & Peer Groups',
+    'dash.studyCirclesSubtitle': 'Exam Reviews & Peer Groups',
+    'dash.examReview': '📝 Exam Review',
+    'dash.circleTitle1': 'Bac II Math & Calculus Past Paper Sprint',
+    'dash.circleLoc1': '📍 National Library • 6/8 Students Joined',
+    'dash.viewAll': 'View All',
+    'dash.createJoinMeetup': 'Create / Join Student Meetup',
+    'dash.conferencesTitle': 'Upcoming Conferences & Live Talks',
+    'dash.upcomingConferencesTitle': 'Upcoming Conferences & Live Talks',
+    'dash.browseAll': 'Browse All',
+    'dash.communityTitle': 'Community Discussions',
+    'dash.communityDiscussionsTitle': 'Community Discussions',
+    'dash.joinForum': 'Join Forum',
+    'dash.savedBookmarks': 'Saved Bookmarks',
+    'dash.manage': 'Manage',
+    'dash.noSaved': 'No saved items yet.',
+    'dash.noSavedItems': 'No saved items yet.',
+    'dash.mentorLabel': 'Mentor',
+    'dash.majorGrantLabel': 'Major / Grant',
+    'dash.goodMorning': 'Good morning',
+    'dash.goodAfternoon': 'Good afternoon',
+    'dash.goodEvening': 'Good evening',
+    'dash.back': 'Back',
+
+    // Decision Engine
+    'de.bannerTitle': 'Student Decision Intelligence Platform',
+    'de.bannerHeadline': 'Find What to Study, Where to Study, and Why',
+    'de.bannerDesc': 'Move beyond superficial directories. Complete this 6-stage decision framework to discover which major matches your cognitive strengths, which university offers the highest ROI, and what exact steps to take next.',
+    'de.stage': 'Stage',
+    'de.of': 'of',
+    'de.stage1Title': 'Stage 1: Self Understanding',
+    'de.stage1Question': 'What fields naturally spark your curiosity?',
+    'de.stage1Sub': 'Select one or more domain areas you enjoy exploring.',
+    'de.stage2Title': 'Stage 2: Ability & Math Calibration',
+    'de.stage2Question': 'How comfortable are you with advanced mathematics?',
+    'de.stage2Sub': 'Honesty is critical. If you love computers but hate calculus, Computer Science may lead to burnout — but UX Design or Business Information Systems would let you excel!',
+    'de.stage3Title': 'Stage 3: Learning & Work Style',
+    'de.stage3Question': 'Which environment brings out your highest focus?',
+    'de.stage4Title': 'Stage 4: Financial Reality & Budget',
+    'de.stage4Question': 'What is your realistic financial expectation for tuition?',
+    'de.stage5Title': 'Stage 5: Career Ambition',
+    'de.stage5Question': 'What does your dream milestone look like 4 years from now?',
+    'de.stage6Title': 'Stage 6: Personalized Decision Dossier',
+    'de.next': 'Next',
+    'de.back': 'Back',
+    'de.generate': 'Generate My Decision Dossier',
+    'de.recalibrate': 'Recalibrate Assessment',
+    'de.topMajorMatch': 'Top Major Match',
+    'de.paybackPeriod': 'Payback Period',
+    'de.months': 'Months',
+    'de.nextSteps': 'Your Next Steps (Admission & Prep Checklist)',
+
+    // University Intelligence
+    'uni.bannerTitle': 'Decision-Grade University Intelligence',
+    'uni.bannerDesc': 'Every university audited across 9 empirical dimensions: Profile Scores (30/20/20/30), verified course structures Year 1-4, transparent tuition & ROI, and reliable confidence ratings.',
+    'uni.tabProfiles': 'All University Profiles',
+    'uni.tabCompare': 'Side-by-Side Comparison Matrix',
+    'uni.roiCalculator': 'ROI Calculator',
+    'uni.searchPlaceholder': 'Search university name, Khmer name, acronym (CADT, ITC, CamEd), or major...',
+    'uni.allTypes': 'All Types',
+    'uni.public': 'Public',
+    'uni.private': 'Private',
+    'uni.scholarshipsOnly': '100% Full Scholarships Available',
+    'uni.annualTuition': 'Annual Tuition',
+    'uni.avgSalary': 'Avg Starting Pay',
+    'uni.simulateROI': 'Simulate ROI',
+    'uni.viewDossier': '9-Point Dossier',
+    'uni.closeDossier': 'Close Dossier',
+    'uni.profileScore': 'Profile Score',
+
+    // Comparison Engine
+    'cmp.title': 'Side-by-Side University Comparison Engine',
+    'cmp.selectHint': 'Select 2 to 4 universities to compare across curriculum, financial ROI, and career placement.',
+    'cmp.metric': 'Comparison Dimension',
+    'cmp.academicScore': 'Academic Reputation (30%)',
+    'cmp.industryScore': 'Industry Connections (20%)',
+    'cmp.facilitiesScore': 'Labs & Tech Facilities (20%)',
+    'cmp.graduateScore': 'Graduate Outcomes (30%)',
+    'cmp.tuition': 'Annual Tuition (USD)',
+    'cmp.degreeCost': 'Total 4-Year Tuition',
+    'cmp.roiPayback': 'Estimated Payback Period',
+    'cmp.startingPay': 'Median Starting Salary',
+    'cmp.theoryRatio': 'Theory vs Practical Ratio',
+    'cmp.fullRide': '100% Full Scholarship',
+    'cmp.accreditation': 'Accreditation Body',
+
+    // Common Buttons
+    'btn.save': 'Save',
+    'btn.close': 'Close',
+    'btn.confirm': 'Confirm',
+    'btn.cancel': 'Cancel',
+    'btn.bookSenior': 'Book 1-on-1 with Senior',
+    'btn.askAdvisor': 'Ask AI Advisor',
+  },
+  km: {
+    // Navigation
+    'nav.dashboard': 'ផ្ទាំងគ្រប់គ្រង',
+    'nav.decisionEngine': 'ប្រព័ន្ធជំនួយសម្រេចចិត្ត',
+    'nav.universityIntel': 'ព័ត៌មានសាកលវិទ្យាល័យ',
+    'nav.scholarship': 'អាហារូបករណ៍',
+    'nav.scholarshipBadge': 'សកល',
+    'nav.network': 'បណ្តាញទំនាក់ទំនង',
+    'nav.discovery': 'ស្វែងយល់បន្ថែម',
+    'nav.aiAdvisor': 'ទីប្រឹក្សា AI',
+    'nav.community': 'សហគមន៍',
+    'nav.mentors': 'រៀមច្បងណែនាំ ១ទល់១',
+    'nav.alumni': 'បណ្តាញអតីតនិស្សិត',
+    'nav.meetups': 'ក្រុមសិក្សាជាមួយមិត្តភក្តិ',
+    'nav.applyMentor': 'ចុះឈ្មោះជារៀមច្បង',
+    'nav.stemLab': 'បន្ទប់ពិសោធន៍ STEM',
+    'nav.opportunities': 'បញ្ជីមុខជំនាញ & អាជីព',
+    'nav.events': 'សិក្ខាសាលា & សំណួរចម្លើយផ្ទាល់',
+    'nav.searchPlaceholder': 'ស្វែងរកមុខជំនាញ សាកលវិទ្យាល័យ ឬរៀមច្បង...',
+    'nav.language': 'ភាសា',
+    'nav.fitBadge': 'ភាពស័ក្តិសម',
+    'nav.dragHint': 'អូសឆ្វេង/ស្តាំដើម្បីមើលប៊ូតុងទាំងអស់',
+
+    // Language names
+    'lang.en': 'English',
+    'lang.km': 'ភាសាខ្មែរ',
+
+    // Dashboard Hero & Decision Banner
+    'dash.greeting': 'សូមស្វាគមន៍មកកាន់ប្រព័ន្ធ',
+    'dash.decisionPromptTitle': 'មិនទាន់ប្រាកដថាគួររៀនជំនាញអ្វី ឬជ្រើសរើសសាកលវិទ្យាល័យណា?',
+    'dash.decisionPromptDesc': 'កុំគ្រាន់តែមើលខិតប័ណ្ណសាកលវិទ្យាល័យធម្មតា។ ចូលរួមធ្វើតេស្តស្ទង់សមត្ថភាព ៦ ដំណាក់កាល ដើម្បីវាយតម្លៃជំនាញដែលត្រូវនឹងទេពកោសល្យរបស់អ្នក គណនាផលចំណេញ (ROI) និងប្រៀបធៀបសាកលវិទ្យាល័យឈានមុខនៅកម្ពុជាទន្ទឹមគ្នា។',
+    'dash.launchEngine': 'ចាប់ផ្តើមប្រព័ន្ធសម្រេចចិត្ត',
+    'dash.compareMatrix': 'តារាងប្រៀបធៀបសាកលវិទ្យាល័យ',
+    'dash.askAiPlaceholder': 'សួរទីប្រឹក្សា AI អំពីមុខជំនាញ អាហារូបករណ៍ ឬឱកាសការងារ...',
+    'dash.askAiBtn': 'សួរ AI',
+    'dash.heroBadge': 'ប្រព័ន្ធ AI ណែនាំទិសដៅការសិក្សា និងអាជីព',
+    'dash.heroIntro': 'តោះចាប់ផ្តើមស្វែងយល់ពីអនាគតរបស់អ្នក។ ផ្អែកលើចំណាប់អារម្មណ៍របស់អ្នកលើវិស័យ',
+    'dash.heroPrep': 'យើងបានរៀបចំរៀមច្បងណែនាំ មុខជំនាញ និងព្រឹត្តិការណ៍សមស្របសម្រាប់អ្នករួចរាល់។',
+    'dash.popularQuestions': 'សំណួរពេញនិយម៖',
+    'dash.q1': 'តើខ្ញុំគួររៀនវិទ្យាសាស្ត្រកុំព្យូទ័រ (CS) ឬវិទ្យាសាស្ត្រទិន្នន័យ (Data Science)?',
+    'dash.q2': 'តើគួរបំប៉នមេរៀនគណិតវិទ្យាអ្វីខ្លះនៅថ្នាក់ទី១២ ដើម្បីប្រឡងយកអាហារូបករណ៍ AI?',
+    'dash.csipBadge': 'ប្រព័ន្ធស្វែងរកអាហារូបករណ៍ (CSIP)',
+    'dash.verifiedBadge': 'បានផ្ទៀងផ្ទាត់ ១០០%',
+    'dash.csipTitle': 'កំពុងស្វែងរកអាហារូបករណ៍សកល និងក្នុងប្រទេសដែលមានការបញ្ជាក់ត្រឹមត្រូវមែនទេ?',
+    'dash.csipDesc': 'ស្វែងរកអាហារូបករណ៍ពេញថ្លៃអន្តរជាតិ (Chevening, Fulbright, Australia Awards, CADT MPTC, MEXT, GKS) ជាមួយប្រព័ន្ធរំលឹកកាលបរិច្ឆេទ លក្ខខណ្ឌ GPA និងកញ្ចប់ថវិកាពិតប្រាកដ។',
+    'dash.searchScholarships': 'ស្វែងរកអាហារូបករណ៍',
+    'dash.progressTitle': 'វឌ្ឍនភាពនៃការស្វែងយល់អនាគតរបស់អ្នក',
+    'dash.progressSubtitle': 'បន្តស្វែងយល់មុខជំនាញ សួរសំណួរ AI និងភ្ជាប់ទំនាក់ទំនងជាមួយរៀមច្បងដើម្បីទទួលបានមេដាយកិត្តិយស។',
+    'dash.viewCareerMap': 'មើលផែនទីចំណាប់អារម្មណ៍ & អាជីព',
+    'dash.viewMap': 'មើលផែនទីចំណាប់អារម្មណ៍ & អាជីព',
+    'dash.profileComplete': 'បំពេញកម្រងព័ត៌មាន',
+    'dash.interestsExplored': 'ចំណាប់អារម្មណ៍បានស្វែងយល់',
+    'dash.mentorsContacted': 'រៀមច្បងបានទាក់ទង',
+    'dash.eventsAttended': 'ព្រឹត្តិការណ៍បានចូលរួម',
+    'dash.earnedBadges': 'មេដាយកិត្តិយសទទួលបាន៖',
+    'dash.stemTitle': 'លេងល្បែងប្រាជ្ញាខ្លីៗ & ស្វែងរកសមត្ថភាពពិសេសផ្នែក STEM របស់អ្នក',
+    'dash.stemSubtitle': 'គ្មានការប្រឡងតានតឹងទេ! ដោះស្រាយល្បែងបញ្ជាដ្រូនឆ្លងស្ទឹង ស្រាយកូដសៀគ្វីអគ្គិសនី និងទទួលការលើកទឹកចិត្តសមត្ថភាព។',
+    'dash.stemDesc': 'គ្មានការប្រឡងតានតឹងទេ! ដោះស្រាយល្បែងបញ្ជាដ្រូនឆ្លងស្ទឹង ស្រាយកូដសៀគ្វីអគ្គិសនី និងទទួលការលើកទឹកចិត្តសមត្ថភាព។',
+    'dash.playStem': 'លេងល្បែងប្រាជ្ញា STEM',
+    'dash.discoverYourself': 'ស្វែងយល់ពីខ្លួនឯង — STEM Gaming',
+    'dash.stemBadge': 'ស្វែងយល់ពីខ្លួនឯង — STEM Gaming',
+    'dash.transitionTitle': 'ជជែកជាមួយរៀមច្បងមកពី ITC, CADT និង RUPP',
+    'dash.transHubTitle': 'ជជែកជាមួយរៀមច្បងមកពី ITC, CADT និង RUPP',
+    'dash.transitionDesc': 'ចង់ដឹងពីជំនាញវិទ្យាសាស្ត្រទិន្នន័យនៅតិចណូ (ITC), វិស្វកម្មសូហ្វវែរនៅ CADT ឬ CS នៅ RUPP? សួររៀមច្បងឆ្នាំទី៤ ផ្ទាល់ពីការប្រឡងចូល និងការសិក្សា។',
+    'dash.transHubDesc': 'ចង់ដឹងពីជំនាញវិទ្យាសាស្ត្រទិន្នន័យនៅតិចណូ (ITC), វិស្វកម្មសូហ្វវែរនៅ CADT ឬ CS នៅ RUPP? សួររៀមច្បងឆ្នាំទី៤ ផ្ទាល់ពីការប្រឡងចូល និងការសិក្សា។',
+    'dash.exploreSeniors': 'មើលរៀមច្បង & អតីតនិស្សិតទាំងអស់',
+    'dash.seniorBadge': '🎓 មជ្ឈមណ្ឌលត្រៀមចូលសាកលវិទ្យាល័យ',
+    'dash.transHubBadge': '🎓 មជ្ឈមណ្ឌលត្រៀមចូលសាកលវិទ្យាល័យ',
+    'dash.gradSupport': 'ការគាំទ្រសិស្សបញ្ចប់បាក់ឌុប',
+    'dash.transHubTag': 'ការគាំទ្រសិស្សបញ្ចប់បាក់ឌុប',
+    'dash.recMentors': 'រៀមច្បងណែនាំសមស្របសម្រាប់អ្នក',
+    'dash.recMentorsTitle': 'រៀមច្បងណែនាំសមស្របសម្រាប់អ្នក',
+    'dash.recMentorsDesc': 'ផ្គូផ្គងយ៉ាងជាក់លាក់តាមចំណាប់អារម្មណ៍របស់អ្នកផ្នែកគណិតវិទ្យា ការសរសេរកូដ និងរ៉ូបូត។',
+    'dash.recMentorsSubtitle': 'ផ្គូផ្គងយ៉ាងជាក់លាក់តាមចំណាប់អារម្មណ៍របស់អ្នកផ្នែកគណិតវិទ្យា ការសរសេរកូដ និងរ៉ូបូត។',
+    'dash.browseAllMentors': 'មើលរៀមច្បងទាំងអស់',
+    'dash.match': 'កម្រិតត្រូវគ្នា',
+    'dash.matchBadge': 'កម្រិតត្រូវគ្នា',
+    'dash.whyMatched': 'ហេតុផលផ្គូផ្គង៖',
+    'dash.viewProfile': 'មើលព័ត៌មាន',
+    'dash.comments': 'មតិយោបល់',
+    'dash.recMajors': 'មុខជំនាញសាកលវិទ្យាល័យដែលណែនាំ',
+    'dash.recMajorsTitle': 'មុខជំនាញសាកលវិទ្យាល័យដែលណែនាំ',
+    'dash.recMajorsDesc': 'មាគ៌ាសិក្សាដែលត្រូវគ្នានឹងចំណុចខ្លាំងរបស់អ្នក។',
+    'dash.recMajorsSubtitle': 'មាគ៌ាសិក្សាដែលត្រូវគ្នានឹងចំណុចខ្លាំងរបស់អ្នក។',
+    'dash.exploreAllOpportunities': 'មើលឱកាសទាំងអស់',
+    'dash.viewRoadmap': 'មើលផែនទីសិក្សា',
+    'dash.studyCircles': 'ក្រុមសិក្សារបស់សិស្សនិស្សិត',
+    'dash.studyCirclesTitle': 'ក្រុមសិក្សារបស់សិស្សនិស្សិត',
+    'dash.studyCirclesDesc': 'ការរំលឹកមេរៀនប្រឡង & ក្រុមសិក្សាជាមួយមិត្តភក្តិ',
+    'dash.studyCirclesSubtitle': 'ការរំលឹកមេរៀនប្រឡង & ក្រុមសិក្សាជាមួយមិត្តភក្តិ',
+    'dash.examReview': '📝 រំលឹកមេរៀនប្រឡង',
+    'dash.circleTitle1': 'ការដោះស្រាយវិញ្ញាសាគណិតវិទ្យា & គណនាបាក់ឌុប',
+    'dash.circleLoc1': '📍 បណ្ណាល័យជាតិ • ៦/៨ នាក់បានចូលរួម',
+    'dash.viewAll': 'មើលទាំងអស់',
+    'dash.createJoinMeetup': 'បង្កើត / ចូលរួមក្រុមសិក្សា',
+    'dash.conferencesTitle': 'សិក្ខាសាលា & ការជជែកផ្ទាល់ខាងមុខ',
+    'dash.upcomingConferencesTitle': 'សិក្ខាសាលា & ការជជែកផ្ទាល់ខាងមុខ',
+    'dash.browseAll': 'មើលទាំងអស់',
+    'dash.communityTitle': 'ការពិភាក្សាក្នុងសហគមន៍',
+    'dash.communityDiscussionsTitle': 'ការពិភាក្សាក្នុងសហគមន៍',
+    'dash.joinForum': 'ចូលរួមវេទិកាពិភាក្សា',
+    'dash.savedBookmarks': 'ចំណាំទុកក្នុងបញ្ជី',
+    'dash.manage': 'គ្រប់គ្រង',
+    'dash.noSaved': 'មិនទាន់មានទិន្នន័យចំណាំទុកនៅឡើយ។',
+    'dash.noSavedItems': 'មិនទាន់មានទិន្នន័យចំណាំទុកនៅឡើយ។',
+    'dash.mentorLabel': 'រៀមច្បង',
+    'dash.majorGrantLabel': 'មុខជំនាញ / អាហារូបករណ៍',
+    'dash.goodMorning': 'អរុណសួស្តី',
+    'dash.goodAfternoon': 'ទិវាសួស្តី',
+    'dash.goodEvening': 'សាយណ្ហសួស្តី',
+    'dash.back': 'ថយក្រោយ',
+
+    // Decision Engine
+    'de.bannerTitle': 'ប្រព័ន្ធវៃឆ្លាតសម្រាប់សិស្សសម្រេចចិត្តជ្រើសរើសការសិក្សា',
+    'de.bannerHeadline': 'ស្វែងរកមុខជំនាញត្រូវរៀន សាកលវិទ្យាល័យត្រូវជ្រើសរើស និងមូលហេតុច្បាស់លាស់',
+    'de.bannerDesc': 'ឈានផុតពីកម្រងព័ត៌មានទូទៅ។ បំពេញក្របខ័ណ្ឌសម្រេចចិត្ត ៦ ដំណាក់កាល ដើម្បីដឹងថាជំនាញណាស័ក្តិសមនឹងសមត្ថភាពខួរក្បាលរបស់អ្នក សាកលវិទ្យាល័យណាផ្តល់ផលចំណេញការវិនិយោគ (ROI) ខ្ពស់បំផុត និងជំហានជាក់ស្តែងដែលត្រូវត្រៀម។',
+    'de.stage': 'ដំណាក់កាល',
+    'de.of': 'នៃ',
+    'de.stage1Title': 'ដំណាក់កាលទី ១៖ ស្វែងយល់ពីចំណង់ចំណូលចិត្ត',
+    'de.stage1Question': 'តើវិស័យណាខ្លះដែលធ្វើឱ្យអ្នកចាប់អារម្មណ៍រៀនសូត្រពីធម្មជាតិ?',
+    'de.stage1Sub': 'ជ្រើសរើសវិស័យមួយ ឬច្រើនដែលអ្នកចូលចិត្តស្វែងយល់។',
+    'de.stage2Title': 'ដំណាក់កាលទី ២៖ សមត្ថភាព និងការវាស់ស្ទង់គណិតវិទ្យា',
+    'de.stage2Question': 'តើអ្នកមានអារម្មណ៍យ៉ាងណាចំពោះគណិតវិទ្យាកម្រិតខ្ពស់?',
+    'de.stage2Sub': 'ភាពស្មោះត្រង់គឺសំខាន់បំផុត។ ប្រសិនបើអ្នកស្រឡាញ់កុំព្យូទ័រតែមិនចូលចិត្តគណិតវិទ្យាទ្រឹស្តីខ្ពស់ ជំនាញ Computer Science អាចធ្វើឱ្យអ្នកតានតឹង—ប៉ុន្តែជំនាញ UI/UX Design ឬប្រព័ន្ធព័ត៌មានវិទ្យាពាណិជ្ជកម្ម (BIS) អាចឱ្យអ្នកពូកែ និងជោគជ័យយ៉ាងខ្លាំង!',
+    'de.stage3Title': 'ដំណាក់កាលទី ៣៖ របៀបរៀន និងបរិយាកាសការងារ',
+    'de.stage3Question': 'តើបរិយាកាសសិក្សា និងការងារបែបណាដែលជួយឱ្យអ្នកមានការផ្តោតអារម្មណ៍ខ្ពស់បំផុត?',
+    'de.stage4Title': 'ដំណាក់កាលទី ៤៖ លទ្ធភាពហិរញ្ញវត្ថុ & អាហារូបករណ៍',
+    'de.stage4Question': 'តើកម្រិតថវិកា ឬថ្លៃសិក្សាដែលគ្រួសាររបស់អ្នកអាចចំណាយបានស្ថិតក្នុងកម្រិតណា?',
+    'de.stage5Title': 'ដំណាក់កាលទី ៥៖ គោលដៅអាជីពអនាគត',
+    'de.stage5Question': 'តើគោលដៅការងារក្នុងក្តីស្រមៃរបស់អ្នកបន្ទាប់ពីបញ្ចប់ការសិក្សា ៤ ឆ្នាំជាអ្វី?',
+    'de.stage6Title': 'ដំណាក់កាលទី ៦៖ របាយការណ៍សម្រេចចិត្តផ្ទាល់ខ្លួនរបស់អ្នក',
+    'de.next': 'បន្ទាប់',
+    'de.back': 'ថយក្រោយ',
+    'de.generate': 'បង្កើតរបាយការណ៍សម្រេចចិត្តរបស់ខ្ញុំ',
+    'de.recalibrate': 'ធ្វើតេស្តវាយតម្លៃឡើងវិញ',
+    'de.topMajorMatch': 'ជំនាញត្រូវគ្នាល្អបំផុត',
+    'de.paybackPeriod': 'រយៈពេលសងរួចថ្លៃសិក្សា (Payback)',
+    'de.months': 'ខែ',
+    'de.nextSteps': 'ជំហានជាក់ស្តែងបន្ទាប់ (បញ្ជីរៀបចំការប្រឡង និងការចុះឈ្មោះ)',
+
+    // University Intelligence
+    'uni.bannerTitle': 'ព័ត៌មានសាកលវិទ្យាល័យកម្រិតស៊ីជម្រៅសម្រាប់សម្រេចចិត្ត',
+    'uni.bannerDesc': 'សាកលវិទ្យាល័យនីមួយៗត្រូវបានវាយតម្លៃតាម ៩ វិមាត្រជាក់ស្តែង៖ ពិន្ទុ Profile Scores (៣០/២០/២០/៣០), រចនាសម្ព័ន្ធមុខវិជ្ជាពីឆ្នាំទី ១ ដល់ឆ្នាំទី ៤, តម្លាភាពថ្លៃសិក្សា & ROI, និងកម្រិតភាពជឿជាក់ទិន្នន័យ។',
+    'uni.tabProfiles': 'កម្រងព័ត៌មានសាកលវិទ្យាល័យទាំងអស់',
+    'uni.tabCompare': 'តារាងប្រៀបធៀបសាកលវិទ្យាល័យទន្ទឹមគ្នា',
+    'uni.roiCalculator': 'ម៉ាស៊ីនគណនាផលចំណេញ (ROI)',
+    'uni.searchPlaceholder': 'ស្វែងរកឈ្មោះសាកលវិទ្យាល័យ ជាភាសាខ្មែរ អក្សរកាត់ (CADT, ITC, CamEd) ឬជំនាញ...',
+    'uni.allTypes': 'គ្រប់ប្រភេទ',
+    'uni.public': 'គ្រឹះស្ថានរដ្ឋ',
+    'uni.private': 'គ្រឹះស្ថានឯកជន',
+    'uni.scholarshipsOnly': 'មានអាហារូបករណ៍ពេញថ្លៃ ១០០%',
+    'uni.annualTuition': 'ថ្លៃសិក្សាប្រចាំឆ្នាំ',
+    'uni.avgSalary': 'ប្រាក់ខែចាប់ផ្តើមមធ្យម',
+    'uni.simulateROI': 'គណនាផលចំណេញ (ROI)',
+    'uni.viewDossier': 'ឯកសារ ៩ ចំណុច',
+    'uni.closeDossier': 'បិទឯកសារ',
+    'uni.profileScore': 'ពិន្ទុវាយតម្លៃរួម',
+
+    // Comparison Engine
+    'cmp.title': 'ប្រព័ន្ធប្រៀបធៀបសាកលវិទ្យាល័យទន្ទឹមគ្នា',
+    'cmp.selectHint': 'ជ្រើសរើសពី ២ ទៅ ៤ សាកលវិទ្យាល័យ ដើម្បីប្រៀបធៀបកម្មវិធីសិក្សា ផលចំណេញហិរញ្ញវត្ថុ និងឱកាសការងារ។',
+    'cmp.metric': 'វិមាត្រប្រៀបធៀប',
+    'cmp.academicScore': 'កេរ្តិ៍ឈ្មោះសិក្សាធិការ (៣០%)',
+    'cmp.industryScore': 'ទំនាក់ទំនងជាមួយក្រុមហ៊ុន & ឧស្សាហកម្ម (២០%)',
+    'cmp.facilitiesScore': 'បន្ទប់ពិសោធន៍ & បច្ចេកវិទ្យា (២០%)',
+    'cmp.graduateScore': 'អត្រាការងារនិស្សិតបញ្ចប់ការសិក្សា (៣០%)',
+    'cmp.tuition': 'ថ្លៃសិក្សាប្រចាំឆ្នាំ (USD)',
+    'cmp.degreeCost': 'ថ្លៃសិក្សាសរុប ៤ ឆ្នាំ',
+    'cmp.roiPayback': 'រយៈពេលសងថ្លៃដើមរួច',
+    'cmp.startingPay': 'ប្រាក់ខែចាប់ផ្តើមមធ្យម',
+    'cmp.theoryRatio': 'សមាមាត្រ ទ្រឹស្តី ធៀបនឹង ការអនុវត្ត',
+    'cmp.fullRide': 'អាហារូបករណ៍ ១០០%',
+    'cmp.accreditation': 'ស្ថាប័នទទួលស្គាល់គុណភាព',
+
+    // Common Buttons
+    'btn.save': 'រក្សាទុក',
+    'btn.close': 'បិទ',
+    'btn.confirm': 'យល់ព្រម',
+    'btn.cancel': 'បោះបង់',
+    'btn.bookSenior': 'ណាត់ជួបរៀមច្បង ១ទល់១',
+    'btn.askAdvisor': 'សួរទីប្រឹក្សា AI',
+  },
+};
+
+interface LanguageContextType {
+  language: Language;
+  setLanguage: (lang: Language) => void;
+  t: (key: string, fallback?: string) => string;
+}
+
+const LanguageContext = createContext<LanguageContextType>({
+  language: 'en',
+  setLanguage: () => {},
+  t: (key: string, fallback?: string) => fallback || key,
+});
+
+export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [language, setLanguageState] = useState<Language>(() => {
+    const saved = localStorage.getItem('preferred_language');
+    if (saved === 'km' || saved === 'en') return saved;
+    // Default to 'km' or 'en'
+    return 'en';
+  });
+
+  const setLanguage = (lang: Language) => {
+    setLanguageState(lang);
+    localStorage.setItem('preferred_language', lang);
+    analytics.track('change_language' as any, { language: lang });
+  };
+
+  const t = (key: string, fallback?: string): string => {
+    const currentDict = translations[language];
+    if (currentDict && currentDict[key]) {
+      return currentDict[key];
+    }
+    // Fallback to English
+    if (translations.en[key]) {
+      return translations.en[key];
+    }
+    return fallback || key;
+  };
+
+  return (
+    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+      {children}
+    </LanguageContext.Provider>
+  );
+};
+
+export const useLanguage = () => useContext(LanguageContext);

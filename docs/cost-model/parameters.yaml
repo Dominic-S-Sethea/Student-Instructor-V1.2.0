@@ -1,0 +1,64 @@
+# ============================================================
+# CDES - Per-active-user LLM cost model  (inputs)
+# ============================================================
+# This file holds every tunable input. Edit a value here,
+# then re-run `cost_model.ipynb` (or open `cost_model.xlsx`)
+# to regenerate the curves and `results.json`.
+
+# ---- Per-active-user request volume ----
+# Estimated number of AI agent calls (main chat + follow-ups)
+# each active user generates in a typical month.
+requests_per_user_month: 60
+
+# ---- Token counts per request ----
+# The per-request prompt = cacheable_prefix_tokens + non_cacheable_remainder_tokens.
+#   cacheable_prefix_tokens    : system prompt + KB/RAG context that repeats.
+#                                This is what prompt-caching serves from cache.
+#   non_cacheable_remainder_tokens : conversation history + current student message.
+#   output_tokens              : tokens the model returns per main response.
+#   followup_out_mult          : extra output tokens per request spent on the
+#                                4 suggested follow-up questions (fraction of O).
+cacheable_prefix_tokens: 1800
+non_cacheable_remainder_tokens: 1400
+output_tokens: 600
+followup_out_mult: 0.15
+
+# ---- Cache hit-rate scenarios ----
+# The hit-rate h applies to the cacheable_prefix_tokens. Curves are also shown
+# at 10% / 50% / 90% in the output tables (cache_rates).
+cache_rates:
+  - 0.10
+  - 0.30
+  - 0.50
+  - 0.70
+  - 0.90
+
+# ---- Provider pricing (per 1M tokens) ----
+# Each provider row:
+#   input         : uncached input tokens (per 1M)
+#   output        : output tokens (per 1M)
+#   write_mul     : cache-write = input * write_mul  (OpenAI/Anthropic 5-min write)
+#   cache_hit_mult: cached-input = input * hit_mult  (0.5 = OpenAI, 0.1 = Anthropic/Google)
+providers:
+  openai_gpt4o:
+    label: "OpenAI gpt-4o"
+    input: 2.50
+    output: 10.00
+    write_mul: 1.25
+    cache_hit_mult: 0.5
+  anthropic_claude:
+    label: "Anthropic Claude 3.5 Sonnet"
+    input: 3.00
+    output: 15.00
+    write_mul: 1.25
+    cache_hit_mult: 0.1
+  google_gemini:
+    label: "Google Gemini 2.0/1.5-flash"
+    input: 0.30
+    output: 2.50
+    write_mul: 1.25
+    cache_hit_mult: 0.1
+
+# ---- (Optional) Google context-cache storage ----
+# Timeshare fee billed per hour the cached content is retained.
+# google_context_cache_storage_per_1m_per_hour_usd: 0.03

@@ -1,0 +1,23 @@
+STDOUT:
+src/components/learning/DigitalLibraryView.tsx(79,19): error TS2345: Argument of type 'Subject[]' is not assignable to parameter of type 'SetStateAction<(Subject & { categories: Category[]; })[]>'.
+  Type 'Subject[]' is not assignable to type '(Subject & { categories: Category[]; })[]'.
+    Type 'Subject' is not assignable to type 'Subject & { categories: Category[]; }'.
+      Property 'categories' is missing in type 'Subject' but required in type '{ categories: Category[]; }'.
+src/components/learning/LearningPathsView.tsx(190,58): error TS2365: Operator '<' cannot be applied to types 'number' and 'LearningPathStep'.
+src/components/learning/LearningPathsView.tsx(191,61): error TS2367: This comparison appears to be unintentional because the types 'number' and 'LearningPathStep' have no overlap.
+src/components/learning/LearningPathsView.tsx(192,59): error TS2365: Operator '>' cannot be applied to types 'number' and 'LearningPathStep'.
+src/components/learning/VirtualLabView.tsx(109,27): error TS2339: Property 'experiment' does not exist on type 'LabExperiment'.
+src/components/learning/VirtualLabView.tsx(110,29): error TS2339: Property 'user_session' does not exist on type 'LabExperiment'.
+src/components/learning/VirtualLabView.tsx(111,34): error TS2339: Property 'user_session' does not exist on type 'LabExperiment'.
+src/components/learning/VirtualLabView.tsx(253,9): error TS2554: Expected 2 arguments, but got 6.
+src/services/communityClient.ts(160,55): error TS2304: Cannot find name 'ClientMentor'.
+src/services/communityClient.ts(174,63): error TS2304: Cannot find name 'ClientStudentSession'.
+src/services/communityClient.ts(189,62): error TS2304: Cannot find name 'ClientContent'.
+src/services/communityClient.ts(196,64): error TS2304: Cannot find name 'ClientCommunityProject'.
+src/services/learningClient.ts(51,30): error TS2345: Argument of type 'URL' is not assignable to parameter of type 'string'.
+src/services/learningClient.ts(124,30): error TS2345: Argument of type 'URL' is not assignable to parameter of type 'string'.
+src/services/learningClient.ts(159,30): error TS2345: Argument of type 'URL' is not assignable to parameter of type 'string'.
+
+STDERR:
+npm notice run react-example@1.2.0 npx
+npm notice run tsc --noEmit
