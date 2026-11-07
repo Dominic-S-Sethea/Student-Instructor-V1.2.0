@@ -1,7 +1,7 @@
 {
   "projectId": "khaki-monitor-m53bd",
   "appId": "1:473906964961:web:7c5bb8a5ee67ddbc164aa0",
-  "apiKey": "AIzaSyBrIMzrPft6qLksYdU-6vWmRIhuy-aUSo8",
+  "apiKey": "your-firebase-api-key-here",
   "authDomain": "khaki-monitor-m53bd.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-studentinstructo-a305b40f-a2bc-412f-8b6b-248b04cadb0e",
   "storageBucket": "khaki-monitor-m53bd.firebasestorage.app",

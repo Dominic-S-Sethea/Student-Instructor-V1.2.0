@@ -49,7 +49,7 @@ Authorization: Bearer <JWT_TOKEN>
 {
   "success": true,
   "message": "Account created successfully",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token": "your-jwt-token-here",
   "user": {
     "id": "usr-8a9018e2-...",
     "email": "serey.rath@cdes.edu.kh",
@@ -66,7 +66,7 @@ Authorization: Bearer <JWT_TOKEN>
 ```json
 {
   "email": "admin@cdes.edu.kh",
-  "password": "Admin@CDES2026!"
+  "password": "your-admin-password-here"
 }
 ```
 - **Response (200 OK)**:
@@ -74,7 +74,7 @@ Authorization: Bearer <JWT_TOKEN>
 {
   "success": true,
   "message": "Authentication successful",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token": "your-jwt-token-here",
   "user": {
     "id": "usr-admin-01",
     "email": "admin@cdes.edu.kh",
