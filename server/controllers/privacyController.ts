@@ -8,6 +8,7 @@ import {
   AuthenticatedRequest,
 } from '../middleware/authMiddleware';
 import { safeErrorMessage } from '../utils/httpErrors';
+import { executeStudentRightToErasure } from '../services/dataPipelineValidator';
 
 const router = Router();
 const privacyService = new PrivacyService();
@@ -62,6 +63,26 @@ router.post('/consent', authenticateToken, (req: AuthenticatedRequest, res: Resp
     res.status(400).json({
       success: false,
       error: safeErrorMessage(err, 'Failed to update consent.', 400),
+    });
+  }
+});
+
+/** POST /api/privacy/erasure — transactional right-to-erasure across analytics, AI memory, and research pipelines. */
+router.post('/erasure', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  try {
+    const result = executeStudentRightToErasure(req.user!.userId);
+    const consent = privacyService.getConsent(req.user!.userId);
+    res.json({
+      success: true,
+      message: 'All optional telemetry, AI memory, feature store, and research participation records erased.',
+      erased: result.erasedCounts,
+      totalRowsErased: result.totalRowsErased,
+      data: consent,
+    });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error: safeErrorMessage(err, 'Failed to erase student pipeline records.', 500),
     });
   }
 });
