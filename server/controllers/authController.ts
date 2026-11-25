@@ -15,6 +15,7 @@ import { rateLimiter } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validationMiddleware';
 import { RegisterSchema, LoginSchema } from '../validators/apiSchemas';
 import { safeErrorMessage } from '../utils/httpErrors';
+import { authLockoutService } from '../services/authLockoutService';
 
 const router = Router();
 const authService = new AuthService();
@@ -118,12 +119,23 @@ router.post('/register', authLimiter, validate(RegisterSchema, 'body'), (req: Re
   }
 });
 
-/** POST /api/auth/login — verify credentials, set HttpOnly session cookie, rotate CSRF. */
+/** POST /api/auth/login — verify credentials, enforce progressive lockout, set HttpOnly session cookie, rotate CSRF. */
 router.post('/login', authLimiter, loginAccountLimiter, validate(LoginSchema, 'body'), (req: Request, res: Response): void => {
-  try {
-    const { email, password } = req.body;
+  const { email, password } = req.body as { email: string; password: string };
+  const lockoutSec = authLockoutService.getLockoutSeconds(email);
+  if (lockoutSec > 0) {
+    res.setHeader('Retry-After', String(lockoutSec));
+    res.status(429).json({
+      success: false,
+      code: 'ACCOUNT_TEMPORARILY_LOCKED',
+      error: 'Too many failed login attempts. Please try again later.',
+    });
+    return;
+  }
 
+  try {
     const result = authService.login({ email, password });
+    authLockoutService.recordSuccess(email);
     authService.setAuthCookie(res, result.token);
     const csrfToken = rotateCsrfToken(res, result.user.id);
 
@@ -137,6 +149,16 @@ router.post('/login', authLimiter, loginAccountLimiter, validate(LoginSchema, 'b
       },
     });
   } catch (err: unknown) {
+    const lockResult = authLockoutService.recordFailure(email, req.ip || req.socket.remoteAddress);
+    if (lockResult.locked) {
+      res.setHeader('Retry-After', String(lockResult.retryAfterSeconds));
+      res.status(429).json({
+        success: false,
+        code: 'ACCOUNT_TEMPORARILY_LOCKED',
+        error: 'Too many failed login attempts. Please try again later.',
+      });
+      return;
+    }
     res.status(401).json({
       success: false,
       error: safeErrorMessage(err, 'Authentication failed.', 401),

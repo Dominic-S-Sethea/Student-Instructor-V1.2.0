@@ -2,6 +2,7 @@ import { withTransaction } from '../db/connection';
 import { ScholarshipRepository, HydratedScholarshipRow, OrganizationSubmissionRow } from '../repositories/scholarshipRepository';
 import { formatScholarshipRecord, FormattedScholarship } from './scholarshipFormatter';
 import { safeJsonParse } from '../utils/safeJson';
+import { assertSafeScholarshipUrls } from '../utils/safeUrl';
 import {
   ConflictError,
   FormattedSubmission,
@@ -199,6 +200,7 @@ export class ScholarshipService {
     data: Record<string, unknown>,
     userId?: string
   ): { message: string; submission: OrganizationSubmissionRow } {
+    assertSafeScholarshipUrls(data);
     const submission = this.repo.submitOrganizationOpportunity({
       ...data,
       submitted_by_user_id: userId || null,
@@ -339,10 +341,12 @@ export class ScholarshipService {
   }
 
   public createScholarship(data: Record<string, unknown>, changedByUserId?: string): FormattedScholarship {
+    assertSafeScholarshipUrls(data);
     return this.formatScholarship(this.repo.create(data, changedByUserId));
   }
 
   public updateScholarship(id: string, data: Record<string, unknown>, changedByUserId?: string): FormattedScholarship | null {
+    assertSafeScholarshipUrls(data);
     const updated = this.repo.update(id, data, changedByUserId);
     return updated ? this.formatScholarship(updated) : null;
   }
