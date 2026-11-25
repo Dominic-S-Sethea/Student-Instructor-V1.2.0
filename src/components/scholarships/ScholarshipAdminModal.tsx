@@ -27,6 +27,8 @@ import {
   FieldOfStudy,
   FundingType,
 } from '../../types/scholarship';
+import { scholarshipClient } from '../../services/scholarshipClient';
+import { apiFetchRaw } from '../../services/apiClient';
 
 interface ScholarshipAdminModalProps {
   isOpen: boolean;
@@ -41,11 +43,13 @@ export const ScholarshipAdminModal: React.FC<ScholarshipAdminModalProps> = ({
   scholarships,
   onRefreshData,
 }) => {
-  const [adminTab, setAdminTab] = useState<'submissions' | 'reports' | 'database' | 'ai-extractor' | 'change-detection'>('submissions');
+  type AdminTabId = 'submissions' | 'reports' | 'database' | 'ai-extractor' | 'change-detection';
+  const [adminTab, setAdminTab] = useState<AdminTabId>('submissions');
   const [submissions, setSubmissions] = useState<OrganizationSubmission[]>([]);
   const [reports, setReports] = useState<UserErrorReport[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // AI Extraction state
   const [rawText, setRawText] = useState(
@@ -57,7 +61,7 @@ Fields: Engineering, Information Technology, Business Administration, Humanities
 Application Deadline: June 15, 2026.
 Application forms must be submitted through Ministry of Education, Youth and Sport (MoEYS).`
   );
-  const [extractedResult, setExtractedResult] = useState<any>(null);
+  const [extractedResult, setExtractedResult] = useState<Record<string, unknown> | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
 
   // Change Detection simulation
@@ -84,14 +88,12 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
   const loadAdminData = async () => {
     setIsLoading(true);
     try {
-      const [subRes, repRes] = await Promise.all([
-        fetch('/api/scholarships/submissions/all'),
-        fetch('/api/scholarships/reports/all'),
+      const [subs, reps] = await Promise.all([
+        scholarshipClient.listSubmissions(),
+        scholarshipClient.listErrorReports(),
       ]);
-      const subData = await subRes.json();
-      const repData = await repRes.json();
-      if (subData.success) setSubmissions(subData.submissions || []);
-      if (repData.success) setReports(repData.reports || []);
+      setSubmissions(subs);
+      setReports(reps);
     } catch (err) {
       console.error('Failed to load admin data:', err);
     } finally {
@@ -100,99 +102,74 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
   };
 
   const notifySuccess = (msg: string) => {
+    setActionError(null);
     setActionSuccess(msg);
     setTimeout(() => setActionSuccess(null), 3000);
   };
 
+  const notifyError = (err: unknown, fallback: string) => {
+    setActionSuccess(null);
+    setActionError(err instanceof Error ? err.message : fallback);
+  };
+
   const handleApproveSubmission = async (subId: string) => {
     try {
-      const res = await fetch(`/api/scholarships/submissions/${subId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'approve' }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        notifySuccess('Submission approved & published with verified status!');
-        loadAdminData();
-        onRefreshData();
-      }
+      await scholarshipClient.reviewSubmission(subId, 'approve');
+      notifySuccess('Submission approved & published with verified status!');
+      void loadAdminData();
+      onRefreshData();
     } catch (err) {
-      console.error(err);
+      notifyError(err, 'Failed to approve submission.');
     }
   };
 
   const handleRejectSubmission = async (subId: string) => {
     try {
-      const res = await fetch(`/api/scholarships/submissions/${subId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'reject', reviewNotes: 'Could not verify official domain' }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        notifySuccess('Submission marked as rejected.');
-        loadAdminData();
-      }
+      await scholarshipClient.reviewSubmission(subId, 'reject', 'Could not verify official domain');
+      notifySuccess('Submission marked as rejected.');
+      void loadAdminData();
     } catch (err) {
-      console.error(err);
+      notifyError(err, 'Failed to reject submission.');
     }
   };
 
   const handleResolveReport = async (repId: string, applyFix: boolean) => {
     try {
-      const res = await fetch(`/api/scholarships/reports/${repId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: 'Verified & Resolved',
-          applyCorrectionToScholarship: applyFix,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        notifySuccess(applyFix ? 'Report resolved and correction applied to database!' : 'Report resolved.');
-        loadAdminData();
-        onRefreshData();
-      }
+      await scholarshipClient.resolveErrorReport(repId, applyFix ? 'Verified & Fixed' : 'Dismissed');
+      notifySuccess('Report resolved.');
+      void loadAdminData();
+      onRefreshData();
     } catch (err) {
-      console.error(err);
+      notifyError(err, 'Failed to resolve report.');
     }
   };
 
   const handleVerifyScholarship = async (id: string) => {
     try {
-      const res = await fetch(`/api/scholarships/${id}/verify`, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        notifySuccess('Scholarship verified and timestamp refreshed!');
-        onRefreshData();
-      }
+      await scholarshipClient.verifyScholarship(id);
+      notifySuccess('Scholarship verified and timestamp refreshed!');
+      onRefreshData();
     } catch (err) {
-      console.error(err);
+      notifyError(err, 'Failed to verify scholarship.');
     }
   };
 
   const handleDeleteScholarship = async (id: string) => {
     if (!confirm('Are you sure you want to delete this scholarship entry?')) return;
     try {
-      const res = await fetch(`/api/scholarships/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) {
-        notifySuccess('Scholarship removed from database.');
-        onRefreshData();
-      }
+      await apiFetchRaw(`/api/scholarships/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      notifySuccess('Scholarship removed from database.');
+      onRefreshData();
     } catch (err) {
-      console.error(err);
+      notifyError(err, 'Failed to delete scholarship.');
     }
   };
 
   const handleCreateNewScholarship = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/scholarships', {
+      await apiFetchRaw('/api/scholarships', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newSchName,
           provider: newSchProvider,
@@ -200,38 +177,32 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
           region: newSchRegion,
           fundingType: newSchFunding,
           deadline: newSchDeadline,
-          totalEstimatedValueUSD: Number(newSchValue) || 20000,
+          totalEstimatedValueUSD: newSchValue ? Number(newSchValue) : null,
           applicationLink: newSchLink,
           overview: `Official scholarship provided by ${newSchProvider}.`,
         }),
       });
-      const data = await res.json();
-      if (data.success) {
-        notifySuccess('New scholarship published successfully!');
-        setShowAddForm(false);
-        setNewSchName('');
-        setNewSchProvider('');
-        onRefreshData();
-      }
+      notifySuccess('New scholarship published successfully!');
+      setShowAddForm(false);
+      setNewSchName('');
+      setNewSchProvider('');
+      onRefreshData();
     } catch (err) {
-      console.error(err);
+      notifyError(err, 'Failed to publish scholarship.');
     }
   };
 
   const handleRunAiExtraction = async () => {
     setIsExtracting(true);
+    setActionError(null);
     try {
-      const res = await fetch('/api/scholarships/ai-extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rawText }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setExtractedResult(data.extractedData);
-      }
+      const res = await apiFetchRaw<{ success: boolean; extractedData?: Record<string, unknown>; data?: Record<string, unknown> }>(
+        '/api/scholarships/ai-extract',
+        { method: 'POST', body: JSON.stringify({ rawText }) }
+      );
+      setExtractedResult(res.extractedData || res.data || null);
     } catch (err) {
-      console.error('AI extraction error:', err);
+      notifyError(err, 'AI extraction failed.');
     } finally {
       setIsExtracting(false);
     }
@@ -239,19 +210,13 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
 
   const handleRunChangeDetection = async () => {
     setIsCheckingChanges(true);
+    setActionError(null);
     try {
-      const res = await fetch('/api/scholarships/check-updates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setChangeDetectionLog(data.message);
-        onRefreshData();
-      }
+      const data = await scholarshipClient.checkUpdates(scholarships[0]?.id || 'sch-chevening-uk');
+      setChangeDetectionLog(data.message);
+      onRefreshData();
     } catch (err) {
-      console.error(err);
+      notifyError(err, 'Source check failed.');
     } finally {
       setIsCheckingChanges(false);
     }
@@ -296,28 +261,36 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
           </button>
         </div>
 
-        {/* Global Toast Message */}
+        {/* Global Toast Messages */}
         {actionSuccess && (
           <div className="bg-emerald-600 text-white px-6 py-2.5 text-xs font-bold flex items-center gap-2 shrink-0 animate-fadeIn">
             <CheckCircle2 className="w-4 h-4" />
             <span>{actionSuccess}</span>
           </div>
         )}
+        {actionError && (
+          <div className="bg-rose-600 text-white px-6 py-2.5 text-xs font-bold flex items-center gap-2 shrink-0">
+            <AlertTriangle className="w-4 h-4" />
+            <span>{actionError}</span>
+          </div>
+        )}
 
         {/* Nav Tabs */}
         <div className="flex border-b border-slate-200 px-6 bg-slate-50 shrink-0 overflow-x-auto no-scrollbar gap-2 pt-2">
-          {[
-            { id: 'submissions', label: 'Organization Submissions', badge: pendingSubmissionsCount, icon: Building2 },
-            { id: 'reports', label: 'User Error Reports', badge: pendingReportsCount, icon: AlertTriangle },
-            { id: 'database', label: `Database (${scholarships.length})`, badge: null, icon: Database },
-            { id: 'ai-extractor', label: 'AI Data Collection Pipeline', badge: null, icon: Sparkles },
-            { id: 'change-detection', label: 'Change Detection & Auditing', badge: null, icon: RefreshCw },
-          ].map((tab) => {
+          {(
+            [
+              { id: 'submissions', label: 'Organization Submissions', badge: pendingSubmissionsCount, icon: Building2 },
+              { id: 'reports', label: 'User Error Reports', badge: pendingReportsCount, icon: AlertTriangle },
+              { id: 'database', label: `Database (${scholarships.length})`, badge: null, icon: Database },
+              { id: 'ai-extractor', label: 'AI Data Collection Pipeline', badge: null, icon: Sparkles },
+              { id: 'change-detection', label: 'Change Detection & Auditing', badge: null, icon: RefreshCw },
+            ] as Array<{ id: AdminTabId; label: string; badge: number | null; icon: React.ComponentType<{ className?: string }> }>
+          ).map((tab) => {
             const Icon = tab.icon;
             return (
               <button
                 key={tab.id}
-                onClick={() => setAdminTab(tab.id as any)}
+                onClick={() => setAdminTab(tab.id)}
                 className={`py-3 px-3 text-xs font-bold whitespace-nowrap border-b-2 flex items-center gap-1.5 transition-colors ${
                   adminTab === tab.id
                     ? 'border-emerald-600 text-emerald-800 bg-white'
@@ -556,7 +529,7 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
                       <label className="block text-slate-700 font-semibold mb-1">Region</label>
                       <select
                         value={newSchRegion}
-                        onChange={(e) => setNewSchRegion(e.target.value as any)}
+                        onChange={(e) => setNewSchRegion(e.target.value as ScholarshipRegion)}
                         className="w-full p-2 bg-white rounded-lg border border-slate-300 text-slate-900"
                       >
                         <option value="USA">USA</option>

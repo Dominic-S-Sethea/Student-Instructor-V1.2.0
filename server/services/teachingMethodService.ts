@@ -38,7 +38,9 @@ export interface MethodComparisonSummary {
 }
 
 export class TeachingMethodService {
-  private db = getDatabase();
+  private get db() {
+    return getDatabase();
+  }
 
   public getBenchmarks(): TeachingMethodBenchmark[] {
     const rows = this.db.prepare(`

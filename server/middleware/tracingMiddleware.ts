@@ -11,10 +11,16 @@ export interface TraceContext {
   userId?: string;
 }
 
+const SAFE_TRACE_HEADER_RE = /^[a-zA-Z0-9._-]{1,64}$/;
+
+function sanitizeTraceHeader(value: unknown): string | null {
+  return typeof value === "string" && SAFE_TRACE_HEADER_RE.test(value) ? value : null;
+}
+
 export function traceMiddleware(req: any, res: any, next: () => void): void {
-  const traceId = req.headers["x-trace-id"] || randomUUID();
+  const traceId = sanitizeTraceHeader(req.headers["x-trace-id"]) || randomUUID();
   const spanId = randomUUID();
-  const parentSpanId = req.headers["x-parent-span-id"] || traceId;
+  const parentSpanId = sanitizeTraceHeader(req.headers["x-parent-span-id"]) || traceId;
 
   req.traceId = traceId;
   req.spanId = spanId;
@@ -27,10 +33,11 @@ export function traceMiddleware(req: any, res: any, next: () => void): void {
 }
 
 export function getTraceContext(req: any): TraceContext {
+  const fallbackTraceId = req.traceId || sanitizeTraceHeader(req.headers["x-trace-id"]) || randomUUID();
   return {
-    traceId: req.traceId || req.headers["x-trace-id"] || randomUUID(),
+    traceId: fallbackTraceId,
     spanId: req.spanId || randomUUID(),
-    parentSpanId: req.parentSpanId || req.headers["x-parent-span-id"] || req.traceId,
+    parentSpanId: req.parentSpanId || sanitizeTraceHeader(req.headers["x-parent-span-id"]) || fallbackTraceId,
     userId: req.user?.userId,
   };
 }

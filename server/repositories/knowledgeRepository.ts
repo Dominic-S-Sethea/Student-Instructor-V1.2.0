@@ -1,6 +1,12 @@
-import { getDatabase } from '../db/connection';
+import { getDatabase, getDbFilePath } from '../db/connection';
 import { KnowledgeDocument, KnowledgeEmbedding, KnowledgeCategory, RetrievedKnowledgeChunk } from '../types/aiTypes';
 import { embeddingService } from '../services/embeddingService';
+import { safeJsonParse } from '../utils/safeJson';
+
+type ParsedEmbedding = KnowledgeEmbedding & { parsedVector: number[] };
+
+let cachedDbPath: string | null = null;
+let cachedEmbeddings: ParsedEmbedding[] | null = null;
 
 export class KnowledgeRepository {
   /**
@@ -39,6 +45,7 @@ export class KnowledgeRepository {
       JSON.stringify(embedding.metadata),
       embedding.created_at
     );
+    cachedEmbeddings = null;
   }
 
   /**
@@ -66,7 +73,12 @@ export class KnowledgeRepository {
   /**
    * Retrieve all embeddings with parsed vectors
    */
-  public getAllEmbeddings(): Array<KnowledgeEmbedding & { parsedVector: number[] }> {
+  public getAllEmbeddings(): ParsedEmbedding[] {
+    const currentDbPath = getDbFilePath();
+    if (cachedEmbeddings && cachedDbPath === currentDbPath) {
+      return cachedEmbeddings;
+    }
+
     const db = getDatabase();
     const rows = db.prepare(`
       SELECT id, document_id, vector, metadata, created_at
@@ -79,28 +91,27 @@ export class KnowledgeRepository {
       created_at: string;
     }>;
 
-    return rows.map(r => {
-      let parsedVector: number[] = [];
-      let parsedMeta: any = {};
-      try {
-        parsedVector = JSON.parse(r.vector);
-      } catch {
-        parsedVector = [];
-      }
-      try {
-        parsedMeta = JSON.parse(r.metadata);
-      } catch {
-        parsedMeta = {};
-      }
+    const parsed: ParsedEmbedding[] = rows.map((r) => {
+      const parsedVector = safeJsonParse<number[]>(r.vector, []);
+      const rawMeta = safeJsonParse<Partial<KnowledgeEmbedding['metadata']>>(r.metadata, {});
+      const metadata: KnowledgeEmbedding['metadata'] = {
+        ...rawMeta,
+        title: typeof rawMeta.title === 'string' ? rawMeta.title : '',
+        category: rawMeta.category ?? 'Education Science',
+        source: rawMeta.source ?? null,
+      };
       return {
         id: r.id,
         document_id: r.document_id,
         vector: parsedVector,
         parsedVector,
-        metadata: parsedMeta,
-        created_at: r.created_at
+        metadata,
+        created_at: r.created_at,
       };
     });
+    cachedDbPath = currentDbPath;
+    cachedEmbeddings = parsed;
+    return parsed;
   }
 
   /**
@@ -118,31 +129,37 @@ export class KnowledgeRepository {
       return [];
     }
 
-    // Filter by category if requested
     const candidates = categoryFilter
-      ? allEmbeddings.filter(e => e.metadata.category === categoryFilter)
+      ? allEmbeddings.filter((e) => e.metadata.category === categoryFilter)
       : allEmbeddings;
 
-    const scored = candidates.map(item => ({
+    const scored = candidates.map((item) => ({
       item,
-      vector: item.parsedVector,
-      similarity: embeddingService.cosineSimilarity(queryVector, item.parsedVector)
+      similarity: embeddingService.cosineSimilarity(queryVector, item.parsedVector),
     }));
 
     scored.sort((a, b) => b.similarity - a.similarity);
     const topScored = scored.slice(0, topK);
+    if (topScored.length === 0) return [];
 
-    // Retrieve document content for top matches
+    const db = getDatabase();
+    const docIds = topScored.map((t) => t.item.document_id);
+    const placeholders = docIds.map(() => '?').join(', ');
+    const docs = db
+      .prepare(`SELECT * FROM knowledge_documents WHERE id IN (${placeholders})`)
+      .all(...docIds) as unknown as KnowledgeDocument[];
+    const docMap = new Map(docs.map((d) => [d.id, d]));
+
     return topScored.map(({ item, similarity }) => {
-      const doc = this.getDocumentById(item.document_id);
-      const snippet = doc ? (doc.content.length > 300 ? doc.content.slice(0, 300) + '...' : doc.content) : '';
+      const doc = docMap.get(item.document_id);
+      const snippet = doc ? (doc.content.length > 300 ? `${doc.content.slice(0, 300)}...` : doc.content) : '';
       return {
         documentId: item.document_id,
         title: item.metadata.title || doc?.title || 'Knowledge Reference',
         category: (item.metadata.category || doc?.category || 'Education Science') as KnowledgeCategory,
         snippet,
         source: item.metadata.source || doc?.source || null,
-        similarityScore: Number(similarity.toFixed(4))
+        similarityScore: Number(similarity.toFixed(4)),
       };
     });
   }

@@ -45,7 +45,9 @@ export interface RetentionForecast {
 }
 
 export class LearningScienceEngine {
-  private db = getDatabase();
+  private get db() {
+    return getDatabase();
+  }
 
   /**
    * Standard default BKT parameters calibrated on STEM education research

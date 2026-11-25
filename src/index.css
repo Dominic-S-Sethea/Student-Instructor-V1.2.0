@@ -1,1 +1,75 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --study-canvas: #f8fafc;
+  --study-surface: #ffffff;
+  --study-surface-muted: #f1f5f9;
+  --study-border: #e2e8f0;
+  --study-ink: #0f172a;
+  --study-ink-muted: #475569;
+  color-scheme: light;
+}
+
+.dark {
+  --study-canvas: #0f172a;
+  --study-surface: #1e293b;
+  --study-surface-muted: #0b1220;
+  --study-border: #334155;
+  --study-ink: #f1f5f9;
+  --study-ink-muted: #94a3b8;
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    font-family: 'Plus Jakarta Sans', 'Kantumruy Pro', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    scroll-behavior: smooth;
+  }
+
+  html[lang='km'] body {
+    font-family: 'Kantumruy Pro', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    line-height: 1.7;
+  }
+
+  body {
+    background-color: var(--study-canvas);
+    color: var(--study-ink);
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+
+  :focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.study-glass-card {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.92) 100%);
+  box-shadow: 0 12px 28px -10px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.04);
+}
+
+.dark .study-glass-card {
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.96) 0%, rgba(15, 23, 42, 0.94) 100%);
+  box-shadow: 0 14px 32px -12px rgba(2, 6, 23, 0.55), 0 2px 6px rgba(2, 6, 23, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

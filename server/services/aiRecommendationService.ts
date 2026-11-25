@@ -165,14 +165,25 @@ export class AIRecommendationService {
     recommendationId: string,
     action: 'clicked' | 'completed' | 'dismissed',
     rating?: number,
-    comments?: string
-  ): { success: boolean; recommendation: AIRecommendation | null } {
+    comments?: string,
+    actorUserId?: string,
+    actorRole?: string
+  ): { success: boolean; forbidden?: boolean; recommendation: AIRecommendation | null } {
     const db = getDatabase();
     const now = new Date().toISOString();
 
     const rec = db.prepare('SELECT * FROM ai_recommendation_events WHERE id = ?').get(recommendationId) as any;
     if (!rec) {
       return { success: false, recommendation: null };
+    }
+
+    if (actorUserId && actorRole !== 'admin' && rec.student_id !== actorUserId) {
+      const profileRow = db
+        .prepare('SELECT user_id FROM student_profiles WHERE id = ?')
+        .get(rec.student_id) as { user_id?: string } | undefined;
+      if (profileRow?.user_id !== actorUserId) {
+        return { success: false, forbidden: true, recommendation: null };
+      }
     }
 
     const newStatus = action;

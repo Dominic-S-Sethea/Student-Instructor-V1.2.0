@@ -1,6 +1,15 @@
+import crypto from 'node:crypto';
 import { Router, Request, Response } from 'express';
+import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
+import { PrivacyService } from '../services/privacyService';
+import { AnalyticsRepository } from '../repositories/analyticsRepository';
+import { validate } from '../middleware/validationMiddleware';
+import { DigitalWorldChatSchema } from '../validators/apiSchemas';
+import { safeErrorMessage } from '../utils/httpErrors';
 
 const router = Router();
+const privacyService = new PrivacyService();
+const analyticsRepo = new AnalyticsRepository();
 
 // ==========================================================
 // CDES DIGITAL CAMPUS WORLD - REPOSITORIES & TYPES
@@ -381,45 +390,62 @@ const EDUCATIONAL_GAMES: EducationalGameDef[] = [
   },
 ];
 
-let companionMithState: AICompanionMithState = {
+const DEFAULT_COMPANION_TEMPLATE: AICompanionMithState = {
   name: 'Mith',
   khmerName: 'មិត្ត (Mith)',
   title: 'Socratic Education Companion & Life Guide',
   archetype: 'socratic_mentor',
-  affinityLevel: 4,
-  affinityXp: 840,
-  currentMood: 'motivational',
+  affinityLevel: 1,
+  affinityXp: 0,
+  currentMood: 'attentive',
   dialogueHistory: [
     {
-      id: 'msg-1',
+      id: 'msg-welcome',
       speaker: 'mith',
-      text: 'Good afternoon, Dara! I noticed you completed 3 differential calculus exercises yesterday. Your perseverance is paying off.',
-      timestamp: 'Today at 08:30 AM',
+      text: 'Welcome to the CDES Digital Campus! What subject or scholarship goal would you like to explore today?',
+      timestamp: 'Session start',
       emotionalTone: 'encouraging',
-    },
-    {
-      id: 'msg-2',
-      speaker: 'student',
-      text: 'I still struggle with optimization problems where we have to find minimum cost of a cylinder container.',
-      timestamp: 'Today at 08:32 AM',
-    },
-    {
-      id: 'msg-3',
-      speaker: 'mith',
-      text: 'That is a classic! Remember: express the cost in terms of a single variable using the volume constraint first. Would you like to test it inside the STEM Laboratory simulation?',
-      timestamp: 'Today at 08:33 AM',
-      emotionalTone: 'socratic_hint',
     },
   ],
   activeGuidanceAdvice: {
-    headlineEn: 'Master Cylinder Optimization Limits',
-    headlineKm: 'ជំនាញស្វែងរកតម្លៃអប្បបរមានៃផ្ទៃស៊ីឡាំង',
-    rationale: 'Based on your recent practice on Bac II Math, solving one 3D surface area problem will elevate your BKT Mastery to 88%.',
+    headlineEn: 'Explore Verified STEM & Scholarship Roadmaps',
+    headlineKm: 'ស្វែងយល់ពីផែនទីសិក្សា STEM និងអាហារូបករណ៍',
+    rationale: 'Start a focused dialogue or simulation lab to build personalized mastery checkpoints.',
     recommendedZone: 'stem_laboratory',
     recommendedGameOrModule: 'quantum_stem_lab',
     meritBonus: 40,
   },
 };
+
+const MAX_COMPANION_USERS = 200;
+const MAX_DIALOGUE_HISTORY = 40;
+const companionStatesByUser = new Map<string, AICompanionMithState>();
+
+function cloneDefaultCompanion(): AICompanionMithState {
+  return {
+    ...DEFAULT_COMPANION_TEMPLATE,
+    dialogueHistory: DEFAULT_COMPANION_TEMPLATE.dialogueHistory.map((m) => ({ ...m })),
+    activeGuidanceAdvice: { ...DEFAULT_COMPANION_TEMPLATE.activeGuidanceAdvice },
+  };
+}
+
+function getOrCreateUserCompanion(userId: string): AICompanionMithState {
+  const existing = companionStatesByUser.get(userId);
+  if (existing) {
+    companionStatesByUser.delete(userId);
+    companionStatesByUser.set(userId, existing);
+    return existing;
+  }
+  if (companionStatesByUser.size >= MAX_COMPANION_USERS) {
+    const oldestKey = companionStatesByUser.keys().next().value;
+    if (oldestKey !== undefined) {
+      companionStatesByUser.delete(oldestKey);
+    }
+  }
+  const fresh = cloneDefaultCompanion();
+  companionStatesByUser.set(userId, fresh);
+  return fresh;
+}
 
 // ==========================================================
 // API ENDPOINTS
@@ -427,9 +453,9 @@ let companionMithState: AICompanionMithState = {
 
 /**
  * GET /api/digital-world/overview
- * Returns digital world meta, zones, active population, weather, and games catalogue.
+ * Returns digital world meta, zones, active population, weather, and neutral companion template.
  */
-router.get('/overview', (req: Request, res: Response) => {
+router.get('/overview', (_req: Request, res: Response) => {
   try {
     const totalActiveUsers = DIGITAL_ZONES.reduce((acc, z) => acc + z.activeLearnersCount, 0);
 
@@ -450,12 +476,11 @@ router.get('/overview', (req: Request, res: Response) => {
         totalZonesCount: DIGITAL_ZONES.length,
         zones: DIGITAL_ZONES,
         games: EDUCATIONAL_GAMES,
-        aiCompanion: companionMithState,
+        aiCompanion: cloneDefaultCompanion(),
       },
     });
-  } catch (err: any) {
-    console.error('Error fetching digital world overview:', err);
-    return res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to fetch digital world overview', 500) });
   }
 });
 
@@ -476,8 +501,8 @@ router.get('/zones/:zoneKey', (req: Request, res: Response) => {
       success: true,
       data: zone,
     });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to load zone', 500) });
   }
 });
 
@@ -494,22 +519,19 @@ router.get('/games', (_req: Request, res: Response) => {
 
 /**
  * POST /api/digital-world/companion/chat
- * Interacts with AI Companion "Mith" (Socratic guidance).
+ * Interacts with user-scoped AI Companion "Mith" (Socratic guidance).
  */
-router.post('/companion/chat', (req: Request, res: Response) => {
+router.post('/companion/chat', authenticateToken, validate(DigitalWorldChatSchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { message } = req.body;
-    if (!message || typeof message !== 'string') {
-      return res.status(400).json({ success: false, error: 'Message string is required' });
-    }
+    const { message } = req.body as { message: string };
+    const companionState = getOrCreateUserCompanion(req.user!.userId);
 
-    // Append student message
-    const studentMsgId = `msg-${Date.now()}-std`;
-    companionMithState.dialogueHistory.push({
+    const studentMsgId = `msg-${crypto.randomUUID()}`;
+    companionState.dialogueHistory.push({
       id: studentMsgId,
       speaker: 'student',
       text: message,
-      timestamp: 'Just now',
+      timestamp: new Date().toISOString(),
     });
 
     // Dynamic Socratic responses based on keywords
@@ -528,42 +550,44 @@ router.post('/companion/chat', (req: Request, res: Response) => {
       emotionalTone = 'socratic_hint';
     }
 
-    const mithMsgId = `msg-${Date.now()}-mith`;
-    companionMithState.dialogueHistory.push({
+    const mithMsgId = `msg-${crypto.randomUUID()}`;
+    companionState.dialogueHistory.push({
       id: mithMsgId,
       speaker: 'mith',
       text: replyText,
-      timestamp: 'Just now',
+      timestamp: new Date().toISOString(),
       emotionalTone,
     });
+    if (companionState.dialogueHistory.length > MAX_DIALOGUE_HISTORY) {
+      companionState.dialogueHistory.splice(0, companionState.dialogueHistory.length - MAX_DIALOGUE_HISTORY);
+    }
 
-    // Increase affinity slightly
-    companionMithState.affinityXp += 25;
-    if (companionMithState.affinityXp >= 1000) {
-      companionMithState.affinityLevel += 1;
-      companionMithState.affinityXp = 0;
+    companionState.affinityXp += 25;
+    if (companionState.affinityXp >= 1000) {
+      companionState.affinityLevel += 1;
+      companionState.affinityXp = 0;
     }
 
     return res.json({
       success: true,
       data: {
         reply: replyText,
-        companionState: companionMithState,
+        companionState,
       },
     });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Companion chat failed', 500) });
   }
 });
 
 /**
  * POST /api/digital-world/game-telemetry
- * Telemetry endpoint recording educational simulation events for Student Intelligence Platform.
+ * Telemetry endpoint recording educational simulation events into SQLite when analytics consent is active.
  */
-router.post('/game-telemetry', (req: Request, res: Response) => {
+router.post('/game-telemetry', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
   try {
+    const actingStudentId = req.user!.userId;
     const {
-      studentId = 'usr-student-01',
       gameKey,
       eventType,
       trialCount = 1,
@@ -571,29 +595,62 @@ router.post('/game-telemetry', (req: Request, res: Response) => {
       priorProbability = 0.5,
       posteriorProbability = 0.75,
       gameStatePayload = {},
-    } = req.body;
+    } = (req.body || {}) as Record<string, unknown>;
+
+    if (!privacyService.canCollectAnalytics(actingStudentId)) {
+      return res.json({
+        success: true,
+        persisted: false,
+        reason: 'consent_disabled',
+        message: 'Telemetry skipped under current student privacy consent.',
+      });
+    }
+
+    const safePrior = typeof priorProbability === 'number' && Number.isFinite(priorProbability) ? priorProbability : 0.5;
+    const safePosterior = typeof posteriorProbability === 'number' && Number.isFinite(posteriorProbability) ? posteriorProbability : 0.75;
+    const safeTrials = typeof trialCount === 'number' && Number.isFinite(trialCount) ? Math.max(1, Math.trunc(trialCount)) : 1;
+    const safeGameId = typeof gameKey === 'string' && gameKey.trim() ? gameKey.trim().slice(0, 100) : 'digital_campus_sim';
+    const safeEventType = typeof eventType === 'string' && eventType.trim() ? eventType.trim().slice(0, 100) : 'simulation_step';
+    const safeSkill = typeof bktInferredSkill === 'string' && bktInferredSkill.trim() ? bktInferredSkill.trim().slice(0, 120) : 'kinematic_trajectory_calculation';
+
+    const saved = analyticsRepo.logGameEvent({
+      student_id: actingStudentId,
+      user_id: actingStudentId,
+      game_id: safeGameId,
+      level: safeTrials,
+      action: safeEventType,
+      score: Math.round(safePosterior * 100),
+      success: true,
+      metadata: {
+        bktInferredSkill: safeSkill,
+        priorProbability: safePrior,
+        posteriorProbability: safePosterior,
+        gameStatePayload: gameStatePayload && typeof gameStatePayload === 'object' ? gameStatePayload : {},
+      },
+    });
 
     const eventRecord = {
-      id: `telem-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      studentId,
-      gameKey,
-      eventType,
-      trialCount,
-      bktInferredSkill: bktInferredSkill || 'kinematic_trajectory_calculation',
-      priorProbability,
-      posteriorProbability,
-      gameStatePayload,
-      recordedAt: new Date().toISOString(),
+      id: saved.id,
+      studentId: actingStudentId,
+      gameKey: safeGameId,
+      eventType: safeEventType,
+      trialCount: safeTrials,
+      bktInferredSkill: safeSkill,
+      priorProbability: safePrior,
+      posteriorProbability: safePosterior,
+      gameStatePayload: gameStatePayload && typeof gameStatePayload === 'object' ? gameStatePayload : {},
+      recordedAt: saved.timestamp,
       studentIntelligenceLinked: true,
     };
 
     return res.json({
       success: true,
-      message: 'Telemetry logged and forwarded to Bayesian Knowledge Tracing engine.',
+      persisted: true,
+      message: 'Telemetry logged and persisted to analytics database.',
       data: eventRecord,
     });
-  } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Telemetry failed', 500) });
   }
 });
 

@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
-import { X, AlertTriangle, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { X, AlertTriangle, CheckCircle2, Lock } from 'lucide-react';
 import { ScholarshipItem, UserErrorReport } from '../../types/scholarship';
+import { scholarshipClient } from '../../services/scholarshipClient';
+import { useAuth } from '../../context/AuthContext';
+
+type ReportedField = UserErrorReport['reportedField'];
 
 interface ScholarshipErrorReportModalProps {
   scholarship: ScholarshipItem | null;
@@ -15,66 +19,46 @@ export const ScholarshipErrorReportModal: React.FC<ScholarshipErrorReportModalPr
   onClose,
   onReportSubmitted,
 }) => {
-  const [field, setField] = useState<'deadline' | 'eligibility' | 'link_broken' | 'funding' | 'other'>('deadline');
+  const { authenticated, user } = useAuth();
+  const [field, setField] = useState<ReportedField>('deadline');
   const [description, setDescription] = useState('');
   const [suggestedCorrection, setSuggestedCorrection] = useState('');
   const [officialSourceUrl, setOfficialSourceUrl] = useState('');
-  const [reporterEmail, setReporterEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState(false);
 
   if (!isOpen || !scholarship) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description.trim()) return;
+    if (!authenticated || !description.trim()) return;
 
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
-      const response = await fetch('/api/scholarships/report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scholarshipId: scholarship.id,
-          scholarshipName: scholarship.name,
-          reportedField: field,
-          description,
-          suggestedCorrection,
-          officialSourceUrl,
-          reporterEmail: reporterEmail || 'student@cambodia.edu.kh',
-        }),
-      });
-
-      const resData = await response.json();
-      if (resData.success) {
-        onReportSubmitted(resData.report);
-        setSuccessMsg(true);
-        setTimeout(() => {
-          setSuccessMsg(false);
-          onClose();
-        }, 1800);
-      }
-    } catch (err) {
-      console.error('Report submission error:', err);
-      // Fallback optimistic resolution
-      const fallbackReport: UserErrorReport = {
-        id: `rep-${Date.now()}`,
+      const resData = await scholarshipClient.reportError({
         scholarshipId: scholarship.id,
         scholarshipName: scholarship.name,
         reportedField: field,
-        description,
-        suggestedCorrection,
-        officialSourceUrl,
-        reporterEmail: reporterEmail || 'student@cambodia.edu.kh',
-        submittedAt: new Date().toISOString(),
-        status: 'Pending Review',
-      };
-      onReportSubmitted(fallbackReport);
+        description: description.trim(),
+        suggestedCorrection: suggestedCorrection.trim() || undefined,
+        officialSourceUrl: officialSourceUrl.trim() || undefined,
+      });
+
+      onReportSubmitted(resData.report);
       setSuccessMsg(true);
+      setDescription('');
+      setSuggestedCorrection('');
+      setOfficialSourceUrl('');
       setTimeout(() => {
         setSuccessMsg(false);
         onClose();
-      }, 1800);
+      }, 1500);
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error ? err.message : 'Unable to submit error report. Please check your session and try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -87,8 +71,7 @@ export const ScholarshipErrorReportModal: React.FC<ScholarshipErrorReportModalPr
       aria-modal="true"
       id="scholarship-error-report-modal"
     >
-      <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden">
-        {/* Header */}
+      <div className="bg-white dark:bg-slate-900 dark:text-slate-100 rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden">
         <div className="bg-rose-50 border-b border-rose-100 p-5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-rose-100 text-rose-700">
@@ -96,26 +79,29 @@ export const ScholarshipErrorReportModal: React.FC<ScholarshipErrorReportModalPr
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900">Report Inaccurate Information</h3>
-              <p className="text-xs text-rose-700 font-medium">Help maintain 100% verified scholarship data</p>
+              <p className="text-xs text-rose-700 font-medium">
+                Report outdated or inaccurate scholarship details for editorial review
+              </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-white"
+            aria-label="Close error report modal"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Content */}
         {successMsg ? (
           <div className="p-8 text-center space-y-3">
             <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-6 h-6" />
             </div>
-            <h4 className="text-base font-bold text-slate-900">Thank you for reporting!</h4>
+            <h4 className="text-base font-bold text-slate-900">Report recorded for review</h4>
             <p className="text-xs text-slate-600 max-w-sm mx-auto">
-              Our editorial verification team will review this against the official source and update the scholarship record within 24 hours.
+              Our editorial verification team will review this report against the official source before updating the scholarship record.
             </p>
           </div>
         ) : (
@@ -125,13 +111,26 @@ export const ScholarshipErrorReportModal: React.FC<ScholarshipErrorReportModalPr
               <strong className="text-slate-900 font-semibold">{scholarship.name}</strong>
             </div>
 
+            {!authenticated && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                <Lock className="w-4 h-4 shrink-0 mt-0.5 text-amber-700" />
+                <span>Sign in is required to submit a scholarship error report so editorial updates can be audited.</span>
+              </div>
+            )}
+
+            {submitError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-800">
+                {submitError}
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
                 Which information is inaccurate or changed?
               </label>
               <select
                 value={field}
-                onChange={(e) => setField(e.target.value as any)}
+                onChange={(e) => setField(e.target.value as ReportedField)}
                 className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
               >
                 <option value="deadline">Deadline changed or expired</option>
@@ -182,18 +181,11 @@ export const ScholarshipErrorReportModal: React.FC<ScholarshipErrorReportModalPr
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Your Email (Optional, to notify you when verified)
-              </label>
-              <input
-                type="email"
-                value={reporterEmail}
-                onChange={(e) => setReporterEmail(e.target.value)}
-                placeholder="student@example.com"
-                className="w-full text-xs rounded-xl border border-slate-300 p-2.5 text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
-              />
-            </div>
+            {authenticated && user?.email && (
+              <div className="text-[11px] text-slate-500">
+                Reporting as <strong className="text-slate-700">{user.email}</strong>
+              </div>
+            )}
 
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
               <button
@@ -205,7 +197,7 @@ export const ScholarshipErrorReportModal: React.FC<ScholarshipErrorReportModalPr
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || !description.trim()}
+                disabled={!authenticated || isSubmitting || !description.trim()}
                 className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50 transition-all shadow-xs"
               >
                 {isSubmitting ? 'Submitting...' : 'Submit Report'}

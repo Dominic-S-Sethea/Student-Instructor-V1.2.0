@@ -4,6 +4,10 @@ dist/
 coverage/
 .DS_Store
 *.log
+*-tsc.txt
+.py_write_test.txt
+*.tmp
+audit-current.json
 .env*
 !.env.example
 *.db

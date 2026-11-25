@@ -1,4 +1,5 @@
 import { getDatabase } from '../db/connection';
+import { PrivacyService } from './privacyService';
 import {
   AgentKey,
   MultiAgentMetadata,
@@ -15,6 +16,8 @@ import {
 } from '../types/aiAgent2Types';
 
 export class AIAgent2Service {
+  private privacy = new PrivacyService();
+
   /**
    * 1. Multi-Agent Registry (Task 2)
    */
@@ -117,6 +120,40 @@ export class AIAgent2Service {
    * 2. 7-Pillar Long-Term Student Memory System (Task 3)
    */
   public getLongTermMemory(studentId: string): StudentLongTermMemory {
+    if (!this.privacy.canUseAIMemory(studentId)) {
+      return {
+        studentId,
+        identity: {
+          fullName: '',
+          educationTier: '',
+          schoolName: '',
+          primaryLanguage: 'km',
+          learningDisposition: '',
+          socioGeographicContext: '',
+        },
+        goals: {
+          shortTermExamTarget: '',
+          longTermUniversityAspiration: '',
+          targetCareerDomain: '',
+          scholarshipAspiration: '',
+        },
+        interests: [],
+        strengths: [],
+        weaknesses: [],
+        learningPatterns: {
+          pacingVelocity: 'deliberate_reflective',
+          peakFocusHour: '',
+          preferredExplanationStyle: 'visual',
+          gritPersistenceRating: 0,
+          errorRecoverySpeedSeconds: 0,
+        },
+        achievements: [],
+        memoryConfidenceScore: 0,
+        lastReflectionAt: '',
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
     const db = getDatabase();
     const row = db.prepare('SELECT * FROM student_longterm_memory_profiles WHERE student_id = ?').get(studentId) as any;
 
@@ -140,61 +177,61 @@ export class AIAgent2Service {
       }
     }
 
-    // Default synthesized memory for student
-    const defaultMemory: StudentLongTermMemory = {
+    // Build neutral initial memory from real student_profiles row without writing synthetic demo records on GET
+    const profileRow = db
+      .prepare(
+        'SELECT name, education_level, school, university, major, language, location, target_career FROM student_profiles WHERE user_id = ?'
+      )
+      .get(studentId) as
+      | {
+          name?: string;
+          education_level?: string;
+          school?: string | null;
+          university?: string | null;
+          major?: string | null;
+          language?: string;
+          location?: string | null;
+          target_career?: string | null;
+        }
+      | undefined;
+
+    return {
       studentId,
       identity: {
-        fullName: 'Dara Chan',
-        educationTier: 'Grade 12 (MoEYS Bac II Candidate)',
-        schoolName: 'Preah Sisowath High School / New Generation School',
-        primaryLanguage: 'km',
-        learningDisposition: 'Empirical, analytical, resilient under challenge',
-        socioGeographicContext: 'Phnom Penh Urban Education Cluster'
+        fullName: profileRow?.name || '',
+        educationTier: profileRow?.education_level || '',
+        schoolName: profileRow?.school || profileRow?.university || '',
+        primaryLanguage: profileRow?.language === 'en' ? 'en' : 'km',
+        learningDisposition: '',
+        socioGeographicContext: profileRow?.location || '',
       },
       goals: {
-        shortTermExamTarget: 'Grade A (Score ≥ 90%) in Bac II Mathematics & Physics',
-        longTermUniversityAspiration: 'CADT Computer Science / ITC Automation Systems Engineering',
-        targetCareerDomain: 'Cloud Infrastructure & Applied AI Systems in Southeast Asia',
-        scholarshipAspiration: 'MPTC Techo Digital Talent 100% Full Scholarship'
+        shortTermExamTarget: '',
+        longTermUniversityAspiration: profileRow?.university || profileRow?.major || '',
+        targetCareerDomain: profileRow?.target_career || '',
+        scholarshipAspiration: '',
       },
-      interests: [
-        { id: 'int-1', topic: 'Distributed Systems & Microservices', category: 'Digital Tech', weight: 0.94, discoveredVia: 'STEM Lab Activity' },
-        { id: 'int-2', topic: 'Khmer Baray Hydraulic Civil Engineering', category: 'STEM', weight: 0.88, discoveredVia: 'Angkor Adventure Simulation' },
-        { id: 'int-3', topic: 'Quantum Logic Gates & Silicon Architecture', category: 'STEM', weight: 0.82, discoveredVia: 'Quantum STEM Sandbox' },
-        { id: 'int-4', topic: 'Renewable Solar Microgrid Economics', category: 'Entrepreneurship', weight: 0.76, discoveredVia: 'Phnom Penh 2035 Smart City' }
-      ],
-      strengths: [
-        { id: 'str-1', competency: 'Differential & Integral Calculus', subject: 'Mathematics', masteryPercentage: 92, evidenceSource: 'MoEYS Bac II Mock Exam Q3: Limits & Derivatives' },
-        { id: 'str-2', competency: 'Kinematics & Projectile Vector Decomposition', subject: 'Physics', masteryPercentage: 89, evidenceSource: 'Animal Racing Simulation telemetry: 0.91 BKT posterior' },
-        { id: 'str-3', competency: 'Algorithmic Problem Decomposition', subject: 'Computer Science', masteryPercentage: 86, evidenceSource: 'Python WebGL code compilation test in Makerspace' }
-      ],
-      weaknesses: [
-        { id: 'wkn-1', misconceptionPattern: 'Sign errors in Redox titration half-reactions', subject: 'Chemistry', struggleFrequency: 4, remediationStatus: 'active' },
-        { id: 'wkn-2', misconceptionPattern: 'Confusing electric field intensity with electrical potential energy', subject: 'Physics', struggleFrequency: 3, remediationStatus: 'in_progress' }
-      ],
+      interests: [],
+      strengths: [],
+      weaknesses: [],
       learningPatterns: {
         pacingVelocity: 'deliberate_reflective',
-        peakFocusHour: '06:00 - 08:30 AM (Morning Alpha Cycle)',
+        peakFocusHour: '',
         preferredExplanationStyle: 'visual',
-        gritPersistenceRating: 88.5,
-        errorRecoverySpeedSeconds: 38
+        gritPersistenceRating: 0,
+        errorRecoverySpeedSeconds: 0,
       },
-      achievements: [
-        { id: 'ach-1', title: 'National Techo STEM Math Finalist Badge', awardedBy: 'MoEYS & CDES', credentialBadge: 'badge-gold-stem', unlockedAt: '2026-04-12' },
-        { id: 'ach-2', title: 'Angkor Hydraulic Engineering Certificate', awardedBy: 'ITC & CDES Research Lab', credentialBadge: 'badge-angkor-master', unlockedAt: '2026-06-20' },
-        { id: 'ach-3', title: '50-Day Spaced Repetition Discipline Beacon', awardedBy: 'CDES Learning Coach', credentialBadge: 'badge-habit-titan', unlockedAt: '2026-08-15' }
-      ],
-      memoryConfidenceScore: 91.5,
-      lastReflectionAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      achievements: [],
+      memoryConfidenceScore: profileRow ? 50 : 0,
+      lastReflectionAt: '',
+      updatedAt: new Date().toISOString(),
     };
-
-    // Save default initial memory
-    this.saveLongTermMemory(defaultMemory);
-    return defaultMemory;
   }
 
   public saveLongTermMemory(memory: StudentLongTermMemory): void {
+    if (!this.privacy.canUseAIMemory(memory.studentId)) {
+      return;
+    }
     const db = getDatabase();
     const now = new Date().toISOString();
     db.prepare(`
@@ -1090,8 +1127,11 @@ This is precisely a quadratic parabola $y = Ax - Bx^2$ where $B > 0$. Maximizing
     studentId: string,
     eventStage: 'conversation_initiated' | 'recommendation_delivered' | 'recommendation_accepted' | 'plan_milestone_completed' | 'academic_outcome_achieved',
     agentKey: AgentKey,
-    details: Record<string, any>
+    details: Record<string, unknown>
   ): void {
+    if (!this.privacy.canCollectAnalytics(studentId)) {
+      return;
+    }
     try {
       const db = getDatabase();
       const id = `evt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
@@ -1125,11 +1165,12 @@ This is precisely a quadratic parabola $y = Ax - Bx^2$ where $B > 0$. Maximizing
       // ignore
     }
 
-    const conversations = rows.filter(r => r.event_stage === 'conversation_initiated').length || 142;
-    const delivered = rows.filter(r => r.event_stage === 'recommendation_delivered').length || 118;
-    const accepted = rows.filter(r => r.event_stage === 'recommendation_accepted').length || 86;
-    const completed = rows.filter(r => r.event_stage === 'plan_milestone_completed').length || 64;
-    const outcomes = rows.filter(r => r.event_stage === 'academic_outcome_achieved').length || 48;
+    const conversations = rows.filter(r => r.event_stage === 'conversation_initiated').length;
+    const delivered = rows.filter(r => r.event_stage === 'recommendation_delivered').length;
+    const accepted = rows.filter(r => r.event_stage === 'recommendation_accepted').length;
+    const completed = rows.filter(r => r.event_stage === 'plan_milestone_completed').length;
+    const outcomes = rows.filter(r => r.event_stage === 'academic_outcome_achieved').length;
+    const pct = (part: number, whole: number): number => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 
     return {
       conversationsInitiated: conversations,
@@ -1138,11 +1179,11 @@ This is precisely a quadratic parabola $y = Ax - Bx^2$ where $B > 0$. Maximizing
       milestonesCompleted: completed,
       academicOutcomesAchieved: outcomes,
       conversionFunnel: [
-        { step: '1. Socratic Conversations', count: conversations, percentage: 100 },
-        { step: '2. Recommendations Delivered', count: delivered, percentage: Math.round((delivered / conversations) * 100) },
-        { step: '3. Recommendations Accepted', count: accepted, percentage: Math.round((accepted / delivered) * 100) },
-        { step: '4. Action Milestones Completed', count: completed, percentage: Math.round((completed / accepted) * 100) },
-        { step: '5. Academic Outcomes Achieved', count: outcomes, percentage: Math.round((outcomes / completed) * 100) }
+        { step: '1. Socratic Conversations', count: conversations, percentage: conversations > 0 ? 100 : 0 },
+        { step: '2. Recommendations Delivered', count: delivered, percentage: pct(delivered, conversations) },
+        { step: '3. Recommendations Accepted', count: accepted, percentage: pct(accepted, delivered) },
+        { step: '4. Action Milestones Completed', count: completed, percentage: pct(completed, accepted) },
+        { step: '5. Academic Outcomes Achieved', count: outcomes, percentage: pct(outcomes, completed) }
       ],
       recentEvents: rows.slice(0, 8).map(r => ({
         id: r.id,

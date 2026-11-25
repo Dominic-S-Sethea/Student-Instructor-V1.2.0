@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import path from 'path';
-import {defineConfig} from 'vite';
+import path from 'node:path';
+import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
@@ -11,11 +11,45 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      outDir: 'dist/public',
+      emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            const normalized = id.replace(/\\/g, '/');
+            if (normalized.includes('/node_modules/')) {
+              if (normalized.includes('/react/') || normalized.includes('/react-dom/')) {
+                return 'vendor-react';
+              }
+              if (normalized.includes('/motion/') || normalized.includes('/framer-motion/')) {
+                return 'vendor-motion';
+              }
+              if (normalized.includes('/react-markdown/') || normalized.includes('/remark') || normalized.includes('/unified')) {
+                return 'vendor-markdown';
+              }
+              if (normalized.includes('/firebase/') || normalized.includes('/@firebase/')) {
+                return 'vendor-firebase';
+              }
+              if (normalized.includes('/lucide-react/')) {
+                return 'vendor-icons';
+              }
+            }
+            if (normalized.includes('/shared/data/topUniversities/')) {
+              return 'data-top-universities';
+            }
+            if (normalized.includes('/shared/data/university')) {
+              return 'data-cambodia-universities';
+            }
+            if (normalized.includes('/shared/data/scholarshipData')) {
+              return 'data-scholarships';
+            }
+          },
+        },
+      },
+    },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
   };

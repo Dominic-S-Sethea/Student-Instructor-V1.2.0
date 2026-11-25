@@ -1,3 +1,12 @@
+import type {
+  DataConfidenceBadge,
+  UniversityProfileScore,
+  MajorProgramDetail,
+  UniversityRankingInfo,
+  ComprehensiveUniversityProfile,
+} from '../shared/types/university';
+export * from '../shared/types/university';
+
 export type TabView =
   | 'dashboard'
   | 'avatar-world'
@@ -20,288 +29,6 @@ export type TabView =
   | 'messages'
   | 'become-mentor';
 
-export type DataConfidenceLevel = 'official' | 'verified' | 'community' | 'unverified';
-
-export interface DataConfidenceBadge {
-  level: DataConfidenceLevel;
-  stars: number;
-  sourceLabel: string;
-  sourceUrl?: string;
-  lastVerifiedDate: string;
-  verificationMethod: string;
-}
-
-export interface UniversityProfileScore {
-  overall: number; // 0 - 100
-  academicReputation: number; // 30% weight
-  industryConnection: number; // 20% weight
-  facilities: number; // 20% weight
-  graduateOutcome: number; // 30% weight
-}
-
-export interface CourseYearStructure {
-  year: number;
-  title: string;
-  focus: string;
-  subjects: string[];
-}
-
-export interface MajorProgramDetail {
-  id: string;
-  name: string;
-  alternativeNames: string[];
-  faculty: string;
-  degreeType: string;
-  durationYears: number;
-  difficultyRating: number; // 1 to 5 stars
-  difficultyReason: string;
-  courseStructure: CourseYearStructure[];
-  technicalSkillsGained: string[];
-  softSkillsGained: string[];
-  careerPathways: string[];
-  jobMarketDemand: 'High' | 'Very High' | 'Moderate' | 'Growing';
-  demandReason: string;
-  averageStartingSalary: string;
-  employerRequirements: {
-    basic: string[];
-    competitive: string[];
-  };
-  recommendedFor: string[];
-  notRecommendedIf: string;
-  alternativeMajorSuggestions: Array<{
-    majorName: string;
-    why: string;
-  }>;
-  level?: string;
-  languageOfInstruction?: string;
-  description?: string;
-}
-
-export interface UniversityGalleryImage {
-  url: string;
-  caption: string;
-  category?: 'Campus & Architecture' | 'Labs & Tech Centers' | 'Classrooms & Libraries' | 'Student Life & Events';
-}
-
-export interface UniversityProgramItem {
-  name: string;
-  level: 'Bachelor' | 'Master' | 'Doctoral' | 'Engineering Degree' | 'Associate' | 'Professional Certification';
-  duration: string;
-  language: string;
-  degreeAwarded: string;
-  description?: string;
-}
-
-export interface UniversityDepartmentItem {
-  name: string;
-  faculty: string;
-  description?: string;
-  keySpecializations?: string[];
-}
-
-export interface UniversityContact {
-  phone: string;
-  email: string;
-  address: string;
-  website?: string;
-  admissionsOffice?: string;
-}
-
-export interface UniversityFacultyItem {
-  name: string;
-  khmerName?: string;
-  dean?: string;
-  departments: string[];
-  description?: string;
-}
-
-export interface UniversityOtherCosts {
-  registrationFee: string;
-  laboratoryFee: string;
-  booksAndMaterials: string;
-  uniform: string;
-  dormitoryCost: string;
-  graduationFee: string;
-  details?: string;
-}
-
-export interface UniversityFinancialInfo {
-  tuitionFeePerYearUSD: number;
-  totalDegreeCostUSD: number;
-  paymentSchedule: string;
-  financialAid?: string | boolean | any;
-  scholarshipDetails: {
-    hasFullScholarship: boolean;
-    scholarshipNames: string[];
-    financialAidAvailable: boolean | string;
-    financialAidDetails: string;
-    requirements: string;
-    applicationDeadline: string;
-  };
-  otherCosts: UniversityOtherCosts;
-}
-
-export interface UniversityStudentExperience {
-  campusFacilities: string[];
-  library: {
-    name: string;
-    description: string;
-    digitalLibrary: string;
-    studySpaces: string;
-    digitalAccess?: string;
-  };
-  laboratory: {
-    name: string;
-    specialization: string;
-  }[];
-  laboratories?: {
-    name: string;
-    specialization: string;
-  }[];
-  studentClubs: string[];
-  dormitory: {
-    available: boolean | string;
-    description: string;
-    type: string;
-    pricingOrEligibility: string;
-    pricing?: string;
-  };
-}
-
-export interface UniversityCareerInfo {
-  graduateEmploymentRate: string;
-  averageStartingSalaryUSD: string;
-  industryConnections: string[];
-  internshipOpportunity: {
-    status: string;
-    details: string;
-    partnerCompanies: string[];
-  };
-  alumniNetwork: {
-    associationName: string;
-    overview: string;
-    topCompanies: string[];
-  };
-}
-
-export interface UniversityRankingInfo {
-  nationalRank: string;
-  nationalRanking?: string;
-  regionalStanding: string;
-  reputationHighlights: string[] | string;
-  academicReputationScore: number;
-  theoryVsPracticeRatio: string;
-  studentToFacultyRatio: string;
-}
-
-export interface UniversityAccreditationDetails {
-  institutionalAccreditation: string;
-  nationalAccreditationBody: string;
-  regionalAccreditation?: string;
-  internationalAccreditation?: string;
-  status: string;
-  certifiedYear?: string;
-  validUntil?: string;
-  verificationSource?: string;
-}
-
-export interface ComprehensiveUniversityProfile {
-  id: string;
-  name: string;
-  khmerName?: string;
-  abbr: string;
-  location: string;
-  type: 'Public' | 'Private' | 'Semi-Autonomous';
-  foundedYear: number;
-  website: string;
-  logo: string;
-  coverImage: string;
-  photos?: string[];
-  gallery?: UniversityGalleryImage[];
-  programs?: UniversityProgramItem[];
-  departments?: UniversityDepartmentItem[];
-
-  // University Data Infrastructure extensions
-  contact?: UniversityContact;
-  facultiesList?: UniversityFacultyItem[];
-  financialInfo?: UniversityFinancialInfo;
-  studentExperience?: UniversityStudentExperience;
-  careerInfo?: UniversityCareerInfo;
-  rankingReputation?: UniversityRankingInfo;
-
-  // 2. Reputation & Accreditation
-  profileScore: UniversityProfileScore;
-  accreditation: {
-    governmentRecognition: string;
-    internationalAccreditation?: string;
-    professionalAccreditation?: string;
-    status: 'Fully Accredited' | 'Provisional' | 'Internationally Certified';
-    accAccreditation?: string;
-    verificationSource?: string;
-  };
-
-  // 3. Academic Information
-  facultyCount: number;
-  majorsCount: number;
-  theoryVsPracticeRatio: string;
-  studentToFacultyRatio: string;
-  curriculumHighlight: string;
-  majors: MajorProgramDetail[];
-  rankingInfo?: UniversityRankingInfo;
-
-  // 4. Student Experience & Campus Resources
-  campusDescription: string;
-  facilities: string[];
-  studentClubs: string[];
-  environmentHighlight: string;
-
-  // 5. Financial Information & ROI
-  annualTuitionUSD: number;
-  totalDegreeCostUSD: number;
-  paymentSchedule: string;
-  scholarships: {
-    hasFullScholarship: boolean;
-    scholarshipNames: string[];
-    financialAidAvailable: boolean;
-    requirements: string;
-    applicationDeadline: string;
-  };
-  averageGraduateSalaryMonthlyUSD: number;
-  estimatedROIPaybackMonths: number;
-
-  // 6. Career Outcome & Industry Connections
-  employmentRate6Months: number;
-  averageTimeToJobMonths: number;
-  topAlumniCompanies: string[];
-  industryPartnerships: string[];
-  hasGuaranteedInternship: boolean;
-
-  // 7. Admission Process
-  admissionRequirements: {
-    gpaRequirement: string;
-    nationalExamRequirement: string;
-    entranceExamRequired: boolean;
-    entranceExamDetails: string;
-    englishRequirement: string;
-  };
-  applicationDifficulty: 'Easy' | 'Medium' | 'Competitive / High Stakes';
-  importantDates: {
-    applicationOpens: string;
-    applicationDeadline: string;
-    examDate: string;
-    announcementDate: string;
-  };
-
-  // 8. Student Fit
-  studentFit: {
-    bestFor: string[];
-    notRecommendedFor: string[];
-  };
-
-  // Data Reliability Score
-  dataConfidence: DataConfidenceBadge;
-}
-
 export interface TelemetryEvent {
   id: string;
   eventName:
@@ -313,7 +40,8 @@ export interface TelemetryEvent {
     | 'search_university'
     | 'start_decision_assessment'
     | 'complete_decision_assessment'
-    | 'filter_universities';
+    | 'filter_universities'
+    | 'change_language';
   data: Record<string, any>;
   timestamp: string;
   userId: string;
@@ -576,8 +304,14 @@ export interface RetrievedSourceRef {
   title: string;
   category: string;
   source: string;
-  snippet: string;
+  snippet?: string;
+  url?: string;
   relevanceScore?: number;
+}
+
+export interface WebSourceCitation {
+  title: string;
+  url: string;
 }
 
 export interface ChatMessage {
@@ -590,6 +324,10 @@ export interface ChatMessage {
   suggestedMentors?: string[];
   suggestedQuestions?: string[];
   retrievedSources?: RetrievedSourceRef[];
+  webSources?: WebSourceCitation[];
+  toolsUsed?: string[];
+  memoryUpdates?: string[];
+  providerLabel?: string;
   studentMemoryApplied?: {
     learningSummarySnippet?: string;
     interestSummarySnippet?: string;

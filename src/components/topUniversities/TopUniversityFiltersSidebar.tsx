@@ -57,29 +57,29 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
 }) => {
   return (
     <div
-      className={`bg-white rounded-2xl border border-slate-200/90 shadow-xs p-5 space-y-6 ${
+      className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs p-5 space-y-6 ${
         isMobile ? 'max-h-[85vh] overflow-y-auto' : 'sticky top-20'
       }`}
       id="top-university-filter-criteria-panel"
     >
       {/* Header: Title, Active Count Badge & Reset */}
-      <div className="flex items-center justify-between pb-3.5 border-b border-slate-100">
+      <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200/80 flex items-center justify-center">
-            <Filter className="w-4 h-4 text-emerald-700" />
+          <div className="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800 flex items-center justify-center">
+            <Filter className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="font-bold text-slate-900 text-sm tracking-tight">
+              <span className="font-bold text-slate-900 dark:text-slate-100 text-sm tracking-tight">
                 Filter Criteria
               </span>
               {activeFilterCount > 0 && (
-                <span className="px-2 py-0.2 rounded-full text-[10.5px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                <span className="px-2 py-0.2 rounded-full text-[11px] font-extrabold bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                   {activeFilterCount} active
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
               Narrow {totalProgramsCount} institutions by institutional factors
             </p>
           </div>
@@ -88,8 +88,9 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
         <div className="flex items-center gap-1">
           {activeFilterCount > 0 && (
             <button
+              type="button"
               onClick={onReset}
-              className="text-xs font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-emerald-50 transition cursor-pointer"
+              className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-950/50 transition cursor-pointer"
               title="Reset all criteria"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -98,8 +99,9 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
           )}
           {isMobile && onCloseMobile && (
             <button
+              type="button"
               onClick={onCloseMobile}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
               aria-label="Close filters"
             >
               <X className="w-4 h-4" />
@@ -111,11 +113,11 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
       {/* FACTOR 1: Global Ranking Tier (QS / THE League) */}
       <div className="space-y-2.5">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-            <Globe className="w-3.5 h-3.5 text-emerald-600" />
+          <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+            <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Global Ranking Benchmark</span>
           </label>
-          <span className="text-[10.5px] font-semibold text-slate-400">QS / THE</span>
+          <span className="text-[11px] font-semibold text-slate-400">QS / THE</span>
         </div>
 
         <div className="grid grid-cols-2 gap-1.5">
@@ -128,6 +130,7 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
             { id: 'top200', label: 'Global Top 200' }
           ].map((tier) => (
             <button
+              type="button"
               key={tier.id}
               onClick={() =>
                 onFilterChange(
@@ -137,8 +140,8 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
               }
               className={`p-2 rounded-xl text-xs font-semibold text-center border transition-all cursor-pointer ${
                 filters.rankTier === tier.id
-                  ? 'bg-emerald-700 text-white border-emerald-700 shadow-2xs font-bold'
-                  : 'bg-slate-50/80 text-slate-700 border-slate-200/80 hover:bg-slate-100'
+                  ? 'bg-emerald-700 dark:bg-emerald-600 text-white border-emerald-700 dark:border-emerald-600 shadow-2xs font-bold'
+                  : 'bg-slate-50/80 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
               }`}
             >
               {tier.label}
@@ -149,9 +152,9 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
 
       {/* FACTOR 2: Target Degree Level */}
       <div className="space-y-2.5">
-        <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-          <GraduationCap className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Degree & Academic Level</span>
+        <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+          <GraduationCap className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          <span>Degree &amp; Academic Level</span>
         </label>
         <div className="grid grid-cols-2 gap-1.5">
           {[
@@ -162,6 +165,7 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
             { id: 'MBA', label: 'MBA & Exec' }
           ].map((deg) => (
             <button
+              type="button"
               key={deg.id}
               onClick={() =>
                 onFilterChange(
@@ -171,8 +175,8 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
               }
               className={`p-2 rounded-xl text-xs font-semibold text-center border transition-all cursor-pointer ${
                 filters.degree === deg.id
-                  ? 'bg-emerald-700 text-white border-emerald-700 shadow-2xs font-bold'
-                  : 'bg-slate-50/80 text-slate-700 border-slate-200/80 hover:bg-slate-100'
+                  ? 'bg-emerald-700 dark:bg-emerald-600 text-white border-emerald-700 dark:border-emerald-600 shadow-2xs font-bold'
+                  : 'bg-slate-50/80 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
               }`}
             >
               {deg.label}
@@ -183,8 +187,8 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
 
       {/* FACTOR 3: Destination Hub / Region */}
       <div className="space-y-2">
-        <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-          <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+        <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+          <Building2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
           <span>Destination Region / Hub</span>
         </label>
         <div className="relative">
@@ -196,7 +200,7 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
                 e.target.value as TopUniversityFiltersState['region']
               )
             }
-            className="w-full text-xs font-semibold rounded-xl border border-slate-300 p-2.5 pr-8 bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden cursor-pointer"
+            className="w-full text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-700 p-2.5 pr-8 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden cursor-pointer"
           >
             <option value="ALL">All 11 Global Hubs (Worldwide)</option>
             <option value="USA">🇺🇸 United States (Ivy League & Top 20)</option>
@@ -216,9 +220,9 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
 
       {/* FACTOR 4: Fellowship & Aid Model */}
       <div className="space-y-2">
-        <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-          <Award className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Fellowship & Funding Model</span>
+        <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+          <Award className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          <span>Fellowship &amp; Funding Model</span>
         </label>
         <div className="space-y-1.5">
           {[
@@ -245,6 +249,7 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
             }
           ].map((type) => (
             <button
+              type="button"
               key={type.id}
               onClick={() =>
                 onFilterChange(
@@ -254,13 +259,13 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
               }
               className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium border transition-all flex items-center justify-between cursor-pointer ${
                 filters.fellowshipType === type.id
-                  ? 'bg-emerald-50 text-emerald-950 border-emerald-400 font-bold'
-                  : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-950 dark:text-emerald-200 border-emerald-400 dark:border-emerald-600 font-bold'
+                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/80 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
               }`}
             >
               <span className="line-clamp-1">{type.label}</span>
               {filters.fellowshipType === type.id && (
-                <Check className="w-3.5 h-3.5 text-emerald-700 shrink-0 ml-1" />
+                <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 shrink-0 ml-1" />
               )}
             </button>
           ))}
@@ -269,8 +274,8 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
 
       {/* FACTOR 5: Funding Coverage Generosity */}
       <div className="space-y-2">
-        <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-          <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+        <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+          <DollarSign className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
           <span>Funding Coverage Scope</span>
         </label>
         <div className="space-y-1.5">
@@ -294,17 +299,18 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
             }
           ].map((cov) => (
             <button
+              type="button"
               key={cov.id}
               onClick={() => onFilterChange('coverage', cov.id)}
               className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium border transition-all flex items-center justify-between cursor-pointer ${
                 filters.coverage === cov.id
-                  ? 'bg-emerald-50 text-emerald-950 border-emerald-400 font-bold'
-                  : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-950 dark:text-emerald-200 border-emerald-400 dark:border-emerald-600 font-bold'
+                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/80 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
               }`}
             >
               <span className="line-clamp-1">{cov.label}</span>
               {filters.coverage === cov.id && (
-                <Check className="w-3.5 h-3.5 text-emerald-700 shrink-0 ml-1" />
+                <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 shrink-0 ml-1" />
               )}
             </button>
           ))}
@@ -313,8 +319,8 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
 
       {/* FACTOR 6: Application Mechanism */}
       <div className="space-y-2">
-        <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+        <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+          <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
           <span>Application Mechanism</span>
         </label>
         <div className="space-y-1.5">
@@ -338,6 +344,7 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
             }
           ].map((mech) => (
             <button
+              type="button"
               key={mech.id}
               onClick={() =>
                 onFilterChange(
@@ -347,13 +354,13 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
               }
               className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium border transition-all flex items-center justify-between cursor-pointer ${
                 filters.mechanism === mech.id
-                  ? 'bg-emerald-50 text-emerald-950 border-emerald-400 font-bold'
-                  : 'bg-white text-slate-700 border-slate-200/80 hover:bg-slate-50'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-950 dark:text-emerald-200 border-emerald-400 dark:border-emerald-600 font-bold'
+                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/80 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
               }`}
             >
               <span className="line-clamp-1">{mech.label}</span>
               {filters.mechanism === mech.id && (
-                <Check className="w-3.5 h-3.5 text-emerald-700 shrink-0 ml-1" />
+                <Check className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 shrink-0 ml-1" />
               )}
             </button>
           ))}
@@ -362,21 +369,21 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
 
       {/* FACTOR 7: Institutional League / Consortium */}
       <div className="space-y-2">
-        <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-          <Building2 className="w-3.5 h-3.5 text-emerald-600" />
-          <span>Prestige League & Alliance</span>
+        <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+          <Building2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          <span>Prestige League &amp; Alliance</span>
         </label>
         <select
           value={filters.consortium}
           onChange={(e) => onFilterChange('consortium', e.target.value)}
-          className="w-full text-xs font-semibold rounded-xl border border-slate-300 p-2.5 pr-8 bg-white text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden cursor-pointer"
+          className="w-full text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-700 p-2.5 pr-8 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden cursor-pointer"
         >
           <option value="ALL">All Institutional Alliances</option>
-          <option value="ivy">Ivy League & US Top Tier</option>
-          <option value="g5">UK G5 & Golden Triangle (Oxford, Cambridge, Imperial, UCL, LSE)</option>
+          <option value="ivy">Ivy League &amp; US Top Tier</option>
+          <option value="g5">UK G5 &amp; Golden Triangle (Oxford, Cambridge, Imperial, UCL, LSE)</option>
           <option value="c9">C9 League (China Top 9)</option>
           <option value="go8">Group of Eight (Go8 Australia)</option>
-          <option value="sky">SKY & Tech Titans (South Korea)</option>
+          <option value="sky">SKY &amp; Tech Titans (South Korea)</option>
           <option value="ini">Institutes of National Importance (IIT / IISc India)</option>
           <option value="u15">U15 Research Powerhouses (Canada)</option>
           <option value="euro">European Continental Apex (ETH, EPFL, TUM, PSL)</option>
@@ -386,11 +393,11 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
       {/* FACTOR 8: Minimum Estimated Annual Aid Value (USD) */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-            <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
+          <label className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider flex items-center gap-1.5">
+            <DollarSign className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Minimum Annual Value (USD)</span>
           </label>
-          <span className="text-xs font-bold text-emerald-700">
+          <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400">
             {filters.minValueUSD === 0
               ? 'Any Amount'
               : `$${filters.minValueUSD.toLocaleString()}+/yr`}
@@ -399,12 +406,13 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
         <div className="grid grid-cols-4 gap-1">
           {[0, 40000, 60000, 80000].map((val) => (
             <button
+              type="button"
               key={val}
               onClick={() => onFilterChange('minValueUSD', val)}
               className={`py-1.5 px-1 rounded-lg text-[11px] font-semibold text-center border transition cursor-pointer ${
                 filters.minValueUSD === val
-                  ? 'bg-emerald-700 text-white border-emerald-700 font-bold'
-                  : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100'
+                  ? 'bg-emerald-700 dark:bg-emerald-600 text-white border-emerald-700 dark:border-emerald-600 font-bold'
+                  : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200/80 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
               }`}
             >
               {val === 0 ? 'Any' : `$${val / 1000}k+`}
@@ -414,16 +422,17 @@ export const TopUniversityFiltersSidebar: React.FC<TopUniversityFiltersSidebarPr
       </div>
 
       {/* Bottom Summary & Mobile Apply Button */}
-      <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-        <div className="text-xs font-semibold text-slate-600">
+      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <div className="text-xs font-semibold text-slate-600 dark:text-slate-300">
           Matches:{' '}
-          <span className="font-extrabold text-slate-900">
+          <span className="font-extrabold text-slate-900 dark:text-slate-100">
             {totalResultsCount}
           </span>{' '}
           of {totalProgramsCount}
         </div>
         {isMobile && onCloseMobile && (
           <button
+            type="button"
             onClick={onCloseMobile}
             className="px-4 py-2 rounded-xl bg-emerald-700 text-white text-xs font-bold shadow-sm hover:bg-emerald-800 transition cursor-pointer"
           >

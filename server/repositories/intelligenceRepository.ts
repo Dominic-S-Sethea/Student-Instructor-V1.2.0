@@ -2,7 +2,9 @@ import { getDatabase } from '../db/connection';
 import { StudentIntelligenceProfile } from '../types/analytics';
 
 export class IntelligenceRepository {
-  private db = getDatabase();
+  private get db() {
+    return getDatabase();
+  }
 
   public getProfile(studentId: string): StudentIntelligenceProfile | null {
     const row = this.db.prepare(`

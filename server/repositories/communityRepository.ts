@@ -1,4 +1,5 @@
-import { getDatabase } from '../db/connection';
+import crypto from 'node:crypto';
+import { getDatabase, withTransaction } from '../db/connection';
 
 export class CommunityRepository {
   // ==========================================
@@ -41,7 +42,7 @@ export class CommunityRepository {
 
   public joinCommunity(communityId: string, userId: string, role: string = 'member') {
     const db = getDatabase();
-    const id = `cm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const id = `cm-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
     const insert = db.prepare(`
@@ -70,7 +71,7 @@ export class CommunityRepository {
 
   public getCommunityPosts(communityId?: string, postType?: string) {
     const db = getDatabase();
-    let query = 'SELECT * FROM community_posts WHERE status = "published"';
+    let query = "SELECT * FROM community_posts WHERE status = 'published'";
     const params: any[] = [];
 
     if (communityId) {
@@ -160,27 +161,29 @@ export class CommunityRepository {
     content: string;
   }) {
     const db = getDatabase();
-    const id = `cmt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const id = `cmt-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
-    db.prepare(`
-      INSERT INTO community_comments (
-        id, post_id, author_id, author_name, author_role, author_avatar,
-        parent_comment_id, content, upvotes_count, is_accepted_answer, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'published', ?)
-    `).run(
-      id,
-      data.post_id,
-      data.author_id,
-      data.author_name,
-      data.author_role || 'student',
-      data.author_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-      data.parent_comment_id || null,
-      data.content,
-      now
-    );
+    withTransaction(() => {
+      db.prepare(`
+        INSERT INTO community_comments (
+          id, post_id, author_id, author_name, author_role, author_avatar,
+          parent_comment_id, content, upvotes_count, is_accepted_answer, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'published', ?)
+      `).run(
+        id,
+        data.post_id,
+        data.author_id,
+        data.author_name,
+        data.author_role || 'student',
+        data.author_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
+        data.parent_comment_id || null,
+        data.content,
+        now
+      );
 
-    db.prepare('UPDATE community_posts SET comments_count = comments_count + 1, updated_at = ? WHERE id = ?').run(now, data.post_id);
+      db.prepare('UPDATE community_posts SET comments_count = comments_count + 1, updated_at = ? WHERE id = ?').run(now, data.post_id);
+    });
     return db.prepare('SELECT * FROM community_comments WHERE id = ?').get(id);
   }
 
@@ -192,12 +195,11 @@ export class CommunityRepository {
 
   public markAcceptedAnswer(postId: string, commentId: string) {
     const db = getDatabase();
-    // Reset previous accepted
-    db.prepare('UPDATE community_comments SET is_accepted_answer = 0 WHERE post_id = ?').run(postId);
-    // Set this one
-    db.prepare('UPDATE community_comments SET is_accepted_answer = 1 WHERE id = ?').run(commentId);
-    // Mark post solved
-    db.prepare('UPDATE community_posts SET is_solved = 1, solved_comment_id = ? WHERE id = ?').run(commentId, postId);
+    withTransaction(() => {
+      db.prepare('UPDATE community_comments SET is_accepted_answer = 0 WHERE post_id = ?').run(postId);
+      db.prepare('UPDATE community_comments SET is_accepted_answer = 1 WHERE id = ?').run(commentId);
+      db.prepare('UPDATE community_posts SET is_solved = 1, solved_comment_id = ? WHERE id = ?').run(commentId, postId);
+    });
     return { success: true };
   }
 
@@ -208,9 +210,9 @@ export class CommunityRepository {
   public getAllMentors(badge?: string) {
     const db = getDatabase();
     if (badge && badge !== 'ALL') {
-      return db.prepare('SELECT * FROM mentor_profiles WHERE verified_badge = ? ORDER BY rating DESC').all(badge);
+      return db.prepare('SELECT * FROM mentor_profiles WHERE verified_badge = ? ORDER BY rating DESC LIMIT 100').all(badge);
     }
-    return db.prepare('SELECT * FROM mentor_profiles ORDER BY rating DESC').all();
+    return db.prepare('SELECT * FROM mentor_profiles ORDER BY rating DESC LIMIT 100').all();
   }
 
   public getMentorById(mentorId: string) {
@@ -229,7 +231,7 @@ export class CommunityRepository {
     student_notes?: string;
   }) {
     const db = getDatabase();
-    const id = `sess-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const id = `sess-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
     db.prepare(`

@@ -21,7 +21,7 @@ import {
 import {
   LearningActivity,
   StudentActivityProgress,
-} from '../../../server/types/learningTypes';
+} from '../../../shared/types/learningTypes';
 import { learningClient, ActivityWithStatus } from '../../services/learningClient';
 
 interface STEMActivitiesViewProps {
@@ -149,10 +149,12 @@ export const STEMActivitiesView: React.FC<STEMActivitiesViewProps> = ({
     );
 
     if (res) {
+      const pointsEarned = res.meritPointsEarned ?? 0;
+      const badge = res.unlockedBadge ?? undefined;
       setCompletedFeedback({
         score,
-        points: res.meritPointsEarned,
-        badge: res.unlockedBadge,
+        points: pointsEarned,
+        badge,
       });
 
       // Update in local list
@@ -163,7 +165,7 @@ export const STEMActivitiesView: React.FC<STEMActivitiesViewProps> = ({
       );
 
       if (onRewardEarned) {
-        onRewardEarned(res.meritPointsEarned, `Completed ${activeActivity.title}!`, res.unlockedBadge);
+        onRewardEarned(pointsEarned, `Completed ${activeActivity.title}!`, badge);
       }
     }
   };

@@ -18,6 +18,16 @@ export function validate<T>(
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
       const data = req[property];
+      if (
+        property === "body" &&
+        (data === null || typeof data !== "object" || Array.isArray(data))
+      ) {
+        res.status(400).json({
+          success: false,
+          error: "Request body must be a JSON object.",
+        });
+        return;
+      }
       const validated = schema.parse(data);
       req[property] = validated;
       next();

@@ -44,13 +44,22 @@ export interface MajorRow {
 }
 
 export class UniversityRepository {
-  private db = getDatabase();
+  private get db() {
+    return getDatabase();
+  }
 
   public getAll(): (UniversityRow & { majors: MajorRow[] })[] {
     const universities = this.db.prepare('SELECT * FROM universities ORDER BY profile_score_overall DESC').all() as unknown as UniversityRow[];
-    return universities.map(u => ({
+    const allMajors = this.db.prepare('SELECT * FROM majors').all() as unknown as MajorRow[];
+    const majorsByUniv = new Map<string, MajorRow[]>();
+    for (const m of allMajors) {
+      const list = majorsByUniv.get(m.university_id) || [];
+      list.push(m);
+      majorsByUniv.set(m.university_id, list);
+    }
+    return universities.map((u) => ({
       ...u,
-      majors: this.getMajorsByUniversityId(u.id)
+      majors: majorsByUniv.get(u.id) || [],
     }));
   }
 
@@ -94,10 +103,10 @@ export class UniversityRepository {
       data.industry_connection_score || 80,
       data.facilities_score || 80,
       data.graduate_outcome_score || 85,
-      data.annual_tuition_usd || 1000,
-      data.total_degree_cost_usd || 4000,
-      data.accreditation_status || 'Fully Accredited',
-      data.verification_confidence || 'official',
+      data.annual_tuition_usd ?? 0,
+      data.total_degree_cost_usd ?? 0,
+      data.accreditation_status ?? null,
+      data.verification_confidence || 'unverified',
       now,
       now
     );

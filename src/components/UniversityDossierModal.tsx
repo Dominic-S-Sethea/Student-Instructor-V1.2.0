@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
   Building2,
   GraduationCap,
@@ -34,7 +34,9 @@ import { ComprehensiveUniversityProfile, UniversityGalleryImage } from '../types
 import { DataConfidenceBadge } from './DataConfidenceBadge';
 import { useDraggableScroll } from '../hooks/useDraggableScroll';
 import { UniversityDataChecklistView, BlankBadge } from './UniversityDataChecklistView';
-import { GoogleDriveHubModal } from './GoogleDriveHubModal';
+const GoogleDriveHubModal = lazy(() =>
+  import('./GoogleDriveHubModal').then((m) => ({ default: m.GoogleDriveHubModal }))
+);
 
 interface UniversityDossierModalProps {
   university: ComprehensiveUniversityProfile | null;
@@ -1981,19 +1983,23 @@ export const UniversityDossierModal: React.FC<UniversityDossierModalProps> = ({
         </div>
 
         {/* Google Drive Hub Modal */}
-        <GoogleDriveHubModal
-          isOpen={isDriveModalOpen}
-          onClose={() => setIsDriveModalOpen(false)}
-          currentUniversity={university}
-          onSelectPhotoForUniversity={(newPhoto) => {
-            if (university) {
-              setCustomPhotos((prev) => ({
-                ...prev,
-                [university.id]: [newPhoto, ...(prev[university.id] || [])],
-              }));
-            }
-          }}
-        />
+        {isDriveModalOpen && (
+          <Suspense fallback={null}>
+            <GoogleDriveHubModal
+              isOpen={isDriveModalOpen}
+              onClose={() => setIsDriveModalOpen(false)}
+              currentUniversity={university}
+              onSelectPhotoForUniversity={(newPhoto) => {
+                if (university) {
+                  setCustomPhotos((prev) => ({
+                    ...prev,
+                    [university.id]: [newPhoto, ...(prev[university.id] || [])],
+                  }));
+                }
+              }}
+            />
+          </Suspense>
+        )}
       </div>
     </div>
   );

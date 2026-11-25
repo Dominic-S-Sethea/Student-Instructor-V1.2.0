@@ -1,50 +1,18 @@
 import { TelemetryEvent } from '../types';
+import { apiPost } from '../services/apiClient';
 
 type EventListener = (event: TelemetryEvent) => void;
 
 class AnalyticsTracker {
   private events: TelemetryEvent[] = [];
   private listeners: Set<EventListener> = new Set();
-  private userId: string = 'stu-001';
-
-  constructor() {
-    // Seed initial realistic events to show rich historical event tracking
-    this.events = [
-      {
-        id: 'evt-init-1',
-        eventName: 'search_university',
-        data: { keyword: 'Computer Science', filter_used: 'Engineering & Tech', results_count: 5 },
-        timestamp: new Date(Date.now() - 1000 * 60 * 12).toLocaleTimeString(),
-        userId: 'stu-001',
-      },
-      {
-        id: 'evt-init-2',
-        eventName: 'view_university',
-        data: { university_id: 'univ-cadt', university_name: 'CADT', tuition: 1600 },
-        timestamp: new Date(Date.now() - 1000 * 60 * 8).toLocaleTimeString(),
-        userId: 'stu-001',
-      },
-      {
-        id: 'evt-init-3',
-        eventName: 'calculate_roi',
-        data: {
-          university: 'CADT',
-          scholarship_percent: 100,
-          degree_cost: 0,
-          starting_salary_monthly: 850,
-          payback_months: 0,
-        },
-        timestamp: new Date(Date.now() - 1000 * 60 * 4).toLocaleTimeString(),
-        userId: 'stu-001',
-      },
-    ];
-  }
+  private userId: string = 'guest';
 
   public setUserId(id: string) {
-    this.userId = id;
+    this.userId = id || 'guest';
   }
 
-  public track(eventName: TelemetryEvent['eventName'], data: Record<string, any>) {
+  public track(eventName: TelemetryEvent['eventName'], data: Record<string, unknown>) {
     const event: TelemetryEvent = {
       id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       eventName,
@@ -58,26 +26,21 @@ class AnalyticsTracker {
       this.events.pop();
     }
 
-    // Notify UI listeners
     this.listeners.forEach((listener) => {
       try {
         listener(event);
-      } catch (err) {
-        console.error('Analytics listener error:', err);
+      } catch {
+        // ignore listener failure
       }
     });
 
-    // Optional beacon to backend server
-    try {
-      fetch('/api/analytics/event', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(event),
+    if (this.userId !== 'guest') {
+      apiPost('/api/analytics/track', {
+        eventType: eventName,
+        metadata: data,
       }).catch(() => {
-        // Silently ignore if offline
+        // Ignore unauthenticated/unconsented telemetry errors
       });
-    } catch {
-      // ignore
     }
 
     return event;
@@ -96,13 +59,6 @@ class AnalyticsTracker {
 
   public clear() {
     this.events = [];
-    this.listeners.forEach((listener) => listener({
-      id: 'clear',
-      eventName: 'filter_universities',
-      data: { action: 'cleared' },
-      timestamp: new Date().toLocaleTimeString(),
-      userId: this.userId,
-    }));
   }
 }
 

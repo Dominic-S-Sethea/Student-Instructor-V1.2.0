@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from "./apiClient";
+import { apiGet, apiPost } from './apiClient';
 import {
   ClientCommunity,
   ClientCommunityPost,
@@ -8,54 +8,41 @@ import {
   ClientStudentProject,
   ClientCampusEvent,
   ClientPartnerOrg,
-  ClientModerationReport,
-  ClientMentor,
-  ClientStudentSession,
   ClientContent,
-  ClientCommunityProject,
-} from "../types";
+} from '../types';
 
 class CommunityClient {
-  private baseUrl = "/api/community";
+  private baseUrl = '/api/community';
 
   public async getCommunities(category?: string): Promise<ClientCommunity[]> {
-    const url = category && category !== "ALL"
+    const url = category && category !== 'ALL'
       ? `${this.baseUrl}/communities?category=${encodeURIComponent(category)}`
       : `${this.baseUrl}/communities`;
-    const res = await apiGet(url);
-    if (!res.ok) throw new Error("Failed to fetch communities");
-    const json = await res.json();
-    return json.data || [];
+    return (await apiGet<ClientCommunity[]>(url)) || [];
   }
 
-  public async getCommunityDetails(slug: string): Promise<ClientCommunity & { members: any[] }> {
-    const res = await apiGet(`${this.baseUrl}/communities/${slug}`);
-    if (!res.ok) throw new Error("Failed to fetch community details");
-    const json = await res.json();
-    return json.data;
+  public async getCommunityDetails(slug: string): Promise<ClientCommunity & { members: unknown[] }> {
+    return apiGet<ClientCommunity & { members: unknown[] }>(`${this.baseUrl}/communities/${encodeURIComponent(slug)}`);
   }
 
   public async joinCommunity(communityId: string): Promise<void> {
-    await apiPost(`${this.baseUrl}/communities/${communityId}/join`);
+    await apiPost(`${this.baseUrl}/communities/${encodeURIComponent(communityId)}/join`, {});
   }
 
   public async leaveCommunity(communityId: string): Promise<void> {
-    await apiPost(`${this.baseUrl}/communities/${communityId}/leave`);
+    await apiPost(`${this.baseUrl}/communities/${encodeURIComponent(communityId)}/leave`, {});
   }
 
   public async getStudentCommunities(studentId: string): Promise<ClientCommunity[]> {
-    const res = await apiGet(`${this.baseUrl}/student/${studentId}/communities`);
-    if (!res.ok) throw new Error("Failed to fetch student communities");
-    const json = await res.json();
-    return json.data || [];
+    return (await apiGet<ClientCommunity[]>(`${this.baseUrl}/student/${encodeURIComponent(studentId)}/communities`)) || [];
   }
 
   public async getPosts(params: { limit?: number; offset?: number; category?: string }): Promise<ClientCommunityPost[]> {
-    const url = `${this.baseUrl}/posts?${new URLSearchParams(params as Record<string, string>).toString()}`;
-    const res = await apiGet(url);
-    if (!res.ok) throw new Error("Failed to fetch posts");
-    const json = await res.json();
-    return json.data || [];
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined) qs.set(k, String(v));
+    });
+    return (await apiGet<ClientCommunityPost[]>(`${this.baseUrl}/posts?${qs.toString()}`)) || [];
   }
 
   public async createPost(postData: {
@@ -69,146 +56,117 @@ class CommunityClient {
     category?: string;
     tags?: string[];
   }): Promise<ClientCommunityPost> {
-    const res = await apiPost(`${this.baseUrl}/posts`, postData);
-    if (!res.ok) throw new Error("Failed to create post");
-    const json = await res.json();
-    return json.data;
+    return apiPost<ClientCommunityPost>(`${this.baseUrl}/posts`, postData);
   }
 
   public async upvotePost(postId: string): Promise<void> {
-    await apiPost(`${this.baseUrl}/posts/${postId}/upvote`);
+    await apiPost(`${this.baseUrl}/posts/${encodeURIComponent(postId)}/upvote`, {});
   }
 
   public async getPostComments(postId: string): Promise<ClientCommunityComment[]> {
-    const res = await apiGet(`${this.baseUrl}/posts/${postId}/comments`);
-    if (!res.ok) throw new Error("Failed to fetch post comments");
-    const json = await res.json();
-    return json.data || [];
+    return (await apiGet<ClientCommunityComment[]>(`${this.baseUrl}/posts/${encodeURIComponent(postId)}/comments`)) || [];
   }
 
-  public async addComment(postId: string, commentData: { content: string; parent_id?: string; author_id?: string; author_name?: string; author_role?: string }): Promise<ClientCommunityComment> {
-    const res = await apiPost(`${this.baseUrl}/posts/${postId}/comments`, commentData);
-    if (!res.ok) throw new Error("Failed to add comment");
-    const json = await res.json();
-    return json.data;
+  public async addComment(
+    postId: string,
+    commentData: { content: string; parent_id?: string; author_id?: string; author_name?: string; author_role?: string }
+  ): Promise<ClientCommunityComment> {
+    return apiPost<ClientCommunityComment>(`${this.baseUrl}/posts/${encodeURIComponent(postId)}/comments`, commentData);
   }
 
   public async upvoteComment(commentId: string): Promise<number> {
-    const res = await apiPost(`${this.baseUrl}/comments/${commentId}/upvote`);
-    const json = await res.json();
-    return json.data?.new_count ?? 0;
+    const res = await apiPost<{ new_count?: number }>(`${this.baseUrl}/comments/${encodeURIComponent(commentId)}/upvote`, {});
+    return res?.new_count ?? 0;
   }
 
   public async acceptAnswer(postId: string, commentId: string): Promise<void> {
-    await apiPost(`${this.baseUrl}/posts/${postId}/accept-answer/${commentId}`);
+    await apiPost(`${this.baseUrl}/posts/${encodeURIComponent(postId)}/accept-answer/${encodeURIComponent(commentId)}`, {});
   }
 
-  public async bookMentor(bookingData: { mentor_id: string; student_id: string; student_name?: string; topic: string; session_type?: string; scheduled_date?: string; scheduled_time?: string; student_notes?: string }): Promise<ClientMentorshipSession> {
-    const res = await apiPost(`${this.baseUrl}/mentors/book`, bookingData);
-    if (!res.ok) throw new Error("Failed to book mentorship session");
-    const json = await res.json();
-    return json.data;
+  public async bookMentor(bookingData: {
+    mentor_id: string;
+    student_id?: string;
+    student_name?: string;
+    topic: string;
+    session_type?: string;
+    scheduled_date?: string;
+    scheduled_time?: string;
+    student_notes?: string;
+  }): Promise<ClientMentorshipSession> {
+    return apiPost<ClientMentorshipSession>(`${this.baseUrl}/mentors/book`, bookingData);
   }
 
   public async getMentorSessions(studentId: string): Promise<ClientMentorshipSession[]> {
-    const res = await apiGet(`${this.baseUrl}/students/${studentId}/sessions`);
-    if (!res.ok) throw new Error("Failed to fetch mentor sessions");
-    const json = await res.json();
-    return json.data || [];
+    return (await apiGet<ClientMentorshipSession[]>(`${this.baseUrl}/students/${encodeURIComponent(studentId)}/sessions`)) || [];
   }
 
   public async getProjects(params: { category?: string; stage?: string; limit?: number; offset?: number }): Promise<ClientStudentProject[]> {
-    const url = `${this.baseUrl}/projects?${new URLSearchParams(params as Record<string, string>).toString()}`;
-    const res = await apiGet(url);
-    if (!res.ok) throw new Error("Failed to fetch projects");
-    const json = await res.json();
-    return json.data || [];
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined) qs.set(k, String(v));
+    });
+    return (await apiGet<ClientStudentProject[]>(`${this.baseUrl}/projects?${qs.toString()}`)) || [];
   }
 
   public async getProjectBySlug(slug: string): Promise<ClientStudentProject> {
-    const res = await apiGet(`${this.baseUrl}/projects/${slug}`);
-    if (!res.ok) throw new Error("Failed to fetch project");
-    const json = await res.json();
-    return json.data;
+    return apiGet<ClientStudentProject>(`${this.baseUrl}/projects/${encodeURIComponent(slug)}`);
   }
 
   public async joinProject(
     projectId: string,
-    options?: { user_id: string; user_name: string; role_in_project: string }
+    options?: { user_id?: string; user_name?: string; role_in_project?: string }
   ): Promise<void> {
-    const payload = options
-      ? { user_id: options.user_id, user_name: options.user_name, role_in_project: options.role_in_project }
-      : undefined;
-    await apiPost(`${this.baseUrl}/projects/${projectId}/join`, payload);
+    await apiPost(`${this.baseUrl}/projects/${encodeURIComponent(projectId)}/join`, options || {});
   }
 
-  public async upvoteProject(projectId: string, memberId?: string): Promise<number> {
-    const userId = memberId || 'usr-anonymous';
-    const res = await apiPost(`${this.baseUrl}/projects/${projectId}/upvote`, { member_id: userId });
-    if (!res.ok) throw new Error("Failed to upvote project");
-    const json = await res.json();
-    return json.data?.new_count ?? 0;
+  public async upvoteProject(projectId: string): Promise<number> {
+    const res = await apiPost<{ new_count?: number }>(`${this.baseUrl}/projects/${encodeURIComponent(projectId)}/upvote`, {});
+    return res?.new_count ?? 0;
   }
 
-  public async rsvpEvent(eventId: string, options: { response: "yes" | "no" | "maybe"; notes?: string }): Promise<void> {
-    await apiPost(`${this.baseUrl}/events/${eventId}/rsvp`, options);
+  public async rsvpEvent(eventId: string, options: { response: 'yes' | 'no' | 'maybe'; notes?: string }): Promise<void> {
+    await apiPost(`${this.baseUrl}/events/${encodeURIComponent(eventId)}/rsvp`, options);
   }
 
   public async getEvents(category?: string): Promise<ClientCampusEvent[]> {
-    const res = await apiGet(`${this.baseUrl}/events${category ? `?category=${category}` : ''}`);
-    if (!res.ok) throw new Error("Failed to fetch events");
-    const json = await res.json();
-    return json.data || [];
+    return (await apiGet<ClientCampusEvent[]>(`${this.baseUrl}/events${category ? `?eventType=${encodeURIComponent(category)}` : ''}`)) || [];
   }
 
   public async getMentors(category?: string): Promise<ClientMentorProfile[]> {
-    const res = await apiGet(`${this.baseUrl}/mentors${category ? `?category=${category}` : ''}`);
-    if (!res.ok) throw new Error("Failed to fetch mentors");
-    const json = await res.json();
-    return json.data || [];
+    return (await apiGet<ClientMentorProfile[]>(`${this.baseUrl}/mentors${category ? `?badge=${encodeURIComponent(category)}` : ''}`)) || [];
   }
 
   public async getAIMRecommendations(studentId: string): Promise<{ mentors: { id: string; matchScore?: number; matchReason?: string }[] }> {
-    const res = await apiGet(`${this.baseUrl}/ai-recommendations?studentId=${studentId}`);
-    if (!res.ok) throw new Error("Failed to fetch AI recommendations");
-    const json = await res.json();
-    return json.data || { mentors: [] };
+    return (await apiGet<{ mentors: { id: string; matchScore?: number; matchReason?: string }[] }>(`${this.baseUrl}/ai-recommendations?studentId=${encodeURIComponent(studentId)}`)) || { mentors: [] };
   }
 
   public async getStudentSessions(studentId: string): Promise<ClientMentorshipSession[]> {
-    const res = await apiGet(`${this.baseUrl}/student-sessions?studentId=${studentId}`);
-    if (!res.ok) throw new Error("Failed to fetch student sessions");
-    const json = await res.json();
-    return json.data || [];
+    return (await apiGet<ClientMentorshipSession[]>(`${this.baseUrl}/students/${encodeURIComponent(studentId)}/sessions`)) || [];
   }
 
   public async reportModeration(reportData: { report_type: string; content_id: string; description: string }): Promise<void> {
-    await apiPost(`${this.baseUrl}/moderation/report`, reportData);
+    await apiPost(`${this.baseUrl}/moderation/report`, {
+      reported_item_type: reportData.report_type,
+      reported_item_id: reportData.content_id,
+      reason: 'inappropriate_content',
+      description: reportData.description,
+    });
   }
 
-  public async submitReport(reportData: { reporter_id: string; reported_item_type: string; reported_item_id: string; reason: string; description?: string }): Promise<void> {
+  public async submitReport(reportData: { reporter_id?: string; reported_item_type: string; reported_item_id: string; reason: string; description?: string }): Promise<void> {
     await apiPost(`${this.baseUrl}/moderation/report`, reportData);
   }
 
   public async getContentCatalog(category?: string): Promise<ClientContent[]> {
-    const res = await apiGet(`${this.baseUrl}/content/catalog${category ? `?category=${category}` : ''}`);
-    if (!res.ok) throw new Error("Failed to fetch content catalog");
-    const json = await res.json();
-    return json.data || [];
+    return (await apiGet<ClientContent[]>(`/api/learning/content${category ? `?category_id=${encodeURIComponent(category)}` : ''}`)) || [];
   }
 
   public async getProjectDetails(projectSlug: string): Promise<ClientStudentProject> {
-    const res = await apiGet(`${this.baseUrl}/projects/${projectSlug}`);
-    if (!res.ok) throw new Error("Failed to fetch project details");
-    const json = await res.json();
-    return json.data;
+    return apiGet<ClientStudentProject>(`${this.baseUrl}/projects/${encodeURIComponent(projectSlug)}`);
   }
 
   public async getOrganizations(category?: string): Promise<ClientPartnerOrg[]> {
-    const res = await apiGet(`${this.baseUrl}/organizations${category ? `?category=${category}` : ''}`);
-    if (!res.ok) throw new Error("Failed to fetch organizations");
-    const json = await res.json();
-    return json.data || [];
+    return (await apiGet<ClientPartnerOrg[]>(`${this.baseUrl}/organizations${category ? `?orgType=${encodeURIComponent(category)}` : ''}`)) || [];
   }
 }
 

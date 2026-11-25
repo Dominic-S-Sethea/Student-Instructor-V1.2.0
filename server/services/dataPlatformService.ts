@@ -5,11 +5,16 @@
  */
 
 import { getDatabase } from '../db/connection';
-import crypto from 'crypto';
-import { sanitizeForPublic } from './privacyService';
+import crypto from 'node:crypto';
+import { PrivacyService, sanitizeForPublic } from './privacyService';
+import { safeJsonParse } from '../utils/safeJson';
+
+const privacyService = new PrivacyService();
 
 export class DataPlatformService {
-  private db = getDatabase();
+  private get db() {
+    return getDatabase();
+  }
 
   // ==========================================================
   // 1. DATA ARCHITECTURE OVERVIEW (Task 1)
@@ -104,31 +109,31 @@ export class DataPlatformService {
   public getEducationKnowledgeHub() {
     const universities = this.db.prepare('SELECT * FROM cdes_universities_lake ORDER BY established_year ASC').all().map((u: any) => ({
       ...u,
-      top_sectors: JSON.parse(u.top_sectors_json || '[]'),
+      top_sectors: safeJsonParse<string[]>(u.top_sectors_json, []),
     }));
 
     const scholarships = this.db.prepare('SELECT * FROM cdes_scholarships_lake ORDER BY deadline ASC').all().map((s: any) => ({
       ...s,
-      priority_fields: JSON.parse(s.priority_fields_json || '[]'),
+      priority_fields: safeJsonParse<string[]>(s.priority_fields_json, []),
     }));
 
     const careers = this.db.prepare('SELECT * FROM cdes_careers_lake ORDER BY demand_index DESC').all().map((c: any) => ({
       ...c,
-      top_skills: JSON.parse(c.top_skills_json || '[]'),
+      top_skills: safeJsonParse<string[]>(c.top_skills_json, []),
     }));
 
     const industries = this.db.prepare('SELECT * FROM cdes_industries_lake ORDER BY gdp_contribution_pct DESC').all().map((i: any) => ({
       ...i,
-      top_employers: JSON.parse(i.top_employers_json || '[]'),
+      top_employers: safeJsonParse<string[]>(i.top_employers_json, []),
     }));
 
     const psychometrics = this.db.prepare('SELECT * FROM cdes_psychometrics_lake ORDER BY instrument_code ASC').all();
 
     const learningScience = this.db.prepare('SELECT * FROM cdes_learning_science_lake ORDER BY framework_name ASC').all().map((l: any) => ({
       ...l,
-      action_verbs: JSON.parse(l.action_verbs_json || '[]'),
-      scaffolding_techniques: JSON.parse(l.scaffolding_techniques_json || '[]'),
-      misconception_countermeasures: JSON.parse(l.misconception_countermeasures_json || '[]'),
+      action_verbs: safeJsonParse<string[]>(l.action_verbs_json, []),
+      scaffolding_techniques: safeJsonParse<string[]>(l.scaffolding_techniques_json, []),
+      misconception_countermeasures: safeJsonParse<string[]>(l.misconception_countermeasures_json, []),
     }));
 
     return {
@@ -152,7 +157,7 @@ export class DataPlatformService {
         FROM cdes_universities_lake
         WHERE lower(name_en) LIKE ? OR lower(name_km) LIKE ? OR lower(abbr) LIKE ? OR lower(top_sectors_json) LIKE ?
       `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
-      results.push(...univs.map((u: any) => ({ ...u, entity_type: 'university', top_sectors: JSON.parse(u.top_sectors_json || '[]') })));
+      results.push(...univs.map((u: any) => ({ ...u, entity_type: 'university', top_sectors: safeJsonParse<string[]>(u.top_sectors_json, []) })));
     }
 
     if (!domain || domain === 'scholarships' || domain === 'all') {
@@ -161,7 +166,7 @@ export class DataPlatformService {
         FROM cdes_scholarships_lake
         WHERE lower(title) LIKE ? OR lower(provider) LIKE ? OR lower(priority_fields_json) LIKE ?
       `).all(`%${q}%`, `%${q}%`, `%${q}%`);
-      results.push(...schs.map((s: any) => ({ ...s, entity_type: 'scholarship', priority_fields: JSON.parse(s.priority_fields_json || '[]') })));
+      results.push(...schs.map((s: any) => ({ ...s, entity_type: 'scholarship', priority_fields: safeJsonParse<string[]>(s.priority_fields_json, []) })));
     }
 
     if (!domain || domain === 'careers' || domain === 'all') {
@@ -170,7 +175,7 @@ export class DataPlatformService {
         FROM cdes_careers_lake
         WHERE lower(title_en) LIKE ? OR lower(title_km) LIKE ? OR lower(industry_domain) LIKE ? OR lower(top_skills_json) LIKE ?
       `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
-      results.push(...cars.map((c: any) => ({ ...c, entity_type: 'career', top_skills: JSON.parse(c.top_skills_json || '[]') })));
+      results.push(...cars.map((c: any) => ({ ...c, entity_type: 'career', top_skills: safeJsonParse<string[]>(c.top_skills_json, []) })));
     }
 
     return {
@@ -184,72 +189,65 @@ export class DataPlatformService {
   // ==========================================================
   // 3. STUDENT INTELLIGENCE DATABASE (Task 3)
   // ==========================================================
-  public getStudentIntelligenceDossier(studentId: string = 'usr-student-01') {
-    // 1. Identity
-    let identity = this.db.prepare('SELECT * FROM cdes_student_identities WHERE student_id = ?').get(studentId) as any;
-    if (!identity) {
-      identity = {
-        student_id: studentId,
-        sovereign_pseudonym: `CDES-KH-STU-${studentId.slice(-5)}`,
-        academic_grade: 'Grade 12 (STEM Track)',
-        institution_name: 'Preah Sisowath New Generation School',
-        province_origin: 'Phnom Penh',
-        geographic_tier: 'Tier 1 Capital',
-        socioeconomic_access_bracket: 'Moderate Digital Access',
-        primary_language: 'km',
-        consent_status: 'fully_consented',
-        encryption_key_hash: 'sha256-active-session-sovereign',
-      };
-    }
+  public getStudentIntelligenceDossier(studentId: string) {
+    const consent = privacyService.getConsent(studentId);
+    const profileRow = this.db
+      .prepare('SELECT id, name, education_level, language, school, location FROM student_profiles WHERE user_id = ? OR id = ?')
+      .get(studentId, studentId) as Record<string, unknown> | undefined;
 
-    // 2. Goals
+    const existingIdentity = this.db
+      .prepare('SELECT * FROM cdes_student_identities WHERE student_id = ?')
+      .get(studentId) as Record<string, unknown> | undefined;
+
+    const identity = existingIdentity
+      ? {
+          ...existingIdentity,
+          consent_status: consent.consentStatus,
+          is_complete: true,
+        }
+      : {
+          student_id: studentId,
+          sovereign_pseudonym: consent.anonymizedResearchId,
+          academic_grade: typeof profileRow?.education_level === 'string' ? profileRow.education_level : null,
+          institution_name: typeof profileRow?.school === 'string' ? profileRow.school : null,
+          province_origin: typeof profileRow?.location === 'string' ? profileRow.location : null,
+          geographic_tier: null,
+          socioeconomic_access_bracket: null,
+          primary_language: typeof profileRow?.language === 'string' ? profileRow.language : 'km',
+          consent_status: consent.consentStatus,
+          is_complete: false,
+        };
+
     const goals = this.db.prepare('SELECT * FROM cdes_student_goals WHERE student_id = ? ORDER BY priority_level ASC').all(studentId);
-
-    // 3. Interest Vectors
-    const interests = this.db.prepare('SELECT * FROM cdes_student_interest_vectors WHERE student_id = ? ORDER BY composite_score DESC').all(studentId) as { domain_key: string }[];
-
-    // 4. Behavioral Telemetry
-    const telemetry = this.db.prepare('SELECT * FROM cdes_student_behavioral_telemetry WHERE student_id = ? ORDER BY timestamp DESC LIMIT 10').all(studentId);
-
-    // 5. Learning Patterns
-    const patterns = this.db.prepare('SELECT * FROM cdes_student_learning_patterns WHERE student_id = ?').get(studentId) as any || {
-      chronotype_peak: 'Morning Prime (06:00 - 10:30)',
-      avg_session_duration_min: 48,
-      cognitive_stamina_half_life_min: 55,
-      preferred_modality: 'Mathematical Rigor & Visual Vector Fields',
-      error_recovery_velocity: 0.89,
-      consistency_streak_days: 21,
-    };
-
-    // 6. Achievements
-    const achievements = this.db.prepare('SELECT * FROM cdes_student_achievements WHERE student_id = ? ORDER BY date_earned DESC').all(studentId).map((a: any) => ({
+    const interests = this.db.prepare('SELECT * FROM cdes_student_interest_vectors WHERE student_id = ? ORDER BY composite_score DESC').all(studentId) as Array<{ domain_key: string }>;
+    const telemetry = this.db.prepare('SELECT * FROM cdes_student_behavioral_telemetry WHERE student_id = ? ORDER BY timestamp DESC LIMIT 10').all(studentId) as Array<Record<string, unknown>>;
+    const patterns = (this.db.prepare('SELECT * FROM cdes_student_learning_patterns WHERE student_id = ?').get(studentId) as Record<string, unknown> | undefined) || null;
+    const achievements = (this.db.prepare('SELECT * FROM cdes_student_achievements WHERE student_id = ? ORDER BY date_earned DESC').all(studentId) as Array<Record<string, unknown>>).map((a) => ({
       ...a,
-      metadata: JSON.parse(a.metadata_json || '{}'),
+      metadata: safeJsonParse<Record<string, unknown>>(typeof a.metadata_json === 'string' ? a.metadata_json : null, {}),
     }));
-
-    // 7. Projects
-    const projects = this.db.prepare('SELECT * FROM cdes_student_projects WHERE student_id = ? ORDER BY rubric_score DESC').all(studentId).map((p: any) => ({
+    const projects = (this.db.prepare('SELECT * FROM cdes_student_projects WHERE student_id = ? ORDER BY rubric_score DESC').all(studentId) as Array<Record<string, unknown>>).map((p) => ({
       ...p,
-      skills_demonstrated: JSON.parse(p.skills_demonstrated_json || '[]'),
+      skills_demonstrated: safeJsonParse<string[]>(typeof p.skills_demonstrated_json === 'string' ? p.skills_demonstrated_json : null, []),
     }));
-
-    // Online Feature Store Hydration
-    const onlineFeatures = this.db.prepare('SELECT * FROM cdes_feature_store_online WHERE entity_id = ?').all(studentId).map((f: any) => ({
+    const onlineFeatures = (this.db.prepare('SELECT * FROM cdes_feature_store_online WHERE entity_id = ?').all(studentId) as Array<Record<string, unknown>>).map((f) => ({
       feature_group: f.feature_group,
       feature_key: f.feature_key,
-      value: JSON.parse(f.feature_value_json || '{}'),
+      value: safeJsonParse<Record<string, unknown>>(typeof f.feature_value_json === 'string' ? f.feature_value_json : null, {}),
       last_updated_at: f.last_updated_at,
     }));
 
-    // Sanitize identity data before returning (F-007: PII redaction)
     const sanitizedIdentity = sanitizeForPublic({ ...identity });
-    const cleanedTelemetry = telemetry.map((t: any) => ({
+    const cleanedTelemetry = telemetry.map((t) => ({
       ...t,
-      metadata: JSON.parse(t.metadata_json || '{}'),
+      metadata: safeJsonParse<Record<string, unknown>>(typeof t.metadata_json === 'string' ? t.metadata_json : null, {}),
     }));
 
+    const hasCompleteDossier = Boolean(existingIdentity);
     return {
       student_id: studentId,
+      is_complete: hasCompleteDossier,
+      consent_status: consent.consentStatus,
       pillars: {
         identity: sanitizedIdentity,
         goals,
@@ -260,8 +258,8 @@ export class DataPlatformService {
         projects,
       },
       online_features: onlineFeatures,
-      intelligence_readiness_score: 95.8,
-      profile_health: 'Optimal & Verified',
+      intelligence_readiness_score: hasCompleteDossier ? 85 : 0,
+      profile_health: hasCompleteDossier ? 'Verified' : 'Incomplete',
     };
   }
 
@@ -533,6 +531,16 @@ export class DataPlatformService {
     baseline_metric_value: number;
     post_outcome_metric_value: number;
   }) {
+    if (!privacyService.canCollectAnalytics(payload.student_id)) {
+      return {
+        success: true,
+        persisted: false,
+        reason: 'consent_disabled',
+        feedback_incorporated: false,
+        message: 'Analytics collection disabled under current student privacy consent.',
+      };
+    }
+
     const loopId = `loop-${crypto.randomUUID().slice(0, 8)}`;
     const outcomeDelta = payload.post_outcome_metric_value - payload.baseline_metric_value;
     const now = new Date().toISOString();
@@ -576,34 +584,51 @@ export class DataPlatformService {
   // ==========================================================
   // 7. DATA GOVERNANCE & SOVEREIGN PRIVACY (Task 7)
   // ==========================================================
-  public getDataGovernanceStatus(studentId: string = 'usr-student-01') {
-    const consent = this.db.prepare('SELECT * FROM cdes_data_governance_consents WHERE student_id = ?').get(studentId) as any;
-    const identity = this.db.prepare('SELECT * FROM cdes_student_identities WHERE student_id = ?').get(studentId) as any;
-    const scorecards = this.db.prepare('SELECT * FROM cdes_data_quality_scorecards ORDER BY completeness_pct DESC').all().map((s: any) => ({
+  public getDataGovernanceStatus(studentId: string) {
+    const consentState = privacyService.getConsent(studentId);
+    const govRow = this.db.prepare('SELECT * FROM cdes_data_governance_consents WHERE student_id = ?').get(studentId) as Record<string, unknown> | undefined;
+    const identity = this.db.prepare('SELECT * FROM cdes_student_identities WHERE student_id = ?').get(studentId) as Record<string, unknown> | undefined;
+    const scorecards = (this.db.prepare('SELECT * FROM cdes_data_quality_scorecards ORDER BY completeness_pct DESC').all() as Array<Record<string, unknown>>).map((s) => ({
       ...s,
-      audit_summary: JSON.parse(s.audit_summary_json || '{}'),
+      audit_summary: safeJsonParse<Record<string, unknown>>(typeof s.audit_summary_json === 'string' ? s.audit_summary_json : null, {}),
     }));
 
     return {
       student_id: studentId,
-      sovereign_identity: identity?.sovereign_pseudonym || 'CDES-KH-STU-88219',
+      sovereign_identity: typeof identity?.sovereign_pseudonym === 'string'
+        ? identity.sovereign_pseudonym
+        : consentState.anonymizedResearchId,
       encryption_cipher: 'AES-GCM-256 (Field-Level Student-Keyed)',
+      consent_status: consentState.consentStatus,
       triple_lock_consent: {
-        student_signature: { status: 'GRANTED', verified_at: consent?.granted_at || '2026-08-20T08:00:00Z' },
+        student_signature: {
+          status: consentState.consentStatus === 'withdrawn'
+            ? 'WITHDRAWN'
+            : consentState.allowAnalyticsTracking || consentState.allowAiMemory || consentState.allowResearchInclusion
+              ? 'GRANTED'
+              : 'PENDING',
+          verified_at: consentState.withdrawnAt || consentState.consentDate || null,
+        },
         parent_guardian_signature: {
-          status: consent?.parent_guardian_approved ? 'APPROVED' : 'PENDING',
-          required_for_minor: consent?.is_minor ? true : false,
-          verified_by: 'SMS / Bakong Sovereign KYC Hash',
+          status: consentState.parentalConsentVerified
+            ? 'APPROVED'
+            : consentState.parentVerificationStatus === 'pending_owner_verification'
+              ? 'PENDING_VERIFICATION'
+              : 'UNVERIFIED',
+          required_for_minor: consentState.isMinor,
+          verified_by: consentState.parentalConsentVerified ? 'Owner-Verified Guardian Record' : null,
         },
         school_director_approval: {
-          status: consent?.school_administrator_approved ? 'VERIFIED' : 'PENDING',
-          institution: identity?.institution_name || 'Preah Sisowath High School',
+          status: govRow?.school_administrator_approved ? 'VERIFIED' : 'PENDING',
+          institution: typeof identity?.institution_name === 'string' ? identity.institution_name : null,
         },
       },
       permission_controls: {
-        allow_personalization: Boolean(consent?.allowed_for_personalization ?? true),
-        allow_research_aggregates: Boolean(consent?.allowed_for_research_aggregates ?? true),
-        allow_cross_border_scholarship_sharing: false, // Strict default privacy
+        allow_analytics_tracking: consentState.allowAnalyticsTracking,
+        allow_personalization: consentState.allowAiMemory && consentState.consentStatus !== 'withdrawn',
+        allow_ai_memory: consentState.allowAiMemory,
+        allow_research_aggregates: consentState.allowResearchInclusion,
+        allow_cross_border_scholarship_sharing: false,
         right_to_erasure_available: true,
         sovereign_data_portability: true,
       },
@@ -611,26 +636,25 @@ export class DataPlatformService {
     };
   }
 
-  public exportSovereignStudentData(studentId: string = 'usr-student-01') {
+  public exportSovereignStudentData(studentId: string) {
     const dossier = this.getStudentIntelligenceDossier(studentId);
     const governance = this.getDataGovernanceStatus(studentId);
 
-    // Sanitize dossier before including in export payload (F-007: PII redaction)
-const sanitizedDossier = {
-  student_id: dossier.student_id,
-  pillars: {
-    identity: sanitizeForPublic({ ...dossier.pillars.identity }),
-    goals: dossier.pillars.goals.map((g: any) => sanitizeForPublic({ ...g })),
-    interests: dossier.pillars.interests,
-    behavior: dossier.pillars.behavior.map((t: any) => ({ ...t, metadata: JSON.parse(t.metadata_json || '{}') })),
-    learning_patterns: dossier.pillars.learning_patterns,
-    achievements: dossier.pillars.achievements.map((a: any) => ({ ...a, metadata: JSON.parse(a.metadata_json || '{}') })),
-    projects: dossier.pillars.projects.map((p: any) => ({ ...p, skills_demonstrated: JSON.parse(p.skills_demonstrated_json || '[]') })),
-  },
-  online_features: dossier.online_features,
-  intelligence_readiness_score: dossier.intelligence_readiness_score,
-  profile_health: dossier.profile_health,
-};
+    const sanitizedDossier = {
+      student_id: dossier.student_id,
+      pillars: {
+        identity: sanitizeForPublic({ ...dossier.pillars.identity }),
+        goals: dossier.pillars.goals.map((g) => sanitizeForPublic({ ...(g as Record<string, unknown>) })),
+        interests: dossier.pillars.interests,
+        behavior: dossier.pillars.behavior,
+        learning_patterns: dossier.pillars.learning_patterns,
+        achievements: dossier.pillars.achievements,
+        projects: dossier.pillars.projects,
+      },
+      online_features: dossier.online_features,
+      intelligence_readiness_score: dossier.intelligence_readiness_score,
+      profile_health: dossier.profile_health,
+    };
 
 const exportPayload = {
   export_id: `cdes-export-${crypto.randomUUID()}`,
@@ -654,7 +678,7 @@ const exportPayload = {
   public getMLModelsRegistry() {
     const models = this.db.prepare('SELECT * FROM cdes_ml_models_registry ORDER BY accuracy_score DESC').all().map((m: any) => ({
       ...m,
-      parameters: JSON.parse(m.parameters_json || '{}'),
+      parameters: safeJsonParse<Record<string, unknown>>(m.parameters_json, {}),
     }));
 
     return {
@@ -726,7 +750,7 @@ const exportPayload = {
     // Compute semantic match score based on student interest vectors and university prestige
     const recommendations = universities.map((u: any) => {
       let fitScore = 0.85;
-      const sectors = JSON.parse(u.top_sectors_json || '[]');
+      const sectors = safeJsonParse<string[]>(u.top_sectors_json, []);
 
       // Boost CADT and ITC for high STEM math/physics students
       if (u.abbr === 'CADT') fitScore = 0.98;
@@ -794,7 +818,7 @@ const exportPayload = {
       top_skills_json: JSON.stringify(['Distributed Cloud Architecture', 'PyTorch / TensorFlow', 'Vector Databases & RAG', 'Kubernetes Orchestration', 'Khmer NLP Processing']),
     };
 
-    const targetSkills = JSON.parse(career.top_skills_json || '[]');
+    const targetSkills = safeJsonParse<string[]>(career.top_skills_json, []);
 
     // Compare against student demonstrated skills from projects
     const dossier = this.getStudentIntelligenceDossier(studentId);

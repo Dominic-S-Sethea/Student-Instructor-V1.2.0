@@ -13,14 +13,15 @@ import {
   Folder,
   Search,
 } from 'lucide-react';
-import { User } from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import {
   googleSignIn,
   logout,
   initAuth,
   listDriveFiles,
   exportDossierToGoogleDrive,
-  DriveFile,
+  isGoogleDriveConfigured,
+  type DriveFile,
 } from '../services/googleDriveService';
 import { ComprehensiveUniversityProfile } from '../types';
 
@@ -267,6 +268,13 @@ export const GoogleDriveHubModal: React.FC<GoogleDriveHubModalProps> = ({
             )}
           </div>
         </div>
+
+        {/* Config Notice */}
+        {!isGoogleDriveConfigured() && (
+          <div className="px-6 py-2.5 bg-amber-50 border-b border-amber-200 text-xs text-amber-900">
+            Google Drive integration is currently unconfigured in this deployment (set <code className="font-mono">VITE_FIREBASE_API_KEY</code> to enable).
+          </div>
+        )}
 
         {/* Notifications */}
         {statusMessage && (

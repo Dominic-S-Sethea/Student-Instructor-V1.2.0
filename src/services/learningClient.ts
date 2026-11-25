@@ -1,7 +1,6 @@
-import { apiGet, apiPost } from "./apiClient";
+import { apiGet, apiPost } from './apiClient';
 import {
   Subject,
-  Category,
   LearningContent,
   LabExperiment,
   LabExperimentResult,
@@ -11,17 +10,17 @@ import {
   StudentLearningPath,
   StudentAIEducationProfile,
   LearningPathStep,
-} from "../../server/types/learningTypes";
+} from '../../shared/types/learningTypes';
 
 export interface ExperimentWithStatus extends LabExperiment {
-  student_status?: "unattempted" | "in_progress" | "completed";
+  student_status?: 'unattempted' | 'in_progress' | 'completed';
   best_score?: number | null;
   attempts?: number;
 }
 
 export interface ActivityWithStatus extends LearningActivity {
   progress?: StudentActivityProgress;
-  student_status?: "unattempted" | "in_progress" | "completed";
+  student_status?: 'unattempted' | 'in_progress' | 'completed';
   student_score?: number | null;
 }
 
@@ -33,168 +32,154 @@ export interface RoadmapWithStatus extends LearningPath {
   current_step?: LearningPathStep;
 }
 
+export interface LearningRewardResponse {
+  result?: LabExperimentResult;
+  observation_notes?: string;
+  meritPointsEarned?: number;
+  unlockedBadge?: string | null;
+  itemRewardName?: string | null;
+  progress?: StudentActivityProgress;
+}
+
 export class LearningClient {
-  private baseUrl = "/api/learning";
+  private baseUrl = '/api/learning';
 
-  public async getSubjects(studentId: string): Promise<Subject[]> {
-    const res = await apiGet(`${this.baseUrl}/subjects?studentId=${studentId}`);
-    if (!res.ok) throw new Error("Failed to fetch subjects");
-    const json = await res.json();
-    return json.data;
+  public async getSubjects(_studentId?: string): Promise<Subject[]> {
+    return (await apiGet<Subject[]>(`${this.baseUrl}/subjects`)) || [];
   }
 
-  public async getContent(params: { studentId: string; category?: string; type?: string; page?: number }): Promise<LearningContent[]> {
-    const url = new URL(`${this.baseUrl}/content`);
-    url.searchParams.append("studentId", params.studentId);
-    if (params.category) url.searchParams.append("category", params.category);
-    if (params.type) url.searchParams.append("type", params.type);
-    const res = await apiGet(url.toString());
-    if (!res.ok) throw new Error("Failed to fetch content");
-    const json = await res.json();
-    return json.data;
+  public async getContent(params: { studentId?: string; category?: string; type?: string; page?: number }): Promise<LearningContent[]> {
+    const qs = new URLSearchParams();
+    if (params.category) qs.set('category_id', params.category);
+    if (params.type) qs.set('content_type', params.type);
+    const q = qs.toString();
+    return (await apiGet<LearningContent[]>(`${this.baseUrl}/content${q ? `?${q}` : ''}`)) || [];
   }
 
-  public async getContentById(contentId: string, studentId: string): Promise<LearningContent> {
-    const res = await apiGet(`${this.baseUrl}/content/${contentId}?studentId=${studentId}`);
-    if (!res.ok) throw new Error("Failed to fetch content");
-    const json = await res.json();
-    return json.data;
+  public async getContentById(contentId: string, _studentId?: string): Promise<LearningContent> {
+    return apiGet<LearningContent>(`${this.baseUrl}/content/${encodeURIComponent(contentId)}`);
   }
 
-  public async getExperiments(experimentId: string, studentId: string): Promise<LabExperiment[]> {
-    const res = await apiGet(`${this.baseUrl}/experiments/${experimentId}?studentId=${studentId}`);
-    if (!res.ok) throw new Error("Failed to fetch experiments");
-    const json = await res.json();
-    return json.data;
+  public async getExperiments(_experimentId?: string, subjectId?: string): Promise<LabExperiment[]> {
+    const q = subjectId ? `?subject_id=${encodeURIComponent(subjectId)}` : '';
+    return (await apiGet<LabExperiment[]>(`${this.baseUrl}/experiments${q}`)) || [];
   }
 
-  public async getExperimentAction(experimentId: string, action: string, studentId: string): Promise<any> {
-    const res = await apiPost(`${this.baseUrl}/experiments/${experimentId}/action`, { studentId, action });
-    if (!res.ok) throw new Error("Failed to execute experiment action");
-    const json = await res.json();
-    return json.data;
+  public async getExperimentAction(experimentId: string, action: string, _studentId?: string): Promise<LearningRewardResponse> {
+    return apiPost<LearningRewardResponse>(`${this.baseUrl}/experiments/${encodeURIComponent(experimentId)}/action`, {
+      actionName: action,
+    });
   }
 
-  public async getExperimentResult(experimentId: string, studentId: string): Promise<LabExperimentResult> {
-    const res = await apiGet(`${this.baseUrl}/experiments/${experimentId}/result?studentId=${studentId}`);
-    if (!res.ok) throw new Error("Failed to fetch experiment result");
-    const json = await res.json();
-    return json.data;
+  public async getExperimentResult(experimentId: string, _studentId?: string): Promise<LabExperimentResult> {
+    return apiGet<LabExperimentResult>(`${this.baseUrl}/experiments/${encodeURIComponent(experimentId)}`);
   }
 
-
-  public async getStudentProgress(pathId: string, studentId: string): Promise<StudentLearningPath> {
-    const res = await apiGet(`${this.baseUrl}/paths/${pathId}?studentId=${studentId}`);
-    if (!res.ok) throw new Error("Failed to fetch student path");
-    const json = await res.json();
-    return json.data;
+  public async getStudentProgress(_pathId?: string, _studentId?: string): Promise<StudentLearningPath> {
+    return apiGet<StudentLearningPath>(`${this.baseUrl}/paths`);
   }
 
-  public async enrollPath(studentId: string, pathId: string): Promise<void> {
-    await apiPost(`${this.baseUrl}/paths/${pathId}/enroll`, { studentId, pathId });
+  public async enrollPath(_studentId: string, pathId: string): Promise<void> {
+    await apiPost(`${this.baseUrl}/paths/${encodeURIComponent(pathId)}/enroll`, {});
   }
 
-  public async advancePath(studentId: string, pathId: string, activityId: string): Promise<void> {
-    await apiPost(`${this.baseUrl}/paths/${pathId}/advance`, { studentId, pathId, activityId });
+  public async advancePath(_studentId: string, pathId: string, stepOrder: number | string): Promise<void> {
+    await apiPost(`${this.baseUrl}/paths/${encodeURIComponent(pathId)}/advance`, { stepOrder: Number(stepOrder) || 1 });
   }
 
-  public async getStudentAIProfile(studentId: string): Promise<StudentAIEducationProfile> {
-    const res = await apiGet(`${this.baseUrl}/student-ai-profile?studentId=${studentId}`);
-    if (!res.ok) throw new Error("Failed to fetch AI education profile");
-    const json = await res.json();
-    return json.data;
+  public async getStudentAIProfile(_studentId?: string): Promise<StudentAIEducationProfile> {
+    return apiGet<StudentAIEducationProfile>(`${this.baseUrl}/student-ai-profile`);
   }
 
-  public async trackEvent(eventType: string, payload: any): Promise<void> {
+  public async trackEvent(eventType: string, payload: Record<string, unknown>): Promise<void> {
     await apiPost(`${this.baseUrl}/analytics/event`, { ...payload, eventType });
   }
 
-  // ---- content / catalog ----
   public async getContentCatalog(
     params: { subject_id?: string; category_id?: string; content_type?: string; difficulty?: string; search?: string },
-    studentId?: string
+    _studentId?: string
   ): Promise<LearningContent[]> {
-    const url = new URL(`${this.baseUrl}/content-catalog`);
-    if (params.subject_id) url.searchParams.append("subject_id", params.subject_id);
-    if (params.category_id) url.searchParams.append("category_id", params.category_id);
-    if (params.content_type) url.searchParams.append("content_type", params.content_type);
-    if (params.difficulty) url.searchParams.append("difficulty", params.difficulty);
-    if (params.search) url.searchParams.append("search", params.search);
-    if (studentId) url.searchParams.append("studentId", studentId);
-    const res = await apiGet(url.toString());
-    return res.data || [];
+    const qs = new URLSearchParams();
+    if (params.subject_id) qs.set('subject_id', params.subject_id);
+    if (params.category_id) qs.set('category_id', params.category_id);
+    if (params.content_type) qs.set('content_type', params.content_type);
+    if (params.difficulty) qs.set('difficulty', params.difficulty);
+    if (params.search) qs.set('search', params.search);
+    const q = qs.toString();
+    return (await apiGet<LearningContent[]>(`${this.baseUrl}/content${q ? `?${q}` : ''}`)) || [];
   }
 
-  public async logAnalyticsEvent(eventType: string, payload?: any): Promise<void> {
-    await apiPost(`${this.baseUrl}/analytics/event`, { eventType, ...payload });
+  public async logAnalyticsEvent(eventType: string, payload?: Record<string, unknown>): Promise<void> {
+    await apiPost(`${this.baseUrl}/analytics/event`, { eventType, ...(payload || {}) });
   }
 
-  public async getContentDetail(contentId: string, studentId: string): Promise<LearningContent> {
-    const res = await apiGet(`${this.baseUrl}/content/${contentId}?studentId=${studentId}`);
-    return res.data;
+  public async getContentDetail(contentId: string, _studentId?: string): Promise<LearningContent> {
+    return apiGet<LearningContent>(`${this.baseUrl}/content/${encodeURIComponent(contentId)}`);
   }
 
-  // ---- roadmaps ----
-  public async getRoadmaps(studentId: string): Promise<RoadmapWithStatus[]> {
-    const res = await apiGet(`${this.baseUrl}/roadmaps?studentId=${studentId}`);
-    return res.data || [];
+  public async getRoadmaps(_studentId?: string): Promise<RoadmapWithStatus[]> {
+    return (await apiGet<RoadmapWithStatus[]>(`${this.baseUrl}/paths`)) || [];
   }
 
-  public async enrollRoadmap(pathId: string, studentId: string): Promise<boolean> {
-    const res = await apiPost(`${this.baseUrl}/paths/${pathId}/enroll`, { studentId, pathId });
-    return res.data?.enrolled ?? false;
+  public async enrollRoadmap(pathId: string, _studentId?: string): Promise<boolean> {
+    await apiPost(`${this.baseUrl}/paths/${encodeURIComponent(pathId)}/enroll`, {});
+    return true;
   }
 
-  public async advanceRoadmap(pathId: string, currentStep: number, studentId: string): Promise<boolean> {
-    const res = await apiPost(`${this.baseUrl}/paths/${pathId}/advance`, { studentId, pathId, currentStep });
-    return res.data?.advanced ?? false;
+  public async advanceRoadmap(pathId: string, currentStep: number, _studentId?: string): Promise<boolean> {
+    await apiPost(`${this.baseUrl}/paths/${encodeURIComponent(pathId)}/advance`, { stepOrder: currentStep });
+    return true;
   }
 
-  // ---- activities ----
-  public async getActivities(subject?: string, type?: string, studentId?: string): Promise<LearningActivity[]> {
-    const url = new URL(`${this.baseUrl}/activities`);
-    if (subject) url.searchParams.append("subject", subject);
-    if (type) url.searchParams.append("type", type);
-    if (studentId) url.searchParams.append("studentId", studentId);
-    const res = await apiGet(url.toString());
-    return res.data || [];
+  public async getActivities(subject?: string, type?: string, _studentId?: string): Promise<LearningActivity[]> {
+    const qs = new URLSearchParams();
+    if (subject) qs.set('subject_id', subject);
+    if (type) qs.set('type', type);
+    const q = qs.toString();
+    return (await apiGet<LearningActivity[]>(`${this.baseUrl}/activities${q ? `?${q}` : ''}`)) || [];
   }
 
   public async recordActivityAction(
     activityId: string,
     action: string,
-    data?: any,
+    data?: Record<string, unknown>,
     score?: number,
-    studentId?: string
-  ): Promise<any> {
-    const body: any = { activityId, action, ...(data || {}) };
-    if (score !== undefined) body.score = score;
-    if (studentId) body.studentId = studentId;
-    const res = await apiPost(`${this.baseUrl}/activities/${activityId}/action`, body);
-    return res.data;
+    _studentId?: string
+  ): Promise<LearningRewardResponse> {
+    return apiPost<LearningRewardResponse>(`${this.baseUrl}/activities/${encodeURIComponent(activityId)}/action`, {
+      action,
+      responseData: data,
+      score,
+    });
   }
 
-  // ---- experiments / lab ----
-  public async getLabExperiments(experimentId: string, studentId: string): Promise<LabExperiment[]> {
-    const res = await apiGet(`${this.baseUrl}/experiments/${experimentId}/student?studentId=${studentId}`);
-    return res.data || [];
+  public async getLabExperiments(_experimentId?: string, subjectId?: string): Promise<LabExperiment[]> {
+    return this.getExperiments(undefined, subjectId);
   }
 
-  public async getExperimentDetail(experimentId: string, studentId: string): Promise<{ experiment: LabExperiment; user_session: any }> {
-    const res = await apiGet(`${this.baseUrl}/experiments/${experimentId}?studentId=${studentId}`);
-    return res.data;
+  public async getExperimentDetail(
+    experimentId: string,
+    _studentId?: string
+  ): Promise<{ experiment: LabExperiment; user_session: LabExperimentResult | null }> {
+    return apiGet<{ experiment: LabExperiment; user_session: LabExperimentResult | null }>(
+      `${this.baseUrl}/experiments/${encodeURIComponent(experimentId)}`
+    );
   }
 
   public async completeLabExperiment(
     experimentId: string,
-    parametersUsed: any,
-    outcomeData: any,
+    parametersUsed: unknown,
+    outcomeData: unknown,
     score: number,
-    studentId: string,
+    _studentId?: string,
     observationNotes?: string
-  ): Promise<any> {
-    const res = await apiPost(`${this.baseUrl}/experiments/${experimentId}/complete`, { experimentId, parametersUsed, outcomeData, score, observationNotes, studentId });
-    return res.data;
+  ): Promise<LearningRewardResponse> {
+    return apiPost<LearningRewardResponse>(`${this.baseUrl}/experiments/${encodeURIComponent(experimentId)}/complete`, {
+      parametersUsed,
+      outcomeData,
+      score,
+      observationNotes,
+    });
   }
 }
 

@@ -1,27 +1,40 @@
 import { ResearchRepository } from '../repositories/researchRepository';
 import { AnalyticsRepository } from '../repositories/analyticsRepository';
 import { PrivacyRepository } from '../repositories/privacyRepository';
+import { PrivacyService } from './privacyService';
+import { getDatabase } from '../db/connection';
+import { getResearchSalt } from '../config';
 import {
   ResearchExperiment,
   ExperimentParticipant,
   ExperimentOutcomeReport,
   AnonymizedResearchDataPoint
 } from '../types/analytics';
-import crypto from 'crypto';
+import crypto from 'node:crypto';
+
+export class ConsentDeniedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConsentDeniedError';
+  }
+}
 
 export class ResearchService {
   private researchRepo: ResearchRepository;
   private analyticsRepo: AnalyticsRepository;
   private privacyRepo: PrivacyRepository;
+  private privacyService: PrivacyService;
 
   constructor(
     researchRepo?: ResearchRepository,
     analyticsRepo?: AnalyticsRepository,
-    privacyRepo?: PrivacyRepository
+    privacyRepo?: PrivacyRepository,
+    privacyService?: PrivacyService
   ) {
     this.researchRepo = researchRepo || new ResearchRepository();
     this.analyticsRepo = analyticsRepo || new AnalyticsRepository();
     this.privacyRepo = privacyRepo || new PrivacyRepository();
+    this.privacyService = privacyService || new PrivacyService(this.privacyRepo);
   }
 
   public listExperiments(): ResearchExperiment[] {
@@ -52,12 +65,16 @@ export class ResearchService {
    * Hashes studentId + experimentId to reliably assign 50/50 split across Group A & Group B
    */
   public enrollStudent(studentId: string, experimentId: string, requestedGroup?: string): ExperimentParticipant {
+    if (!this.privacyService.canIncludeInResearch(studentId)) {
+      throw new ConsentDeniedError('Research participation requires verified research consent.');
+    }
+
     const existing = this.researchRepo.getParticipant(studentId, experimentId);
     if (existing) return existing;
 
     let assignedGroup = requestedGroup;
     if (!assignedGroup) {
-      const hash = crypto.createHash('md5').update(`${studentId}-${experimentId}`).digest('hex');
+      const hash = crypto.createHmac('sha256', getResearchSalt()).update(`${studentId}-${experimentId}`).digest('hex');
       const hashNum = parseInt(hash.slice(0, 4), 16);
       assignedGroup = (hashNum % 2 === 0) ? 'Group A (Control - Textual)' : 'Group B (Intervention - Simulation)';
     }
@@ -75,9 +92,13 @@ export class ResearchService {
     if (experiment.results) {
       const res = experiment.results;
       const groupsReport: Record<string, any> = {};
+      const persistedGroups = experiment.groups || [];
       for (const [gName, m] of Object.entries(res.groupMetrics)) {
+        const matchedGroup = persistedGroups.find(
+          (g) => g.groupName === gName || gName.includes(g.groupName) || g.groupName.includes(gName)
+        );
         groupsReport[gName] = {
-          participantCount: 45,
+          participantCount: matchedGroup?.participantCount ?? 0,
           averageQuizScore: (m as any).post_test_mean || (m as any).initial_task_completion || (m as any).immediate_post_test || 80,
           retentionRatePercentage: (m as any).retention_30d || (m as any).retention_60d || 78,
           averageEngagementMinutes: (m as any).time_on_task_minutes || (m as any).voluntary_study_minutes || 32,
@@ -90,7 +111,7 @@ export class ResearchService {
         experimentId: experiment.id,
         experimentName: experiment.name,
         hypothesis: experiment.hypothesis,
-        sampleSize: res.sampleSize || experiment.participantCount || 120,
+        sampleSize: res.sampleSize ?? experiment.participantCount ?? 0,
         groups: groupsReport,
         statisticalSignificance: {
           pValue: res.comparativeAnalysis.pValue,
@@ -110,7 +131,7 @@ export class ResearchService {
     // Aggregate statistics by group
     const groups: ExperimentOutcomeReport['groups'] = {
       'Group A (Traditional Explanation)': {
-        participantCount: Math.max(1, participants.filter(p => p.groupName.includes('Group A') || p.groupName.includes('Control')).length),
+        participantCount: participants.filter(p => p.groupName.includes('Group A') || p.groupName.includes('Control')).length,
         averageQuizScore: 72.4,
         retentionRatePercentage: 64.8,
         averageEngagementMinutes: 18.2,
@@ -118,7 +139,7 @@ export class ResearchService {
         persistenceScore: 68.0
       },
       'Group B (Interactive Simulation)': {
-        participantCount: Math.max(1, participants.filter(p => p.groupName.includes('Group B') || p.groupName.includes('Intervention') || p.groupName.includes('Simulation')).length),
+        participantCount: participants.filter(p => p.groupName.includes('Group B') || p.groupName.includes('Intervention') || p.groupName.includes('Simulation')).length,
         averageQuizScore: 86.7,
         retentionRatePercentage: 83.1,
         averageEngagementMinutes: 29.5,
@@ -133,7 +154,7 @@ export class ResearchService {
       experimentId: experiment.id,
       experimentName: experiment.name,
       hypothesis: experiment.hypothesis,
-      sampleSize: sampleSize || 42,
+      sampleSize,
       groups,
       statisticalSignificance: {
         pValue: 0.003,
@@ -153,40 +174,46 @@ export class ResearchService {
   }
 
   /**
-   * Generates completely anonymized research dataset complying with Child Safety and GDPR principles
+   * Generates anonymized research dataset strictly from currently eligible/consented students.
    */
   public generateAnonymizedResearchDataset(): AnonymizedResearchDataPoint[] {
-    const experiments = this.researchRepo.getExperiments();
-    const result: AnonymizedResearchDataPoint[] = [];
+    const eligible = this.privacyService.getResearchEligibleStudents();
+    if (eligible.length === 0) {
+      return [];
+    }
 
-    // Synthesize cohort points with pseudonymized hashes
-    const cohorts = [
-      { age: '15-16', region: 'Phnom Penh', group: 'Group B (Simulation)', score: 88, time: 32, persist: 86, style: 'visual', diff: 'advanced', comp: 94 },
-      { age: '16-17', region: 'Battambang', group: 'Group A (Text)', score: 71, time: 18, persist: 66, style: 'textual', diff: 'intermediate', comp: 78 },
-      { age: '17-18', region: 'Siem Reap', group: 'Group B (Simulation)', score: 91, time: 35, persist: 89, style: 'interactive', diff: 'hard', comp: 96 },
-      { age: '15-16', region: 'Kandal', group: 'Group A (Text)', score: 68, time: 16, persist: 62, style: 'textual', diff: 'beginner', comp: 72 },
-      { age: '16-17', region: 'Kampong Cham', group: 'Group B (Simulation)', score: 84, time: 28, persist: 81, style: 'simulation', diff: 'advanced', comp: 89 },
-      { age: '17-18', region: 'Phnom Penh', group: 'Group B (Simulation)', score: 94, time: 40, persist: 92, style: 'interactive', diff: 'hard', comp: 98 },
-      { age: '15-16', region: 'Takeo', group: 'Group A (Text)', score: 74, time: 20, persist: 70, style: 'balanced', diff: 'intermediate', comp: 80 },
-      { age: '18+', region: 'Preah Sihanouk', group: 'Group B (Simulation)', score: 89, time: 34, persist: 87, style: 'simulation', diff: 'advanced', comp: 92 }
-    ];
+    const db = getDatabase();
+    return eligible.map((entry) => {
+      const profile = db
+        .prepare('SELECT id, education_level, location FROM student_profiles WHERE user_id = ? OR id = ?')
+        .get(entry.studentId, entry.studentId) as { id?: string; education_level?: string; location?: string } | undefined;
+      const profileId = profile?.id || entry.studentId;
+      const intel = db
+        .prepare('SELECT persistence_score, engagement_score, learning_preferences FROM student_intelligence_profile WHERE student_id = ? OR student_id = ?')
+        .get(entry.studentId, profileId) as {
+          persistence_score?: number;
+          engagement_score?: number;
+          learning_preferences?: string;
+        } | undefined;
+      const participant = db
+        .prepare('SELECT group_name FROM experiment_participants WHERE student_id = ? OR student_id = ? LIMIT 1')
+        .get(entry.studentId, profileId) as { group_name?: string } | undefined;
+      const stats = db
+        .prepare('SELECT COUNT(*) AS cnt, AVG(score) AS avg_score, SUM(time_spent) AS total_time FROM learning_events WHERE (student_id = ? OR student_id = ?) AND deleted_at IS NULL')
+        .get(entry.studentId, profileId) as { cnt?: number; avg_score?: number | null; total_time?: number | null } | undefined;
 
-    cohorts.forEach((c, idx) => {
-      const anonId = this.privacyRepo.generateAnonymizedId(`research-subject-${idx + 101}`);
-      result.push({
-        anonymizedId: anonId,
-        ageCohort: c.age,
-        regionCohort: c.region,
-        experimentGroup: c.group,
-        totalTimeSpentMinutes: c.time,
-        averageScore: c.score,
-        persistenceRating: c.persist,
-        learningStyle: c.style,
-        difficultyMastered: c.diff,
-        completionRate: c.comp
-      });
+      return {
+        anonymizedId: entry.anonymizedResearchId,
+        ageCohort: profile?.education_level || 'unspecified',
+        regionCohort: profile?.location || 'unspecified',
+        experimentGroup: participant?.group_name || 'unassigned',
+        totalTimeSpentMinutes: Math.round((stats?.total_time || 0) / 60),
+        averageScore: Math.round(stats?.avg_score ?? 0),
+        persistenceRating: Math.round(intel?.persistence_score ?? 0),
+        learningStyle: intel?.learning_preferences || 'unspecified',
+        difficultyMastered: (stats?.cnt || 0) > 0 ? 'recorded' : 'none',
+        completionRate: Math.round(intel?.engagement_score ?? 0),
+      };
     });
-
-    return result;
   }
 }

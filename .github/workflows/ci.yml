@@ -100,10 +100,10 @@ jobs:
         run: npm run lint
 
   # ---------------------------------------------------------------------
-  # Build: vite (frontend) + esbuild (server → dist/server.cjs)
+  # Build: vite (frontend -> dist/public) + esbuild (server -> dist/server/server.cjs)
   # ---------------------------------------------------------------------
   build:
-    name: Build · vite + esbuild → dist/server.cjs
+    name: Build · vite + esbuild → dist/server/server.cjs
     runs-on: ubuntu-latest
     needs: install
     steps:
@@ -138,8 +138,10 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
-      - name: Unit + SEC-001 regression
-        run: npm test
+      - name: Unit + integration + SEC-001 tests & coverage
+        run: |
+          npm test
+          npm run test:coverage
 
   # ---------------------------------------------------------------------
   # verify-start: smoke-verify the `npm start` entry point
@@ -305,17 +307,16 @@ jobs:
       - run: npm run build
       - name: Provision staging config (mirrors prod)
         run: |
-          export NODE_ENV=staging
-          export DATABASE_PATH=/tmp/staging-cdes-${{ github.run_id }}.db
-          rm -f "$DATABASE_PATH"
-          # CI/MDM secrets are injected at runtime by GitHub Environment /
-          # secret manager — never committed.  Only runtime-honoured secrets:
-          #   STAGING_DATABASE_URL  (optional DB override)
-          #   STAGE_PAYLOAD_SECRET  (optional signing key)
+          DB_PATH="/tmp/staging-cdes-${{ github.run_id }}.db"
+          rm -f "$DB_PATH"
+          echo "NODE_ENV=staging" >> "$GITHUB_ENV"
+          echo "DATABASE_PATH=$DB_PATH" >> "$GITHUB_ENV"
+          echo "COOKIE_SECURE=false" >> "$GITHUB_ENV"
       - name: Start production build in staging
         run: |
           npm start > staging.log 2>&1 &
           SRV=$!
+          echo "STAGING_PID=$SRV" >> "$GITHUB_ENV"
 
           for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3000/api/health > /tmp/staging-health.json 2>/dev/null; then
@@ -349,5 +350,7 @@ jobs:
       - name: Tear down staging artifacts
         if: always()
         run: |
-          pkill -f "node dist/server.cjs" || true
+          if [ -n "${STAGING_PID:-}" ]; then
+            kill "$STAGING_PID" 2>/dev/null || true
+          fi
           rm -f /tmp/staging-cdes-*.db

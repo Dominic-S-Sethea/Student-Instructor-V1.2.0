@@ -1,4 +1,6 @@
-import { getDatabase } from '../db/connection';
+import crypto from 'node:crypto';
+import { getDatabase, withTransaction } from '../db/connection';
+import { safeJsonParse } from '../utils/safeJson';
 import {
   Subject,
   Category,
@@ -15,11 +17,16 @@ import {
 } from '../types/learningTypes';
 import { AvatarRepository } from './avatarRepository';
 import { AnalyticsRepository } from './analyticsRepository';
+import { PrivacyService } from '../services/privacyService';
+import { NotFoundError } from '../utils/httpErrors';
 
 export class LearningRepository {
-  private db = getDatabase();
+  private get db() {
+    return getDatabase();
+  }
   private avatarRepo = new AvatarRepository();
   private analyticsRepo = new AnalyticsRepository();
+  private privacyService = new PrivacyService();
 
   // ----------------------------------------------------
   // 1. SUBJECTS & CATEGORIES
@@ -109,10 +116,10 @@ export class LearningRepository {
   private mapLearningContent(r: any): any {
     return {
       ...r,
-      simulation_config: r.simulation_config ? JSON.parse(r.simulation_config) : undefined,
-      quiz_data: r.quiz_data ? JSON.parse(r.quiz_data) : undefined,
-      project_brief: r.project_brief ? JSON.parse(r.project_brief) : undefined,
-      learning_objectives: r.learning_objectives ? JSON.parse(r.learning_objectives) : [],
+      simulation_config: r.simulation_config ? safeJsonParse(r.simulation_config, undefined) : undefined,
+      quiz_data: r.quiz_data ? safeJsonParse(r.quiz_data, undefined) : undefined,
+      project_brief: r.project_brief ? safeJsonParse(r.project_brief, undefined) : undefined,
+      learning_objectives: safeJsonParse(r.learning_objectives, []),
     };
   }
 
@@ -159,12 +166,12 @@ export class LearningRepository {
   private mapLabExperiment(r: any): LabExperiment {
     return {
       ...r,
-      learning_objectives: r.learning_objectives ? JSON.parse(r.learning_objectives) : [],
-      apparatus_list: r.apparatus_list ? JSON.parse(r.apparatus_list) : [],
-      instructions: r.instructions ? JSON.parse(r.instructions) : [],
-      parameters_schema: r.parameters_schema ? JSON.parse(r.parameters_schema) : {},
-      initial_state: r.initial_state ? JSON.parse(r.initial_state) : {},
-      expected_outcome: r.expected_outcome ? JSON.parse(r.expected_outcome) : {},
+      learning_objectives: safeJsonParse(r.learning_objectives, []),
+      apparatus_list: safeJsonParse(r.apparatus_list, []),
+      instructions: safeJsonParse(r.instructions, []),
+      parameters_schema: safeJsonParse(r.parameters_schema, {}),
+      initial_state: safeJsonParse(r.initial_state, {}),
+      expected_outcome: safeJsonParse(r.expected_outcome, {}),
     };
   }
 
@@ -187,9 +194,9 @@ export class LearningRepository {
 
     return rows.map((r) => ({
       ...r,
-      actions_log: r.actions_log ? JSON.parse(r.actions_log) : [],
-      parameters_used: r.parameters_used ? JSON.parse(r.parameters_used) : {},
-      outcome_data: r.outcome_data ? JSON.parse(r.outcome_data) : {},
+      actions_log: safeJsonParse(r.actions_log, []),
+      parameters_used: safeJsonParse(r.parameters_used, {}),
+      outcome_data: safeJsonParse(r.outcome_data, {}),
     }));
   }
 
@@ -200,6 +207,10 @@ export class LearningRepository {
     parameters?: any;
     observationNotes?: string;
   }): LabExperimentResult {
+    const experiment = this.getLabExperimentById(params.experimentId);
+    if (!experiment) {
+      throw new NotFoundError('Experiment not found');
+    }
     const now = new Date().toISOString();
     let existing = this.db
       .prepare('SELECT * FROM lab_experiment_results WHERE student_id = ? AND experiment_id = ?')
@@ -207,7 +218,7 @@ export class LearningRepository {
 
     let actionsLog: any[] = [];
     if (existing) {
-      actionsLog = existing.actions_log ? JSON.parse(existing.actions_log) : [];
+      actionsLog = safeJsonParse(existing.actions_log, []);
       actionsLog.push({ action: params.actionName, timestamp: now, parameters: params.parameters });
 
       this.db
@@ -228,7 +239,7 @@ export class LearningRepository {
           existing.id
         );
     } else {
-      const resultId = `res-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const resultId = `res-${crypto.randomUUID()}`;
       actionsLog.push({ action: params.actionName, timestamp: now, parameters: params.parameters });
 
       this.db
@@ -249,13 +260,14 @@ export class LearningRepository {
         );
     }
 
-    // Track analytics event
-    this.analyticsRepo.logLearningEvent({
-      student_id: params.studentId,
-      content_id: params.experimentId,
-      action: 'experiment_started',
-      metadata: { actionName: params.actionName, parameters: params.parameters },
-    });
+    if (this.privacyService.canCollectAnalytics(params.studentId)) {
+      this.analyticsRepo.logLearningEvent({
+        student_id: params.studentId,
+        content_id: params.experimentId,
+        action: 'experiment_started',
+        metadata: { actionName: params.actionName, parameters: params.parameters },
+      });
+    }
 
     return this.getStudentLabResults(params.studentId).find((r) => r.experiment_id === params.experimentId)!;
   }
@@ -273,9 +285,10 @@ export class LearningRepository {
     unlockedBadge?: string;
     itemRewardName?: string;
   } {
+    return withTransaction(() => {
     const now = new Date().toISOString();
     const experiment = this.getLabExperimentById(params.experimentId);
-    if (!experiment) throw new Error('Experiment not found');
+    if (!experiment) throw new NotFoundError('Experiment not found');
 
     let existing = this.db
       .prepare('SELECT * FROM lab_experiment_results WHERE student_id = ? AND experiment_id = ?')
@@ -283,7 +296,7 @@ export class LearningRepository {
 
     let actionsLog: any[] = [];
     if (existing) {
-      actionsLog = existing.actions_log ? JSON.parse(existing.actions_log) : [];
+      actionsLog = safeJsonParse(existing.actions_log, []);
       actionsLog.push({ action: 'completed_experiment', timestamp: now, outcomeData: params.outcomeData });
 
       this.db
@@ -310,7 +323,7 @@ export class LearningRepository {
           existing.id
         );
     } else {
-      const resultId = `res-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const resultId = `res-${crypto.randomUUID()}`;
       actionsLog.push({ action: 'completed_experiment', timestamp: now, outcomeData: params.outcomeData });
 
       this.db
@@ -365,14 +378,15 @@ export class LearningRepository {
       weaknesses_observed: [],
     });
 
-    // Send analytics event to Student Intelligence Platform
-    this.analyticsRepo.logLearningEvent({
-      student_id: params.studentId,
-      content_id: params.experimentId,
-      action: 'experiment_completed',
-      score: params.score,
-      metadata: { outcomeData: params.outcomeData, meritPoints: points },
-    });
+    if (this.privacyService.canCollectAnalytics(params.studentId)) {
+      this.analyticsRepo.logLearningEvent({
+        student_id: params.studentId,
+        content_id: params.experimentId,
+        action: 'experiment_completed',
+        score: params.score,
+        metadata: { outcomeData: params.outcomeData, meritPoints: points },
+      });
+    }
 
     const updatedResult = this.getStudentLabResults(params.studentId).find((r) => r.experiment_id === params.experimentId)!;
 
@@ -382,6 +396,7 @@ export class LearningRepository {
       unlockedBadge,
       itemRewardName,
     };
+    });
   }
 
   // ----------------------------------------------------
@@ -411,7 +426,7 @@ export class LearningRepository {
     const rows = this.db.prepare(sql).all(...params) as any[];
     return rows.map((r) => ({
       ...r,
-      activity_data: r.activity_data ? JSON.parse(r.activity_data) : {},
+      activity_data: safeJsonParse(r.activity_data, {}),
     }));
   }
 
@@ -431,7 +446,7 @@ export class LearningRepository {
     if (!row) return null;
     return {
       ...row,
-      activity_data: row.activity_data ? JSON.parse(row.activity_data) : {},
+      activity_data: safeJsonParse(row.activity_data, {}),
     };
   }
 
@@ -455,7 +470,7 @@ export class LearningRepository {
 
     return rows.map((r) => ({
       ...r,
-      response_data: r.response_data ? JSON.parse(r.response_data) : {},
+      response_data: safeJsonParse(r.response_data, {}),
     }));
   }
 
@@ -470,9 +485,10 @@ export class LearningRepository {
     meritPointsEarned: number;
     unlockedBadge?: string;
   } {
+    return withTransaction(() => {
     const now = new Date().toISOString();
     const activity = this.getLearningActivityById(params.activityId);
-    if (!activity) throw new Error('Activity not found');
+    if (!activity) throw new NotFoundError('Activity not found');
 
     let existing = this.db
       .prepare('SELECT * FROM student_activity_progress WHERE student_id = ? AND activity_id = ?')
@@ -509,7 +525,7 @@ export class LearningRepository {
           existing.id
         );
     } else {
-      const progressId = `act-prog-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const progressId = `act-prog-${crypto.randomUUID()}`;
       const hintCount = params.action === 'hint_used' ? 1 : 0;
       const status = params.action === 'completed' ? 'completed' : 'started';
       const score = params.score || 0.0;
@@ -559,17 +575,34 @@ export class LearningRepository {
       });
     }
 
-    // Analytics event
-    this.analyticsRepo.logLearningEvent({
-      student_id: params.studentId,
-      content_id: params.activityId,
-      action: params.action === 'hint_used' ? 'hint_used' : params.action === 'completed' ? 'lesson_completed' : 'lesson_started',
-      score: params.score,
-      metadata: { activityType: activity.activity_type },
-    });
+    if (this.privacyService.canCollectAnalytics(params.studentId)) {
+      this.analyticsRepo.logLearningEvent({
+        student_id: params.studentId,
+        content_id: params.activityId,
+        action: params.action === 'hint_used' ? 'hint_used' : params.action === 'completed' ? 'lesson_completed' : 'lesson_started',
+        score: params.score,
+        metadata: { activityType: activity.activity_type },
+      });
+    }
 
     const progress = this.getStudentActivityProgress(params.studentId).find((p) => p.activity_id === params.activityId)!;
     return { progress, meritPointsEarned, unlockedBadge };
+    });
+  }
+
+  private getStepsByPathIds(pathIds: string[]): Map<string, LearningPathStep[]> {
+    const map = new Map<string, LearningPathStep[]>();
+    if (pathIds.length === 0) return map;
+    const placeholders = pathIds.map(() => '?').join(', ');
+    const steps = this.db
+      .prepare(`SELECT * FROM learning_path_steps WHERE path_id IN (${placeholders}) ORDER BY step_order ASC`)
+      .all(...pathIds) as unknown as LearningPathStep[];
+    for (const step of steps) {
+      const list = map.get(step.path_id) || [];
+      list.push(step);
+      map.set(step.path_id, list);
+    }
+    return map;
   }
 
   // ----------------------------------------------------
@@ -577,12 +610,8 @@ export class LearningRepository {
   // ----------------------------------------------------
   getLearningPaths(): LearningPath[] {
     const paths = this.db.prepare('SELECT * FROM learning_paths ORDER BY created_at ASC').all() as unknown as LearningPath[];
-    return paths.map((p) => {
-      const steps = this.db
-        .prepare('SELECT * FROM learning_path_steps WHERE path_id = ? ORDER BY step_order ASC')
-        .all(p.id) as unknown as LearningPathStep[];
-      return { ...p, steps };
-    });
+    const stepMap = this.getStepsByPathIds(paths.map((p) => p.id));
+    return paths.map((p) => ({ ...p, steps: stepMap.get(p.id) || [] }));
   }
 
   getStudentLearningPaths(studentId: string): (StudentLearningPath & { path: LearningPath })[] {
@@ -601,10 +630,10 @@ export class LearningRepository {
       `)
       .all(studentId) as any[];
 
+    const stepMap = this.getStepsByPathIds(rows.map((r) => r.lp_id as string));
+
     return rows.map((r) => {
-      const steps = this.db
-        .prepare('SELECT * FROM learning_path_steps WHERE path_id = ? ORDER BY step_order ASC')
-        .all(r.lp_id) as unknown as LearningPathStep[];
+      const steps = stepMap.get(r.lp_id) || [];
 
       return {
         id: r.id,
@@ -634,6 +663,10 @@ export class LearningRepository {
   }
 
   enrollLearningPath(studentId: string, pathId: string): StudentLearningPath {
+    const pathExists = this.db.prepare('SELECT id FROM learning_paths WHERE id = ?').get(pathId);
+    if (!pathExists) {
+      throw new NotFoundError('Learning path not found');
+    }
     const now = new Date().toISOString();
     const existing = this.db
       .prepare('SELECT * FROM student_learning_paths WHERE student_id = ? AND path_id = ?')
@@ -644,7 +677,7 @@ export class LearningRepository {
         .prepare("UPDATE student_learning_paths SET status = 'active', last_active_at = ? WHERE id = ?")
         .run(now, existing.id);
     } else {
-      const id = `slp-${Date.now()}`;
+      const id = `slp-${crypto.randomUUID()}`;
       this.db
         .prepare(`
           INSERT INTO student_learning_paths (id, student_id, path_id, current_step_order, status, progress_percentage, enrolled_at, last_active_at)
@@ -653,17 +686,25 @@ export class LearningRepository {
         .run(id, studentId, pathId, now, now);
     }
 
-    this.analyticsRepo.logActivityEvent({
-      user_id: studentId,
-      student_id: studentId,
-      event_type: 'LEARNING_PATH_ENROLLED',
-      metadata: { pathId },
-    });
+    if (this.privacyService.canCollectAnalytics(studentId)) {
+      this.analyticsRepo.logActivityEvent({
+        user_id: studentId,
+        student_id: studentId,
+        event_type: 'LEARNING_PATH_ENROLLED',
+        metadata: { pathId },
+      });
+    }
 
     return this.getStudentLearningPaths(studentId).find((p) => p.path_id === pathId)!;
   }
 
   advanceLearningPathStep(studentId: string, pathId: string, stepOrder: number): StudentLearningPath {
+    const enrolled = this.db
+      .prepare('SELECT id FROM student_learning_paths WHERE student_id = ? AND path_id = ?')
+      .get(studentId, pathId);
+    if (!enrolled) {
+      throw new NotFoundError('Learning path enrollment not found');
+    }
     const now = new Date().toISOString();
     const totalSteps = (
       this.db.prepare('SELECT COUNT(*) as count FROM learning_path_steps WHERE path_id = ?').get(pathId) as { count: number }
@@ -731,8 +772,8 @@ export class LearningRepository {
 
     const recentHistory: StudentLearningHistory[] = historyRows.map((h) => ({
       ...h,
-      strengths_observed: h.strengths_observed ? JSON.parse(h.strengths_observed) : [],
-      weaknesses_observed: h.weaknesses_observed ? JSON.parse(h.weaknesses_observed) : [],
+      strengths_observed: safeJsonParse(h.strengths_observed, []),
+      weaknesses_observed: safeJsonParse(h.weaknesses_observed, []),
     }));
 
     // 2. Count metrics

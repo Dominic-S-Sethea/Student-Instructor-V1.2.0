@@ -1,28 +1,21 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  User,
-  GraduationCap,
-  Calendar,
-  Video,
+  ArrowRight,
   Award,
   Bookmark,
-  Plus,
-  X,
-  ExternalLink,
-  MapPin,
+  GraduationCap,
+  Lock,
   Mail,
-  CheckCircle2,
-  Target,
-  Compass,
-  BookOpen,
-  Sparkles,
+  MapPin,
+  ShieldCheck,
+  Video,
 } from 'lucide-react';
-import {
-  StudentProfile,
-  Mentor,
-  OpportunityItem,
-  SessionBooking,
-} from '../types';
+import type { Mentor, OpportunityItem, StudentProfile, TabView } from '../types';
+import type { ScholarshipItem } from '../types/scholarship';
+import { StudentEducationAndPrivacyPanel } from './StudentEducationAndPrivacyPanel';
+import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
+import { scholarshipClient } from '../services/scholarshipClient';
 
 interface StudentProfileViewProps {
   studentProfile: StudentProfile;
@@ -31,412 +24,240 @@ interface StudentProfileViewProps {
   onUpdateInterests: (interests: string[]) => void;
   onCancelBooking: (bookingId: string) => void;
   onOpenBooking: (mentor: Mentor) => void;
+  onOpenAuthModal?: () => void;
+  onNavigateTab?: (tab: TabView) => void;
+}
+
+function readSavedScholarshipIds(): string[] {
+  try {
+    const raw = localStorage.getItem('csip_saved_scholarships');
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
 }
 
 export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
   studentProfile,
-  mentors,
-  opportunities,
-  onUpdateInterests,
   onCancelBooking,
-  onOpenBooking,
+  onOpenAuthModal,
+  onNavigateTab,
 }) => {
-  const [newTagInput, setNewTagInput] = useState('');
-  const [activeSubTab, setActiveSubTab] = useState<'sessions' | 'saved' | 'badges'>('sessions');
+  const { authenticated, user, profile: authProfile } = useAuth();
+  const { language } = useLanguage();
+  const isKhmer = language === 'km';
+  const [savedIds] = useState<string[]>(readSavedScholarshipIds);
+  const [savedCatalog, setSavedCatalog] = useState<ScholarshipItem[]>([]);
 
-  const handleAddTag = (e: React.FormEvent) => {
-    e.preventDefault();
-    const clean = newTagInput.trim();
-    if (!clean || studentProfile.interests.includes(clean)) return;
-    onUpdateInterests([...studentProfile.interests, clean]);
-    setNewTagInput('');
-  };
+  useEffect(() => {
+    if (!authenticated || savedIds.length === 0) return;
+    let active = true;
+    scholarshipClient
+      .list()
+      .then((res) => {
+        if (!active) return;
+        const list = Array.isArray(res.scholarships) ? res.scholarships : [];
+        setSavedCatalog(list.filter((s) => savedIds.includes(s.id)));
+      })
+      .catch(() => { /* fallback cleanly to count only */ });
+    return () => { active = false; };
+  }, [authenticated, savedIds]);
 
-  const handleRemoveTag = (tag: string) => {
-    onUpdateInterests(studentProfile.interests.filter((t) => t !== tag));
-  };
+  if (!authenticated) {
+    return (
+      <div className="max-w-3xl mx-auto pb-12 space-y-6">
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-8 shadow-xs space-y-5">
+          <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-200 dark:border-blue-800">
+            <Lock className="w-6 h-6" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+              {isKhmer ? 'ទីធ្លាសិក្សាផ្ទាល់ខ្លួនរបស់អ្នកកំពុងរង់ចាំ' : 'Your private study space awaits'}
+            </h1>
+            <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+              {isKhmer
+                ? 'បង្កើតគណនីឥតគិតថ្លៃដើម្បីរក្សាទុកប្រវត្តិសិក្សា តាមដានអាហារូបករណ៍ និងគ្រប់គ្រងឯកជនភាពរបស់អ្នកដោយសុវត្ថិភាព។'
+                : 'Sign in or create a free student account to save your education timeline, manage scholarship targets, and control your privacy settings.'}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-700 dark:text-slate-300">
+            <div className="rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3.5">
+              <GraduationCap className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1" />
+              <div className="font-bold">Education Timeline</div>
+              <div className="text-slate-500 dark:text-slate-400 mt-0.5">Save school, grade &amp; target major</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3.5">
+              <Bookmark className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mb-1" />
+              <div className="font-bold">Saved Deadlines</div>
+              <div className="text-slate-500 dark:text-slate-400 mt-0.5">{savedIds.length} bookmarked on this device</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3.5">
+              <ShieldCheck className="w-4 h-4 text-amber-600 dark:text-amber-400 mb-1" />
+              <div className="font-bold">Privacy First</div>
+              <div className="text-slate-500 dark:text-slate-400 mt-0.5">Analytics &amp; research OFF by default</div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3 pt-1">
+            {onOpenAuthModal && (
+              <button
+                type="button"
+                onClick={onOpenAuthModal}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold inline-flex items-center gap-2 cursor-pointer"
+              >
+                <span>{isKhmer ? 'ចូលឬបង្កើតគណនី' : 'Sign In / Create Free Account'}</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-  const savedMentors = mentors.filter((m) => studentProfile.savedMentorIds.includes(m.id));
-  const savedOpportunities = opportunities.filter((o) => studentProfile.savedOpportunityIds.includes(o.id));
+  const displayName = authProfile?.name || user?.email?.split('@')[0] || 'Student';
+  const displayLevel = authProfile?.education_level || user?.role || 'Account';
+  const displaySchool = authProfile?.school || 'School not set';
+  const displayLocation = authProfile?.location || 'Location not set';
+  const displayEmail = user?.email || '';
+  const displayMajor = authProfile?.major || 'Not specified';
+  const displayCareer = authProfile?.target_career || 'Not specified';
+  const initials = displayName.slice(0, 2).toUpperCase();
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Profile Header Dossier */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-5">
-          <img
-            src={
-              studentProfile?.avatar ||
-              'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80'
-            }
-            alt={studentProfile?.name || 'Student Profile'}
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src =
-                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80';
-            }}
-            className="w-20 h-20 rounded-3xl object-cover border-2 border-indigo-100 shadow-sm"
-          />
+      {/* Real Account Snapshot Header */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-blue-600 text-white text-2xl font-extrabold flex items-center justify-center shadow-sm shrink-0">
+            {initials}
+          </div>
           <div className="space-y-1">
-            <div className="flex items-center space-x-2">
-              <h1 className="text-xl sm:text-2xl font-extrabold text-stone-900">
-                {studentProfile.name}
+            <div className="flex items-center flex-wrap gap-2">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-slate-100">
+                {displayName}
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-200">
-                {studentProfile.educationLevel}
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-bold border border-blue-200 dark:border-blue-800">
+                {displayLevel}
               </span>
             </div>
-
-            <p className="text-xs text-stone-600 font-medium">{studentProfile.school}</p>
-
-            <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500 pt-1">
-              <span className="flex items-center space-x-1">
-                <MapPin className="w-3.5 h-3.5 text-stone-400" />
-                <span>{studentProfile.location}</span>
+            <p className="text-xs text-slate-600 dark:text-slate-300 font-medium">{displaySchool}</p>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400 pt-1">
+              <span className="flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5" />
+                <span>{displayLocation}</span>
               </span>
-              <span className="flex items-center space-x-1">
-                <Mail className="w-3.5 h-3.5 text-stone-400" />
-                <span>{studentProfile.email}</span>
+              <span className="flex items-center gap-1">
+                <Mail className="w-3.5 h-3.5" />
+                <span>{displayEmail}</span>
               </span>
             </div>
           </div>
         </div>
 
-        {/* Target Goal Highlight Box */}
-        <div className="bg-indigo-50/70 border border-indigo-100 rounded-2xl p-4 sm:w-80 text-xs space-y-1.5 shrink-0">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-indigo-700 block">
-            Target Degree & Career
+        <div className="bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900 rounded-2xl p-4 sm:w-80 text-xs space-y-1.5 shrink-0">
+          <span className="text-[11px] uppercase tracking-wider font-bold text-blue-700 dark:text-blue-300 block">
+            Target Major &amp; Career
           </span>
-          <p className="font-bold text-stone-900 text-sm">
-            {studentProfile.targetMajor}
-          </p>
-          <p className="text-stone-600">Goal: {studentProfile.targetCareer}</p>
+          <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">{displayMajor}</p>
+          <p className="text-slate-600 dark:text-slate-300">Goal: {displayCareer}</p>
         </div>
       </div>
 
-      {/* Student Identity Profile: Future Navigator 5-Pillar Matrix (MVP Core) */}
-      <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-bold text-stone-900 flex items-center space-x-2">
-              <Compass className="w-5 h-5 text-indigo-600" />
-              <span>Student Identity Profile (Future Navigator Core)</span>
+      {/* Persistent Private Education Profile & Consent Panel */}
+      <StudentEducationAndPrivacyPanel />
+
+      {/* Saved Scholarships Snapshot */}
+      <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Award className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+              {isKhmer ? 'អាហារូបករណ៍ដែលបានរក្សាទុក' : `Bookmarked Scholarships (${savedIds.length})`}
             </h2>
-            <p className="text-xs text-stone-500 mt-0.5">
-              5 core dimensions guiding your personalized Discover → Decide → Prepare → Grow roadmap.
-            </p>
           </div>
-          <span className="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full border border-indigo-200">
-            MVP Verified Profile
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-1">
-          {/* 1. Education Background */}
-          <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-200 space-y-1 text-xs">
-            <div className="flex items-center space-x-1.5 text-indigo-700 font-bold text-[11px]">
-              <GraduationCap className="w-3.5 h-3.5" />
-              <span>1. Education</span>
-            </div>
-            <div className="font-bold text-stone-900 text-xs">{studentProfile.educationLevel}</div>
-            <div className="text-[11px] text-stone-500 line-clamp-1">{studentProfile.school}</div>
-            <div className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded mt-1 inline-block">
-              STEM Science Track
-            </div>
-          </div>
-
-          {/* 2. Interests */}
-          <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-200 space-y-1 text-xs">
-            <div className="flex items-center space-x-1.5 text-blue-700 font-bold text-[11px]">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>2. Interests</span>
-            </div>
-            <div className="font-bold text-stone-900 text-xs">{studentProfile.interests.length} Core Domains</div>
-            <div className="text-[11px] text-stone-500 line-clamp-1">{studentProfile.interests.slice(0, 2).join(', ')}...</div>
-            <div className="text-[10px] text-blue-700 font-semibold bg-blue-50 px-1.5 py-0.5 rounded mt-1 inline-block">
-              AI, Robotics, Web
-            </div>
-          </div>
-
-          {/* 3. Career Goal */}
-          <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-200 space-y-1 text-xs">
-            <div className="flex items-center space-x-1.5 text-purple-700 font-bold text-[11px]">
-              <Target className="w-3.5 h-3.5" />
-              <span>3. Career Goal</span>
-            </div>
-            <div className="font-bold text-stone-900 text-xs line-clamp-1">{studentProfile.targetCareer || 'Software Engineer'}</div>
-            <div className="text-[11px] text-stone-500">Tech & Digital Economy</div>
-            <div className="text-[10px] text-purple-700 font-semibold bg-purple-50 px-1.5 py-0.5 rounded mt-1 inline-block">
-              High Growth Industry
-            </div>
-          </div>
-
-          {/* 4. University Goal */}
-          <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-200 space-y-1 text-xs">
-            <div className="flex items-center space-x-1.5 text-emerald-700 font-bold text-[11px]">
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>4. University Goal</span>
-            </div>
-            <div className="font-bold text-stone-900 text-xs line-clamp-1">{studentProfile.targetMajor || 'Computer Science'}</div>
-            <div className="text-[11px] text-stone-500">CADT, ITC, RUPP Target</div>
-            <div className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded mt-1 inline-block">
-              Bac II Grade A/B Needed
-            </div>
-          </div>
-
-          {/* 5. Learning Goal */}
-          <div className="bg-stone-50 rounded-2xl p-3.5 border border-stone-200 space-y-1 text-xs">
-            <div className="flex items-center space-x-1.5 text-amber-700 font-bold text-[11px]">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>5. Learning Goal</span>
-            </div>
-            <div className="font-bold text-stone-900 text-xs">Bac II Honors (Grade A)</div>
-            <div className="text-[11px] text-stone-500">5 hrs/wk STEM Practice</div>
-            <div className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded mt-1 inline-block">
-              MPTC Scholarship Target
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Interactive Academic Interests Tagging Section */}
-      <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <h2 className="text-base font-bold text-stone-900">
-              Your Academic & Skill Interests
-            </h2>
-            <p className="text-xs text-stone-500">
-              Adding or removing tags dynamically adjusts your AI Advisor suggestions and scholarship match scores.
-            </p>
-          </div>
-
-          {/* Add Tag Form */}
-          <form onSubmit={handleAddTag} className="flex items-center space-x-2">
-            <input
-              type="text"
-              value={newTagInput}
-              onChange={(e) => setNewTagInput(e.target.value)}
-              placeholder="Add interest (e.g. Robotics)..."
-              className="bg-stone-50 border border-stone-200 rounded-xl px-3 py-1.5 text-xs text-stone-900 focus:outline-none focus:border-indigo-500"
-            />
+          {onNavigateTab && (
             <button
-              type="submit"
-              disabled={!newTagInput.trim()}
-              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-semibold shadow-xs flex items-center space-x-1"
+              type="button"
+              onClick={() => onNavigateTab('scholarships')}
+              className="text-xs font-bold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add</span>
+              Browse Scholarships →
             </button>
-          </form>
+          )}
         </div>
-
-        {/* Tag Pills */}
-        <div className="flex flex-wrap gap-2 pt-1">
-          {studentProfile.interests.map((tag) => (
-            <span
-              key={tag}
-              className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-indigo-50 text-indigo-900 text-xs font-semibold border border-indigo-100"
-            >
-              <span>{tag}</span>
-              <button
-                onClick={() => handleRemoveTag(tag)}
-                className="text-indigo-400 hover:text-rose-600 transition-colors"
-                title="Remove interest"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Tabs for Scheduled Sessions, Saved Items & Badges */}
-      <div className="space-y-4">
-        <div className="flex items-center space-x-2 border-b border-stone-200 pb-2">
-          <button
-            onClick={() => setActiveSubTab('sessions')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeSubTab === 'sessions'
-                ? 'bg-stone-900 text-white shadow-xs'
-                : 'text-stone-600 hover:bg-stone-100'
-            }`}
-          >
-            Confirmed Sessions ({studentProfile.scheduledSessions.length})
-          </button>
-          <button
-            onClick={() => setActiveSubTab('saved')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeSubTab === 'saved'
-                ? 'bg-stone-900 text-white shadow-xs'
-                : 'text-stone-600 hover:bg-stone-100'
-            }`}
-          >
-            Saved Items ({savedMentors.length + savedOpportunities.length})
-          </button>
-          <button
-            onClick={() => setActiveSubTab('badges')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-              activeSubTab === 'badges'
-                ? 'bg-stone-900 text-white shadow-xs'
-                : 'text-stone-600 hover:bg-stone-100'
-            }`}
-          >
-            Badges & Milestones ({studentProfile.badges.filter((b) => b.isUnlocked).length})
-          </button>
-        </div>
-
-        {/* 1. Confirmed Sessions Tab */}
-        {activeSubTab === 'sessions' && (
-          <div className="space-y-3">
-            {studentProfile.scheduledSessions.length === 0 ? (
-              <div className="bg-white rounded-2xl p-8 text-center text-stone-500 border border-stone-200 text-xs">
-                No active 1-on-1 sessions scheduled. Visit Find Mentors to schedule your first meeting!
-              </div>
-            ) : (
-              studentProfile.scheduledSessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="bg-white rounded-2xl border border-stone-200 p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                >
-                  <div className="flex items-start space-x-3.5">
-                    <img
-                      src={session.mentorAvatar}
-                      alt={session.mentorName}
-                      className="w-12 h-12 rounded-xl object-cover border border-stone-200"
-                    />
-                    <div className="space-y-0.5">
-                      <div className="flex items-center space-x-2">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                          {session.status.toUpperCase()}
-                        </span>
-                        <span className="text-xs text-stone-500 font-medium">
-                          📅 {session.date} ({session.time})
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-stone-900 text-sm mt-1">
-                        1-on-1 Guidance with {session.mentorName}
-                      </h3>
-                      <p className="text-xs text-stone-600 line-clamp-1">{session.topic}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <a
-                      href={session.meetingLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center space-x-1.5 transition-colors"
-                    >
-                      <Video className="w-3.5 h-3.5" />
-                      <span>Join Meet</span>
-                    </a>
-                    <button
-                      onClick={() => onCancelBooking(session.id)}
-                      className="px-3 py-2 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-xl text-xs font-medium transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {/* 2. Saved Items Tab */}
-        {activeSubTab === 'saved' && (
-          <div className="space-y-6">
-            {/* Saved Mentors */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500">
-                Bookmarked Mentors ({savedMentors.length})
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {savedMentors.map((m) => (
-                  <div key={m.id} className="bg-white rounded-2xl border border-stone-200 p-4 flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <img
-                        src={
-                          m?.avatar ||
-                          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80'
-                        }
-                        alt={m?.name || 'Mentor'}
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).src =
-                            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80';
-                        }}
-                        className="w-10 h-10 rounded-xl object-cover"
-                      />
-                      <div>
-                        <h4 className="font-bold text-xs text-stone-900">{m.name}</h4>
-                        <p className="text-[11px] text-stone-500">{m.university}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => onOpenBooking(m)}
-                      className="px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-semibold shadow-xs"
-                    >
-                      Book
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Saved Opportunities */}
-            <div className="space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-500">
-                Saved Scholarships & Programs ({savedOpportunities.length})
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {savedOpportunities.map((opp) => (
-                  <div key={opp.id} className="bg-white rounded-2xl border border-stone-200 p-4 space-y-2">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                      {opp.coverageOrStipend}
-                    </span>
-                    <h4 className="font-bold text-xs text-stone-900">{opp.title}</h4>
-                    <p className="text-[11px] text-stone-500">{opp.provider}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 3. Badges Tab */}
-        {activeSubTab === 'badges' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {studentProfile.badges.map((badge) => (
+        {savedCatalog.length === 0 ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {savedIds.length > 0
+              ? `${savedIds.length} bookmarked scholarship(s) saved on this browser.`
+              : 'Bookmark scholarships in the Scholarships tab to track their deadlines here.'}
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {savedCatalog.map((sch) => (
               <div
-                key={badge.id}
-                className={`p-5 rounded-2xl border transition-all ${
-                  badge.isUnlocked
-                    ? 'bg-white border-stone-200 shadow-xs'
-                    : 'bg-stone-50/70 border-stone-100 opacity-60'
-                }`}
+                key={sch.id}
+                className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4 flex items-center justify-between gap-3"
               >
-                <div
-                  className={`w-10 h-10 rounded-2xl flex items-center justify-center mb-3 ${
-                    badge.isUnlocked
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-stone-200 text-stone-400'
-                  }`}
-                >
-                  <Award className="w-5 h-5" />
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                    {isKhmer && sch.nameKm ? sch.nameKm : sch.name}
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    {sch.country} • {sch.deadline || sch.deadlineType || 'Not specified'}
+                  </div>
                 </div>
-
-                <h4 className="font-bold text-stone-900 text-sm">{badge.title}</h4>
-                <p className="text-xs text-stone-500 mt-1 leading-relaxed">{badge.description}</p>
-                {badge.isUnlocked && (
-                  <span className="inline-block mt-3 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                    Unlocked {badge.unlockedAt}
-                  </span>
-                )}
+                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 shrink-0">
+                  {sch.fundingType}
+                </span>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Confirmed Mentor Sessions (only shown when user booked a session in current session) */}
+      {studentProfile.scheduledSessions.length > 0 && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+          <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+            Confirmed Mentorship Sessions ({studentProfile.scheduledSessions.length})
+          </h2>
+          {studentProfile.scheduledSessions.map((session) => (
+            <div
+              key={session.id}
+              className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div>
+                <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                  1-on-1 Guidance with {session.mentorName}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  {session.date} ({session.time}) • {session.topic}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={session.meetingLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold inline-flex items-center gap-1.5"
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span>Join Meet</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => onCancelBooking(session.id)}
+                  className="px-3 py-2 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-medium cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

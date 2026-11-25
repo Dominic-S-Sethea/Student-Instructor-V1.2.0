@@ -1,88 +1,213 @@
 import { PrivacyRepository } from '../repositories/privacyRepository';
-import { StudentPrivacyConsent } from '../types/analytics';
+import { UserRepository } from '../repositories/userRepository';
+import { ConsentStatus, StudentPrivacyConsent } from '../types/analytics';
+
+export interface ConsentUpdateInput {
+  isMinor?: boolean;
+  parentEmail?: string | null;
+  parentalConsentVerified?: boolean;
+  allowAnalyticsTracking?: boolean;
+  allowResearchInclusion?: boolean;
+  allowAiMemory?: boolean;
+  withdrawAll?: boolean;
+}
 
 export class PrivacyService {
   private repo: PrivacyRepository;
+  private userRepo: UserRepository;
 
-  constructor(repo?: PrivacyRepository) {
+  constructor(repo?: PrivacyRepository, userRepo?: UserRepository) {
     this.repo = repo || new PrivacyRepository();
+    this.userRepo = userRepo || new UserRepository();
+  }
+
+  private resolveUserId(studentOrProfileId: string): string {
+    return this.userRepo.findUserIdByProfileId(studentOrProfileId) || studentOrProfileId;
   }
 
   /**
-   * Get student privacy consent record. If none exists, creates default safe consent
+   * Returns student privacy consent record.
+   * When missing, initializes a privacy-first pending record with optional collection disabled.
    */
   public getConsent(studentId: string): StudentPrivacyConsent {
-    let consent = this.repo.getConsent(studentId);
-    if (!consent) {
-      consent = this.repo.upsertConsent({
-        studentId,
-        isMinor: true, // Safe default: assume student may be a minor
-        parentalConsentVerified: false,
-        allowAnalyticsTracking: true,
-        allowResearchInclusion: true
+    const resolvedId = this.resolveUserId(studentId);
+    const existing = this.repo.getConsent(resolvedId);
+    if (existing) {
+      return existing;
+    }
+
+    return this.repo.upsertConsent({
+      studentId: resolvedId,
+      isMinor: true,
+      parentalConsentVerified: false,
+      parentVerificationStatus: 'unverified',
+      allowAnalyticsTracking: false,
+      allowResearchInclusion: false,
+      allowAiMemory: false,
+      consentStatus: 'pending',
+    });
+  }
+
+  /**
+   * Updates privacy preferences with enforceable guardian-verification and withdrawal rules.
+   * Non-admin callers can never self-verify parental consent.
+   */
+  public updateConsent(
+    studentId: string,
+    updates: ConsentUpdateInput,
+    actorRole: 'student' | 'admin' | 'organization' | 'mentor' = 'student'
+  ): StudentPrivacyConsent {
+    const resolvedId = this.resolveUserId(studentId);
+    const current = this.getConsent(resolvedId);
+    const blockedReasons: string[] = [];
+
+    if (updates.withdrawAll) {
+      return this.repo.upsertConsent({
+        studentId: resolvedId,
+        allowAnalyticsTracking: false,
+        allowResearchInclusion: false,
+        allowAiMemory: false,
+        consentStatus: 'withdrawn',
+        withdrawnAt: new Date().toISOString(),
       });
     }
-    return consent;
-  }
 
-  /**
-   * Update privacy consent and parental status
-   */
-  public updateConsent(studentId: string, updates: {
-    isMinor?: boolean;
-    parentEmail?: string;
-    parentalConsentVerified?: boolean;
-    allowAnalyticsTracking?: boolean;
-    allowResearchInclusion?: boolean;
-  }): StudentPrivacyConsent {
-    return this.repo.upsertConsent({
-      studentId,
-      ...updates
+    const nextIsMinor = updates.isMinor !== undefined ? updates.isMinor : current.isMinor;
+    const nextParentVerified =
+      actorRole === 'admin' && updates.parentalConsentVerified !== undefined
+        ? updates.parentalConsentVerified
+        : current.parentalConsentVerified;
+
+    if (actorRole !== 'admin' && updates.parentalConsentVerified === true && !current.parentalConsentVerified) {
+      blockedReasons.push('guardian_verification_requires_owner_process');
+    }
+
+    let wantAnalytics = updates.allowAnalyticsTracking !== undefined
+      ? updates.allowAnalyticsTracking
+      : current.allowAnalyticsTracking;
+    let wantResearch = updates.allowResearchInclusion !== undefined
+      ? updates.allowResearchInclusion
+      : current.allowResearchInclusion;
+    let wantAiMemory = updates.allowAiMemory !== undefined
+      ? updates.allowAiMemory
+      : current.allowAiMemory;
+
+    if (nextIsMinor && !nextParentVerified) {
+      if (wantAnalytics || wantResearch || wantAiMemory) {
+        blockedReasons.push('guardian_verification_required_for_minor');
+      }
+      wantAnalytics = false;
+      wantResearch = false;
+      wantAiMemory = false;
+    }
+
+    const hadAnyGrant = current.allowAnalyticsTracking || current.allowResearchInclusion || current.allowAiMemory;
+    const hasAnyGrant = wantAnalytics || wantResearch || wantAiMemory;
+    const explicitWithdrawal =
+      updates.allowAnalyticsTracking === false ||
+      updates.allowResearchInclusion === false ||
+      updates.allowAiMemory === false;
+
+    let consentStatus: ConsentStatus = current.consentStatus;
+    let withdrawnAt = current.withdrawnAt ?? null;
+
+    if (wantAnalytics && wantResearch && wantAiMemory) {
+      consentStatus = 'granted';
+      withdrawnAt = null;
+    } else if (hasAnyGrant) {
+      consentStatus = 'partial';
+      withdrawnAt = null;
+    } else if ((hadAnyGrant && !hasAnyGrant) || (explicitWithdrawal && !hasAnyGrant)) {
+      consentStatus = 'withdrawn';
+      withdrawnAt = new Date().toISOString();
+    } else {
+      consentStatus = 'pending';
+    }
+
+    const saved = this.repo.upsertConsent({
+      studentId: resolvedId,
+      isMinor: nextIsMinor,
+      parentEmail: updates.parentEmail !== undefined ? updates.parentEmail : current.parentEmail,
+      parentalConsentVerified: nextParentVerified,
+      parentVerificationStatus: nextParentVerified ? 'verified' : current.parentVerificationStatus,
+      allowAnalyticsTracking: wantAnalytics,
+      allowResearchInclusion: wantResearch,
+      allowAiMemory: wantAiMemory,
+      consentStatus,
+      withdrawnAt,
     });
+
+    return blockedReasons.length > 0 ? { ...saved, blockedReasons } : saved;
   }
 
   /**
-   * Verify parental consent token / email authorization
+   * Records a guardian email for verification without falsely marking consent verified.
+   * Dependent data collection stays disabled until owner-approved verification completes.
    */
-  public verifyParentalConsent(studentId: string, parentEmail: string): StudentPrivacyConsent {
+  public requestParentalVerification(studentId: string, parentEmail: string): StudentPrivacyConsent {
+    const resolvedId = this.resolveUserId(studentId);
+    const current = this.getConsent(resolvedId);
     return this.repo.upsertConsent({
-      studentId,
+      studentId: resolvedId,
       isMinor: true,
-      parentEmail,
-      parentalConsentVerified: true
+      parentEmail: parentEmail.trim().toLowerCase(),
+      parentalConsentVerified: false,
+      parentVerificationStatus: 'pending_owner_verification',
+      allowAnalyticsTracking: false,
+      allowResearchInclusion: false,
+      allowAiMemory: false,
+      consentStatus: current.consentStatus === 'withdrawn' ? 'withdrawn' : 'pending',
     });
   }
 
-  /**
-   * Strips all Personally Identifiable Information (PII) from any student object
-   */
-  public sanitizeForPublic(obj: Record<string, any>): Record<string, any> {
-    const piiKeys = [
-      'email',
-      'password',
-      'password_hash',
-      'phone',
-      'telephone',
-      'parent_email',
-      'full_name',
-      'address',
-      'ip_address',
-      'sessionId'
-    ];
+  /** Admin-only completion of owner-defined parental verification. */
+  public adminVerifyParentalConsent(studentId: string): StudentPrivacyConsent {
+    const resolvedId = this.resolveUserId(studentId);
+    return this.repo.upsertConsent({
+      studentId: resolvedId,
+      isMinor: true,
+      parentalConsentVerified: true,
+      parentVerificationStatus: 'verified',
+    });
+  }
 
-    const sanitized = { ...obj };
-    piiKeys.forEach(k => delete sanitized[k]);
-    return sanitized;
+  public canCollectAnalytics(studentId?: string | null): boolean {
+    if (!studentId) return false;
+    const consent = this.repo.getConsent(this.resolveUserId(studentId));
+    if (!consent) return false;
+    if (consent.isMinor && !consent.parentalConsentVerified) return false;
+    return consent.allowAnalyticsTracking && consent.consentStatus !== 'withdrawn';
+  }
+
+  public canIncludeInResearch(studentId?: string | null): boolean {
+    if (!studentId) return false;
+    const consent = this.repo.getConsent(this.resolveUserId(studentId));
+    if (!consent) return false;
+    if (consent.isMinor && !consent.parentalConsentVerified) return false;
+    return consent.allowResearchInclusion && consent.consentStatus !== 'withdrawn';
+  }
+
+  public canUseAIMemory(studentId?: string | null): boolean {
+    if (!studentId) return false;
+    const consent = this.repo.getConsent(this.resolveUserId(studentId));
+    if (!consent) return false;
+    if (consent.isMinor && !consent.parentalConsentVerified) return false;
+    return consent.allowAiMemory && consent.consentStatus !== 'withdrawn';
+  }
+
+  public getResearchEligibleStudents(): Array<{ studentId: string; anonymizedResearchId: string }> {
+    return this.repo.getResearchEligibleStudentIds();
+  }
+
+  public sanitizeForPublic(obj: Record<string, unknown>): Record<string, unknown> {
+    return sanitizeForPublic(obj);
   }
 }
 
-/**
- * Strips all Personally Identifiable Information (PII) from any student object.
- * Standalone function version for use in data platform services.
- */
-export function sanitizeForPublic(obj: Record<string, any>): Record<string, any> {
+export function sanitizeForPublic(obj: Record<string, unknown>): Record<string, unknown> {
   const piiKeys = [
     'email',
+    'password',
     'password_hash',
     'phone',
     'telephone',
@@ -90,10 +215,12 @@ export function sanitizeForPublic(obj: Record<string, any>): Record<string, any>
     'full_name',
     'address',
     'ip_address',
-    'sessionId'
+    'sessionId',
   ];
 
-  const sanitized = { ...obj };
-  piiKeys.forEach(k => delete sanitized[k]);
+  const sanitized: Record<string, unknown> = { ...obj };
+  for (const key of piiKeys) {
+    delete sanitized[key];
+  }
   return sanitized;
 }

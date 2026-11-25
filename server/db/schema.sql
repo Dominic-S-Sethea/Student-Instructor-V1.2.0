@@ -511,11 +511,11 @@ CREATE TABLE IF NOT EXISTS experiment_results (
 
 CREATE TABLE IF NOT EXISTS student_privacy_consents (
     student_id TEXT PRIMARY KEY,
-    is_minor INTEGER NOT NULL DEFAULT 0,
+    is_minor INTEGER NOT NULL DEFAULT 1,
     parental_consent_verified INTEGER NOT NULL DEFAULT 0,
     parent_email TEXT,
-    allow_analytics_tracking INTEGER NOT NULL DEFAULT 1,
-    allow_research_inclusion INTEGER NOT NULL DEFAULT 1,
+    allow_analytics_tracking INTEGER NOT NULL DEFAULT 0,
+    allow_research_inclusion INTEGER NOT NULL DEFAULT 0,
     anonymized_research_id TEXT UNIQUE NOT NULL,
     consent_date TEXT NOT NULL,
     updated_at TEXT NOT NULL

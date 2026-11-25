@@ -35,7 +35,9 @@ export interface KnowledgeDocumentRecord {
 }
 
 export class AIRepository {
-  private db = getDatabase();
+  private get db() {
+    return getDatabase();
+  }
 
   public logConversation(entry: Omit<AIConversationRecord, 'id' | 'timestamp'>): AIConversationRecord {
     const now = new Date().toISOString();
@@ -86,7 +88,7 @@ export class AIRepository {
       `).run(
         updates.preference_data ? JSON.stringify(updates.preference_data) : existing.preference_data,
         updates.learning_history ? JSON.stringify(updates.learning_history) : existing.learning_history,
-        updates.career_interest !== undefined ? updates.career_interest : existing.career_interest,
+        updates.career_interest !== undefined ? updates.career_interest : (existing.career_interest ?? null),
         now,
         studentId
       );

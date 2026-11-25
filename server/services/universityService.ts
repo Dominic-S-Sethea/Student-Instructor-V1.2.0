@@ -9,7 +9,7 @@ export class UniversityService {
 
   public getUniversities() {
     const raw = this.repo.getAll();
-    return raw.map(u => this.formatUniversity(u));
+    return raw.map((u) => this.formatUniversity(u));
   }
 
   public getUniversityById(id: string) {
@@ -19,6 +19,7 @@ export class UniversityService {
   }
 
   private formatUniversity(u: UniversityRow & { majors: MajorRow[] }) {
+    const hasAccreditation = Boolean(u.accreditation_status && u.accreditation_status.trim() !== '');
     return {
       id: u.id,
       abbr: u.abbr,
@@ -35,18 +36,20 @@ export class UniversityService {
         academicReputation: u.academic_reputation_score,
         industryConnection: u.industry_connection_score,
         facilities: u.facilities_score,
-        graduateOutcome: u.graduate_outcome_score
+        graduateOutcome: u.graduate_outcome_score,
       },
       annualTuitionUSD: u.annual_tuition_usd,
       totalDegreeCostUSD: u.total_degree_cost_usd,
       accreditation: {
-        status: u.accreditation_status || 'Fully Accredited',
-        agency: 'Accreditation Committee of Cambodia (ACC)'
+        status: hasAccreditation ? u.accreditation_status! : 'Not specified',
+        statusKm: hasAccreditation ? u.accreditation_status! : 'មិនបានបញ្ជាក់',
+        isKnown: hasAccreditation,
+        agency: hasAccreditation ? 'Accreditation Committee of Cambodia (ACC)' : null,
       },
-      majors: u.majors.map(m => {
-        let courseStructure = [];
-        let technicalSkills = [];
-        let softSkills = [];
+      majors: u.majors.map((m) => {
+        let courseStructure: unknown[] = [];
+        let technicalSkills: unknown[] = [];
+        let softSkills: unknown[] = [];
         try { courseStructure = JSON.parse(m.course_structure || '[]'); } catch { courseStructure = []; }
         try { technicalSkills = JSON.parse(m.technical_skills || '[]'); } catch { technicalSkills = []; }
         try { softSkills = JSON.parse(m.soft_skills || '[]'); } catch { softSkills = []; }
@@ -63,9 +66,9 @@ export class UniversityService {
           averageStartingSalary: m.average_starting_salary,
           courseStructure,
           technicalSkillsGained: technicalSkills,
-          softSkillsGained: softSkills
+          softSkillsGained: softSkills,
         };
-      })
+      }),
     };
   }
 }

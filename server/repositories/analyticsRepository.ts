@@ -8,7 +8,9 @@ import {
 } from '../types/analytics';
 
 export class AnalyticsRepository {
-  private db = getDatabase();
+  private get db() {
+    return getDatabase();
+  }
 
   /**
    * Log universal activity event (user events, AI events, page visits, exploration)

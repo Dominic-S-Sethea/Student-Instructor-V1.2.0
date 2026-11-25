@@ -1,26 +1,7 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-import {
-  getAuth,
-  signInWithPopup,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  User,
-  signOut,
-} from 'firebase/auth';
+import type { User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { ComprehensiveUniversityProfile } from '../types';
+import type { ComprehensiveUniversityProfile } from '../types';
 
-// Ensure Firebase is initialized once
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-export const auth = getAuth(app);
-
-// Configure Google Auth Provider with Google Drive Scopes
-const provider = new GoogleAuthProvider();
-provider.addScope('https://www.googleapis.com/auth/drive');
-provider.addScope('https://www.googleapis.com/auth/drive.file');
-provider.addScope('https://www.googleapis.com/auth/drive.readonly');
-
-// In-memory token cache (do NOT store in localStorage per security requirements)
 let cachedAccessToken: string | null = null;
 let isSigningIn = false;
 
@@ -36,21 +17,79 @@ export interface DriveFile {
   size?: string;
 }
 
+const PLACEHOLDER_KEY = 'your-firebase-api-key-here';
+
+function resolveFirebaseConfig() {
+  const apiKey = import.meta.env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey || '';
+  if (!apiKey || apiKey === PLACEHOLDER_KEY) {
+    return null;
+  }
+  return {
+    ...firebaseConfig,
+    apiKey,
+    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain,
+    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId,
+    appId: import.meta.env.VITE_FIREBASE_APP_ID || firebaseConfig.appId,
+  };
+}
+
+export function isGoogleDriveConfigured(): boolean {
+  return resolveFirebaseConfig() !== null;
+}
+
+async function getFirebaseAuthInstance() {
+  const cfg = resolveFirebaseConfig();
+  if (!cfg) {
+    throw new Error('Google Drive integration is not configured (set VITE_FIREBASE_API_KEY).');
+  }
+  const [{ initializeApp, getApps, getApp }, { getAuth, GoogleAuthProvider }] = await Promise.all([
+    import('firebase/app'),
+    import('firebase/auth'),
+  ]);
+  const app = !getApps().length ? initializeApp(cfg) : getApp();
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/drive');
+  provider.addScope('https://www.googleapis.com/auth/drive.file');
+  provider.addScope('https://www.googleapis.com/auth/drive.readonly');
+  return { auth, provider };
+}
+
 /**
- * Initialize Firebase Auth listener.
+ * Initialize Firebase Auth listener lazily when configured.
  */
 export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
   onAuthFailure?: () => void
-) => {
-  return onAuthStateChanged(auth, async (user: User | null) => {
-    if (user && cachedAccessToken) {
-      if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-    } else if (!isSigningIn) {
-      cachedAccessToken = null;
-      if (onAuthFailure) onAuthFailure();
-    }
-  });
+): (() => void) => {
+  if (!isGoogleDriveConfigured()) {
+    onAuthFailure?.();
+    return () => {};
+  }
+  let cancelled = false;
+  let unsub: (() => void) | undefined;
+
+  void getFirebaseAuthInstance()
+    .then(async ({ auth }) => {
+      const { onAuthStateChanged } = await import('firebase/auth');
+      if (cancelled) return;
+      unsub = onAuthStateChanged(auth, (user: User | null) => {
+        if (user && cachedAccessToken) {
+          onAuthSuccess?.(user, cachedAccessToken);
+        } else if (!isSigningIn) {
+          cachedAccessToken = null;
+          onAuthFailure?.();
+        }
+      });
+    })
+    .catch(() => {
+      onAuthFailure?.();
+    });
+
+  return () => {
+    cancelled = true;
+    unsub?.();
+  };
 };
 
 /**
@@ -59,6 +98,8 @@ export const initAuth = (
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
   try {
     isSigningIn = true;
+    const { auth, provider } = await getFirebaseAuthInstance();
+    const { signInWithPopup, GoogleAuthProvider } = await import('firebase/auth');
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
@@ -67,32 +108,22 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 
     cachedAccessToken = credential.accessToken;
     return { user: result.user, accessToken: cachedAccessToken };
-  } catch (error: unknown) {
-    console.error('Google Sign In Error:', error);
-    throw error;
   } finally {
     isSigningIn = false;
   }
 };
 
-/**
- * Retrieve the current in-memory access token.
- */
-export const getAccessToken = async (): Promise<string | null> => {
-  return cachedAccessToken;
-};
+export const getAccessToken = async (): Promise<string | null> => cachedAccessToken;
 
-/**
- * Sign out and clear cached token.
- */
 export const logout = async (): Promise<void> => {
-  await signOut(auth);
+  if (isGoogleDriveConfigured()) {
+    const { auth } = await getFirebaseAuthInstance();
+    const { signOut } = await import('firebase/auth');
+    await signOut(auth);
+  }
   cachedAccessToken = null;
 };
 
-/**
- * Fetch files from user's Google Drive.
- */
 export const listDriveFiles = async (
   query?: string,
   pageSize = 25
@@ -102,7 +133,7 @@ export const listDriveFiles = async (
     throw new Error('Not authenticated with Google Drive. Please sign in first.');
   }
 
-  const defaultQuery = "trashed = false";
+  const defaultQuery = 'trashed = false';
   const finalQuery = query ? `(${defaultQuery}) and (${query})` : defaultQuery;
 
   const url = new URL('https://www.googleapis.com/drive/v3/files');
@@ -122,24 +153,18 @@ export const listDriveFiles = async (
   });
 
   if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
+    const errorData = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
     throw new Error(errorData.error?.message || `Failed to fetch Google Drive files: ${res.statusText}`);
   }
 
-  const data = await res.json();
+  const data = (await res.json()) as { files?: DriveFile[] };
   return data.files || [];
 };
 
-/**
- * Search specifically for image files in Google Drive to use for university photos.
- */
 export const searchDriveImages = async (): Promise<DriveFile[]> => {
   return listDriveFiles("mimeType contains 'image/'", 30);
 };
 
-/**
- * Export university dossier and data checklist as a formatted document to Google Drive.
- */
 export const exportDossierToGoogleDrive = async (
   university: ComprehensiveUniversityProfile
 ): Promise<DriveFile> => {
@@ -149,126 +174,20 @@ export const exportDossierToGoogleDrive = async (
   }
 
   const fileName = `${university.abbr || university.name}_University_Data_Infrastructure_Dossier.md`;
-
   const markdownContent = `# ${university.name} (${university.khmerName || university.abbr})
 ## Comprehensive University Data Infrastructure Dossier
 Audited for Cambodia Higher Education Explorer • Generated ${new Date().toLocaleDateString()}
 
----
-
-### 1. Basic Profile
-- **Institution Name:** ${university.name}
-- **Khmer Name:** ${university.khmerName || 'Blank'}
-- **Abbreviation:** ${university.abbr}
-- **Type:** ${university.type}
-- **Founded Year:** ${university.foundedYear}
-- **Location / Campus:** ${university.location}
-- **Official Website:** ${university.website}
-- **Phone:** ${university.contact?.phone || 'Blank'}
-- **Email:** ${university.contact?.email || 'Blank'}
-- **Address:** ${university.contact?.address || university.location}
-- **Admissions Office:** ${university.contact?.admissionsOffice || 'Blank'}
-
----
-
-### 2. Academic Information
-- **Total Faculties:** ${university.facultyCount}
-- **Total Majors:** ${university.majorsCount}
-- **Theory vs Practice Ratio:** ${university.theoryVsPracticeRatio}
-- **Student to Faculty Ratio:** ${university.studentToFacultyRatio}
-- **Key Curriculum Highlight:** ${university.curriculumHighlight}
-
-#### Faculties List:
-${(university.facultiesList || [])
-  .map(
-    (f, idx) => `
-${idx + 1}. **${f.name}** ${f.khmerName ? `(${f.khmerName})` : ''}
-   - Dean: ${f.dean || 'Blank'}
-   - Departments: ${f.departments.join(', ') || 'Blank'}
-   - Overview: ${f.description || 'Blank'}`
-  )
-  .join('\n')}
-
-#### Majors Offered:
-${university.majors
-  .map(
-    (m, idx) => `
-${idx + 1}. **${m.name}** (${m.degreeType}, ${m.durationYears} Years)
-   - Faculty: ${m.faculty}
-   - Demand: ${m.jobMarketDemand} | Difficulty: ${m.difficultyRating}/5
-   - Starting Salary: ${m.averageStartingSalary}
-   - Pathways: ${m.careerPathways.join(', ')}`
-  )
-  .join('\n')}
-
----
-
-### 3. Financial Information
-- **Annual Tuition:** $${university.annualTuitionUSD.toLocaleString()} USD
-- **4-Year Degree Tuition:** $${university.totalDegreeCostUSD.toLocaleString()} USD
-- **Payment Schedule:** ${university.paymentSchedule}
-- **Scholarships:** ${university.scholarships.scholarshipNames.join(' • ')}
-- **Scholarship Eligibility:** ${university.scholarships.requirements}
-- **Financial Aid:** ${university.financialInfo?.scholarshipDetails?.financialAidDetails || 'Blank'}
-
-#### Itemized Other Costs:
-- **Registration Fee:** ${university.financialInfo?.otherCosts?.registrationFee || 'Blank'}
-- **Laboratory Fee:** ${university.financialInfo?.otherCosts?.laboratoryFee || 'Blank'}
-- **Books & Materials:** ${university.financialInfo?.otherCosts?.booksAndMaterials || 'Blank'}
-- **Uniform:** ${university.financialInfo?.otherCosts?.uniform || 'Blank'}
-- **Dormitory Cost:** ${university.financialInfo?.otherCosts?.dormitoryCost || 'Blank'}
-- **Graduation Fee:** ${university.financialInfo?.otherCosts?.graduationFee || 'Blank'}
-- **Fee Notes:** ${university.financialInfo?.otherCosts?.details || 'Blank'}
-
----
-
-### 4. Student Experience & Facilities
-- **Campus Facilities:** ${university.studentExperience?.campusFacilities.join(', ') || 'Blank'}
-- **Library Facilities:** ${university.studentExperience?.library?.description || 'Blank'}
-- **Laboratories:** ${
-    university.studentExperience?.laboratory?.map((l) => `${l.name} (${l.specialization})`).join('; ') || 'Blank'
-  }
-- **Student Clubs:** ${university.studentExperience?.studentClubs.join(', ') || 'Blank'}
-- **Dormitory:** ${university.studentExperience?.dormitory?.description || 'Blank'}
-
----
-
-### 5. Admission Requirements
-- **High School Bac II Requirement:** ${university.admissionRequirements.nationalExamRequirement}
-- **Entrance Exam Required:** ${university.admissionRequirements.entranceExamRequired ? 'Yes' : 'No'}
-- **Entrance Exam Details:** ${university.admissionRequirements.entranceExamDetails}
-- **English Requirement:** ${university.admissionRequirements.englishRequirement}
-- **Application Deadline:** ${university.importantDates.applicationDeadline}
-- **Exam Date:** ${university.importantDates.examDate}
-
----
-
-### 6. Career Outcomes
-- **6-Month Employment Rate:** ${university.employmentRate6Months}%
-- **Average Time to Job:** ${university.averageTimeToJobMonths} Months
-- **Median Starting Salary:** $${university.averageGraduateSalaryMonthlyUSD}/month
-- **Industry Partners:** ${(university.industryPartnerships || university.careerInfo?.industryConnections || []).join(', ')}
-
----
-
-### 7. Accreditation & Reputation
-- **Government Recognition:** ${university.accreditation.governmentRecognition}
-- **Accreditation Status:** ${university.accreditation.status}
-- **International Accreditation:** ${university.accreditation.internationalAccreditation || 'Blank'}
-- **National Ranking:** ${university.rankingReputation?.nationalRank || 'Top National Ranking'}
-- **Overall Profile Score:** ${university.profileScore.overall}/100
+- **Type:** ${university.type} | **Founded:** ${university.foundedYear} | **Location:** ${university.location}
+- **Annual Tuition:** $${university.annualTuitionUSD.toLocaleString()} USD | **4-Year Tuition:** $${university.totalDegreeCostUSD.toLocaleString()} USD
+- **Website:** ${university.website}
 `;
 
-  const metadata = {
-    name: fileName,
-    mimeType: 'text/markdown',
-  };
-
+  const metadata = { name: fileName, mimeType: 'text/markdown' };
   const boundary = '-------314159265358979323846';
   const delimiter = `\r\n--${boundary}\r\n`;
   const closeDelimiter = `\r\n--${boundary}--`;
-
-  const multipartRequestBody =
+  const body =
     delimiter +
     'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
     JSON.stringify(metadata) +
@@ -285,14 +204,14 @@ ${idx + 1}. **${m.name}** (${m.degreeType}, ${m.durationYears} Years)
         Authorization: `Bearer ${token}`,
         'Content-Type': `multipart/related; boundary=${boundary}`,
       },
-      body: multipartRequestBody,
+      body,
     }
   );
 
   if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
+    const errorData = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
     throw new Error(errorData.error?.message || `Failed to save file to Google Drive: ${res.statusText}`);
   }
 
-  return await res.json();
+  return (await res.json()) as DriveFile;
 };

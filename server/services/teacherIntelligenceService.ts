@@ -24,7 +24,9 @@ export interface TeacherClassCohort {
 }
 
 export class TeacherIntelligenceService {
-  private db = getDatabase();
+  private get db() {
+    return getDatabase();
+  }
 
   public getClassCohorts(): TeacherClassCohort[] {
     const rows = this.db.prepare(`

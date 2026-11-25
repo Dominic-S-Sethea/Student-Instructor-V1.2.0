@@ -3,37 +3,42 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { StudentDashboard } from './components/StudentDashboard';
-import { AIAdvisor } from './components/AIAdvisor';
-import { UniversityAlumniView } from './components/UniversityAlumniView';
-import { MentorDiscovery } from './components/MentorDiscovery';
-import { StudentMeetupsView } from './components/StudentMeetupsView';
-import { OpportunityDirectory } from './components/OpportunityDirectory';
-import { MajorsAndCareersView } from './components/MajorsAndCareersView';
-import { ConferencesAndAMAsView } from './components/ConferencesAndAMAsView';
-import { StudentProfileView } from './components/StudentProfileView';
-import { BookingModal } from './components/BookingModal';
-import { STEMDiscoveryView } from './components/STEMDiscoveryView';
-import { DecisionEngineView } from './components/DecisionEngineView';
-import { UniversityIntelligenceView } from './components/UniversityIntelligenceView';
-import { ScholarshipIntelligenceView } from './components/ScholarshipIntelligenceView';
-import { AvatarWorldView } from './components/avatar/AvatarWorldView';
-import { CommunityDashboard } from './components/community/CommunityDashboard';
-import { ResearchLaboratoryView } from './components/research/ResearchLaboratoryView';
-import { PlatformArchitectureView } from './components/architecture/PlatformArchitectureView';
-import { EducationDataPlatformView } from './components/data-strategy/EducationDataPlatformView';
-import { PatchNotesModal } from './components/PatchNotesModal';
-import { AnalyticsTelemetryDrawer } from './components/AnalyticsTelemetryDrawer';
-import { ROICalculatorModal } from './components/ROICalculatorModal';
+import { ADMIN_ONLY_TABS } from './components/navigation/navConfig';
 import { topCambodianUniversities } from './data/universityIntelligenceData';
+import { universityClient } from './services/universityClient';
+import { mergeLiveUniversities } from './utils/mergeUniversities';
 import { LanguageProvider } from './context/LanguageContext';
+import { ThemeProvider } from './context/ThemeContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthModal } from './components/AuthModal';
+
+const AIAdvisor = lazy(() => import('./components/AIAdvisor').then((m) => ({ default: m.AIAdvisor })));
+const UniversityAlumniView = lazy(() => import('./components/UniversityAlumniView').then((m) => ({ default: m.UniversityAlumniView })));
+const MentorDiscovery = lazy(() => import('./components/MentorDiscovery').then((m) => ({ default: m.MentorDiscovery })));
+const StudentMeetupsView = lazy(() => import('./components/StudentMeetupsView').then((m) => ({ default: m.StudentMeetupsView })));
+const MajorsAndCareersView = lazy(() => import('./components/MajorsAndCareersView').then((m) => ({ default: m.MajorsAndCareersView })));
+const ConferencesAndAMAsView = lazy(() => import('./components/ConferencesAndAMAsView').then((m) => ({ default: m.ConferencesAndAMAsView })));
+const StudentProfileView = lazy(() => import('./components/StudentProfileView').then((m) => ({ default: m.StudentProfileView })));
+const BookingModal = lazy(() => import('./components/BookingModal').then((m) => ({ default: m.BookingModal })));
+const STEMDiscoveryView = lazy(() => import('./components/STEMDiscoveryView').then((m) => ({ default: m.STEMDiscoveryView })));
+const DecisionEngineView = lazy(() => import('./components/DecisionEngineView').then((m) => ({ default: m.DecisionEngineView })));
+const UniversityIntelligenceView = lazy(() => import('./components/UniversityIntelligenceView').then((m) => ({ default: m.UniversityIntelligenceView })));
+const ScholarshipIntelligenceView = lazy(() => import('./components/ScholarshipIntelligenceView').then((m) => ({ default: m.ScholarshipIntelligenceView })));
+const AvatarWorldView = lazy(() => import('./components/avatar/AvatarWorldView').then((m) => ({ default: m.AvatarWorldView })));
+const CommunityDashboard = lazy(() => import('./components/community/CommunityDashboard').then((m) => ({ default: m.CommunityDashboard })));
+const ResearchLaboratoryView = lazy(() => import('./components/research/ResearchLaboratoryView').then((m) => ({ default: m.ResearchLaboratoryView })));
+const PlatformArchitectureView = lazy(() => import('./components/architecture/PlatformArchitectureView').then((m) => ({ default: m.PlatformArchitectureView })));
+const EducationDataPlatformView = lazy(() => import('./components/data-strategy/EducationDataPlatformView').then((m) => ({ default: m.EducationDataPlatformView })));
+const PatchNotesModal = lazy(() => import('./components/PatchNotesModal').then((m) => ({ default: m.PatchNotesModal })));
+const AnalyticsTelemetryDrawer = lazy(() => import('./components/AnalyticsTelemetryDrawer').then((m) => ({ default: m.AnalyticsTelemetryDrawer })));
+const ROICalculatorModal = lazy(() => import('./components/ROICalculatorModal').then((m) => ({ default: m.ROICalculatorModal })));
 import {
   TabView,
   Mentor,
   StudentMeetup,
-  UniversityMajorInsight,
   SessionBooking,
   ComprehensiveUniversityProfile,
 } from './types';
@@ -46,27 +51,60 @@ import {
   initialNotifications,
 } from './data/mockData';
 
-export default function App() {
+function AppContent() {
+  const { user, authenticated } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabView>('dashboard');
   const [studentProfile, setStudentProfile] = useState(initialStudentProfile);
-  const [mentors, setMentors] = useState(initialMentors);
+  const [mentors] = useState(initialMentors);
   const [meetups, setMeetups] = useState(initialMeetups);
-  const [majorInsights, setMajorInsights] = useState(initialMajorInsights);
-  const [opportunities, setOpportunities] = useState(initialOpportunities);
+  const [majorInsights] = useState(initialMajorInsights);
+  const [opportunities] = useState(initialOpportunities);
   const [notifications, setNotifications] = useState(initialNotifications);
 
   // Modals and cross-tab triggers
   const [bookingMentor, setBookingMentor] = useState<Mentor | null>(null);
   const [advisorPrefillPrompt, setAdvisorPrefillPrompt] = useState<string>('');
   const [tabHistory, setTabHistory] = useState<TabView[]>([]);
-  const [universities] = useState<ComprehensiveUniversityProfile[]>(topCambodianUniversities);
+  const [universities, setUniversities] = useState<ComprehensiveUniversityProfile[]>(topCambodianUniversities);
+  const [universitiesLoading, setUniversitiesLoading] = useState(false);
+  const [universitiesError, setUniversitiesError] = useState<string | null>(null);
   const [roiModalUnivId, setRoiModalUnivId] = useState<string | null>(null);
   const [isPatchNotesOpen, setIsPatchNotesOpen] = useState(false);
+
+  const loadLiveUniversities = useCallback(async () => {
+    setUniversitiesLoading(true);
+    setUniversitiesError(null);
+    try {
+      const liveRows = await universityClient.list();
+      setUniversities(mergeLiveUniversities(topCambodianUniversities, liveRows));
+    } catch (err) {
+      setUniversitiesError(
+        err instanceof Error ? err.message : 'Unable to refresh live university catalog.'
+      );
+    } finally {
+      setUniversitiesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadLiveUniversities();
+  }, [loadLiveUniversities]);
+
+  useEffect(() => {
+    if (!isAdmin && ADMIN_ONLY_TABS.includes(activeTab)) {
+      setActiveTab('dashboard');
+    }
+  }, [isAdmin, activeTab]);
 
   // Tab navigation helpers
   const handleNavigateTab = (tab: TabView) => {
     // Teenager safety protection: redirect messages to mentors with public comments
-    const destination = (tab as string) === 'messages' ? 'mentors' : tab;
+    let destination: TabView = (tab as string) === 'messages' ? 'mentors' : tab;
+    if (ADMIN_ONLY_TABS.includes(destination) && !isAdmin) {
+      destination = 'dashboard';
+    }
     if (destination !== activeTab) {
       setTabHistory((prev) => [...prev, activeTab]);
       setActiveTab(destination);
@@ -260,8 +298,7 @@ export default function App() {
   };
 
   return (
-    <LanguageProvider>
-      <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col selection:bg-blue-500 selection:text-white">
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans flex flex-col selection:bg-blue-500 selection:text-white transition-colors">
         {/* 1. Global Navigation Bar */}
         <Navbar
           currentTab={activeTab}
@@ -275,13 +312,14 @@ export default function App() {
           studentName={studentProfile?.name}
           studentAvatar={studentProfile?.avatar}
           onOpenPatchNotes={() => setIsPatchNotesOpen(true)}
+          onOpenAuthModal={() => setAuthModalOpen(true)}
           canGoBack={tabHistory.length > 0}
           onBack={handleGoBack}
           onGoBack={handleGoBack}
         />
 
       {/* 2. Main Content Canvas */}
-      <main className="flex-1 w-full mx-auto">
+      <main className="flex-1 w-full mx-auto pb-20 lg:pb-0">
         {activeTab === 'dashboard' && (
           <StudentDashboard
             studentProfile={studentProfile}
@@ -299,31 +337,34 @@ export default function App() {
             onToggleSaveOpportunity={handleToggleSaveOpportunity}
             onOpenMeetup={() => handleNavigateTab('meetups')}
             onOpenMajorInsight={() => handleNavigateTab('alumni')}
+            onOpenAuthModal={() => setAuthModalOpen(true)}
             canGoBack={tabHistory.length > 0}
             onBack={handleGoBack}
           />
         )}
 
-        {activeTab === 'avatar-world' && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12">
-            <AvatarWorldView
-              studentId={studentProfile?.id || 'usr-student-01'}
-              onNavigateTab={handleNavigateTab}
-            />
-          </div>
-        )}
+        <Suspense fallback={<div className="p-8 text-center text-sm text-slate-500 dark:text-slate-400">Loading view...</div>}>
+          {activeTab === 'avatar-world' && (
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-12">
+              <AvatarWorldView
+                studentId={studentProfile?.id || 'usr-student-01'}
+                onNavigateTab={handleNavigateTab}
+              />
+            </div>
+          )}
 
-        {(activeTab === 'advisor' || activeTab === 'ai-advisor') && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-            <AIAdvisor
-              studentProfile={studentProfile}
-              mentors={mentors}
-              initialPrompt={advisorPrefillPrompt}
-              onOpenBooking={handleOpenBooking}
-              onNavigateTab={handleNavigateTab}
-            />
-          </div>
-        )}
+          {(activeTab === 'advisor' || activeTab === 'ai-advisor') && (
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+              <AIAdvisor
+                key={user?.id || 'guest'}
+                studentProfile={studentProfile}
+                mentors={mentors}
+                initialPrompt={advisorPrefillPrompt}
+                onOpenBooking={handleOpenBooking}
+                onNavigateTab={(tab) => handleNavigateTab(tab as TabView)}
+              />
+            </div>
+          )}
 
         {activeTab === 'stem-discovery' && (
           <STEMDiscoveryView
@@ -410,12 +451,15 @@ export default function App() {
         {activeTab === 'profile' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
             <StudentProfileView
+              key={user?.id || 'guest'}
               studentProfile={studentProfile}
               mentors={mentors}
               opportunities={opportunities}
               onUpdateInterests={handleUpdateInterests}
               onCancelBooking={handleCancelBooking}
               onOpenBooking={handleOpenBooking}
+              onOpenAuthModal={() => setAuthModalOpen(true)}
+              onNavigateTab={handleNavigateTab}
             />
           </div>
         )}
@@ -440,89 +484,114 @@ export default function App() {
           <UniversityIntelligenceView
             universities={universities}
             onNavigateTab={handleNavigateTab}
-            onOpenBookingWithSenior={(abbr) => {
+            onOpenBookingWithSenior={() => {
               handleNavigateTab('alumni');
             }}
+            isLoadingLive={universitiesLoading}
+            liveError={universitiesError}
+            onRetryLive={loadLiveUniversities}
           />
         )}
 
         {activeTab === 'scholarships' && (
-          <ScholarshipIntelligenceView />
+          <ScholarshipIntelligenceView
+            key={authenticated ? user?.id : 'guest'}
+            onOpenAuthModal={() => setAuthModalOpen(true)}
+          />
         )}
 
-        {activeTab === 'research-lab' && (
+        {isAdmin && activeTab === 'research-lab' && (
           <ResearchLaboratoryView />
         )}
 
-        {activeTab === 'platform-architecture' && (
+        {isAdmin && activeTab === 'platform-architecture' && (
           <PlatformArchitectureView />
         )}
 
-        {activeTab === 'data-strategy' && (
+        {isAdmin && activeTab === 'data-strategy' && (
           <EducationDataPlatformView />
         )}
+        </Suspense>
       </main>
 
-      {/* 3. Global Mentorship Booking Modal */}
-      {bookingMentor && (
-        <BookingModal
-          mentor={bookingMentor}
-          studentProfile={studentProfile}
-          onClose={() => setBookingMentor(null)}
-          onConfirmBooking={handleConfirmBooking}
-        />
-      )}
+      {authModalOpen && <AuthModal onClose={() => setAuthModalOpen(false)} />}
 
-      {/* 3.1 Global ROI Calculator Modal */}
-      {roiModalUnivId && (
-        <ROICalculatorModal
-          isOpen={!!roiModalUnivId}
-          onClose={() => setRoiModalUnivId(null)}
-          universities={universities}
-          initialUniversityId={roiModalUnivId}
-        />
-      )}
+      <Suspense fallback={null}>
+        {/* 3. Global Mentorship Booking Modal */}
+        {bookingMentor && (
+          <BookingModal
+            mentor={bookingMentor}
+            studentProfile={studentProfile}
+            onClose={() => setBookingMentor(null)}
+            onConfirmBooking={handleConfirmBooking}
+          />
+        )}
 
-      {/* 3.2 Live Telemetry Drawer */}
-      <AnalyticsTelemetryDrawer />
+        {/* 3.1 Global ROI Calculator Modal */}
+        {roiModalUnivId && (
+          <ROICalculatorModal
+            isOpen={!!roiModalUnivId}
+            onClose={() => setRoiModalUnivId(null)}
+            universities={universities}
+            initialUniversityId={roiModalUnivId}
+          />
+        )}
 
-      {/* 3.3 Version V1.2.0 Patch Notes Modal */}
-      <PatchNotesModal
-        isOpen={isPatchNotesOpen}
-        onClose={() => setIsPatchNotesOpen(false)}
-        onNavigateToScholarships={() => handleNavigateTab('scholarships')}
-      />
+        {/* 3.2 Live Telemetry Drawer (Admin Only) */}
+        {isAdmin && <AnalyticsTelemetryDrawer />}
+
+        {/* 3.3 Version V1.2.0 Patch Notes Modal */}
+        {isPatchNotesOpen && (
+          <PatchNotesModal
+            isOpen={isPatchNotesOpen}
+            onClose={() => setIsPatchNotesOpen(false)}
+            onNavigateToScholarships={() => handleNavigateTab('scholarships')}
+          />
+        )}
+      </Suspense>
 
       {/* 4. Global Footer */}
-      <footer className="mt-auto border-t border-stone-200 bg-white py-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-stone-500">
-          <div className="flex items-center space-x-2">
-            <span className="font-bold text-stone-900">Student Instructor V1.2.0</span>
+      <footer className="mt-auto border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-6 pb-24 lg:pb-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
+          <div className="flex items-center flex-wrap gap-2">
+            <span className="font-bold text-slate-900 dark:text-slate-100">Student Instructor</span>
             <span>•</span>
             <button
+              type="button"
               onClick={() => setIsPatchNotesOpen(true)}
-              className="font-semibold text-emerald-700 hover:text-emerald-900 hover:underline flex items-center gap-1"
+              className="font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
             >
-              <span>V1.2.0 Patch Notes</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Release Notes
             </button>
             <span>•</span>
-            <span>Comprehensive University Degree Guidance & Peer Mentorship Platform</span>
+            <span>Scholarships, University Guides &amp; Student Mentorship</span>
           </div>
 
-          <div className="flex items-center space-x-4">
-            <span>ITC • CADT • RUPP • UHS Academic Curricula Grounded</span>
+          <div className="flex items-center gap-4">
+            <span>ITC • CADT • RUPP • UHS Curricula Grounded</span>
             <span>•</span>
             <button
+              type="button"
               onClick={() => handleNavigateTab('dashboard')}
-              className="text-indigo-600 hover:text-indigo-800 font-semibold"
+              className="text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer"
             >
-              Back to Dashboard
+              Student Home
             </button>
           </div>
         </div>
       </footer>
     </div>
-    </LanguageProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </LanguageProvider>
+    </ThemeProvider>
   );
 }

@@ -23,7 +23,7 @@ import {
   Subject,
   Category,
   LearningContent,
-} from '../../../server/types/learningTypes';
+} from '../../../shared/types/learningTypes';
 import { learningClient } from '../../services/learningClient';
 
 interface DigitalLibraryViewProps {

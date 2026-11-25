@@ -1,30 +1,24 @@
 import { Router, Request, Response } from 'express';
 import { UniversityService } from '../services/universityService';
+import { safeErrorMessage } from '../utils/httpErrors';
 
 const router = Router();
 const universityService = new UniversityService();
 
-/**
- * @route GET /api/universities
- * @desc Get all universities with profiles and majors
- */
-router.get('/', (req: Request, res: Response): void => {
+/** GET /api/universities */
+router.get('/', (_req: Request, res: Response): void => {
   try {
     const data = universityService.getUniversities();
-    res.json({
-      success: true,
-      data,
-      count: data.length
+    res.json({ success: true, data, count: data.length });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error: safeErrorMessage(err, 'Failed to fetch universities.', 500),
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || 'Failed to fetch universities.' });
   }
 });
 
-/**
- * @route GET /api/universities/:id
- * @desc Get single university by ID or abbreviation (e.g. 'cadt', 'itc')
- */
+/** GET /api/universities/:id */
 router.get('/:id', (req: Request, res: Response): void => {
   try {
     const university = universityService.getUniversityById(req.params.id);
@@ -33,8 +27,11 @@ router.get('/:id', (req: Request, res: Response): void => {
       return;
     }
     res.json({ success: true, data: university });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error: safeErrorMessage(err, 'Failed to fetch university.', 500),
+    });
   }
 });
 

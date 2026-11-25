@@ -261,16 +261,24 @@ export interface ExperimentOutcomeReport {
 // 6. PRIVACY & CHILD SAFETY
 // ==========================================
 
+export type ConsentStatus = 'pending' | 'granted' | 'partial' | 'withdrawn';
+export type ParentVerificationStatus = 'unverified' | 'pending_owner_verification' | 'verified';
+
 export interface StudentPrivacyConsent {
   studentId: string;
   isMinor: boolean;
   parentalConsentVerified: boolean;
+  parentVerificationStatus: ParentVerificationStatus;
   parentEmail: string | null;
   allowAnalyticsTracking: boolean;
   allowResearchInclusion: boolean;
+  allowAiMemory: boolean;
+  consentStatus: ConsentStatus;
   anonymizedResearchId: string;
   consentDate: string;
   updatedAt: string;
+  withdrawnAt?: string | null;
+  blockedReasons?: string[];
 }
 
 export interface AnonymizedResearchDataPoint {

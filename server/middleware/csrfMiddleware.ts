@@ -1,75 +1,136 @@
-// CDES Platform - CSRF Token Middleware
-// Protects state-changing endpoints (POST, PUT, PATCH, DELETE) from CSRF attacks.
-// Generates a CSRF token, stores it in an httpOnly cookie, and validates it
-// against a X-CSRF-Token header on state-changing requests.
+import crypto from 'node:crypto';
+import type { Request, Response, NextFunction, CookieOptions } from 'express';
+import { parseCookies } from '../utils/cookies';
+import { getSessionTtlSeconds } from '../services/authService';
+import { isCookieSecure } from '../config';
+import type { AuthenticatedRequest } from './authMiddleware';
 
-import { Request, Response, NextFunction } from "express";
-import { randomUUID } from "crypto";
+const CSRF_COOKIE_NAME = 'cdes_csrf_secret';
+const fallbackSigningKey = crypto.randomBytes(32).toString('hex');
 
-// Token storage (in production, use Redis or a database for multi-instance)
-const csrfTokenStore = new Map<string, string>();
+function getCsrfSigningKey(): string {
+  const jwtSecret = process.env.JWT_SECRET;
+  return jwtSecret && jwtSecret.trim() !== '' ? jwtSecret : fallbackSigningKey;
+}
+
+function getCsrfCookieOptions(maxAgeMs: number): CookieOptions {
+  return {
+    httpOnly: true,
+    secure: isCookieSecure(),
+    sameSite: 'lax',
+    path: '/',
+    maxAge: maxAgeMs,
+  };
+}
+
+function computeBoundToken(secret: string, sessionScope: string): string {
+  return crypto
+    .createHmac('sha256', getCsrfSigningKey())
+    .update(`${sessionScope}:${secret}`)
+    .digest('hex');
+}
+
+function safeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
+  } catch {
+    return false;
+  }
+}
 
 /**
- * Generates a CSRF token and sets it in an httpOnly cookie.
- * The token value is also stored in an in-memory map for validation.
+ * Ensures an HttpOnly CSRF secret cookie exists and returns a session-bound
+ * browser-readable CSRF token via X-CSRF-Token response header.
  */
-export function generateCsrfToken(req: Request, res: Response, next: NextFunction): void {
-  const token = randomUUID();
-  const tokenId = randomUUID();
+export function issueCsrfToken(req: Request, res: Response, sessionUserId?: string): string {
+  const cookies = parseCookies(req.headers.cookie);
+  let secret = cookies[CSRF_COOKIE_NAME];
+  if (!secret || secret.length < 32) {
+    secret = crypto.randomBytes(32).toString('hex');
+    res.cookie(CSRF_COOKIE_NAME, secret, getCsrfCookieOptions(getSessionTtlSeconds() * 1000));
+  }
+  const scope = sessionUserId || (req as AuthenticatedRequest).user?.userId || 'anon';
+  const token = computeBoundToken(secret, scope);
+  res.setHeader('X-CSRF-Token', token);
+  return token;
+}
 
-  csrfTokenStore.set(tokenId, token);
+/** Rotates the CSRF secret on authentication state changes (login/register). */
+export function rotateCsrfToken(res: Response, sessionUserId: string): string {
+  const secret = crypto.randomBytes(32).toString('hex');
+  res.cookie(CSRF_COOKIE_NAME, secret, getCsrfCookieOptions(getSessionTtlSeconds() * 1000));
+  const token = computeBoundToken(secret, sessionUserId);
+  res.setHeader('X-CSRF-Token', token);
+  return token;
+}
 
-  // Set the token as a cookie (httpOnly prevents XSS access)
-  res.cookie("cdes_csrf_token", token, {
+/** Clears CSRF cookie on logout. */
+export function clearCsrfCookie(res: Response): void {
+  res.clearCookie(CSRF_COOKIE_NAME, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict" as const,
-    path: "/",
-    maxAge: 86400000, // 24 hours
+    secure: isCookieSecure(),
+    sameSite: 'lax',
+    path: '/',
   });
+}
 
-  // Send the token ID to the client (not the token value)
-  // The client must send the token ID in the X-CSRF-Token-Id header
-  res.setHeader("X-CSRF-Token-Id", tokenId);
-
+/** Refreshes X-CSRF-Token header when a CSRF secret cookie is already present. */
+export function generateCsrfToken(req: Request, res: Response, next: NextFunction): void {
+  const cookies = parseCookies(req.headers.cookie);
+  const secret = cookies[CSRF_COOKIE_NAME];
+  if (secret) {
+    const scope = (req as AuthenticatedRequest).user?.userId || 'anon';
+    res.setHeader('X-CSRF-Token', computeBoundToken(secret, scope));
+  }
   next();
 }
 
 /**
- * Validates the CSRF token for state-changing requests.
- * Checks both the X-CSRF-Token header and the X-CSRF-Token-Id header.
+ * Validates session-bound CSRF token on state-changing HTTP requests.
+ * Pure Bearer-header API clients without a session cookie are exempt.
  */
 export function validateCsrfToken(req: Request, res: Response, next: NextFunction): void {
-  const method = req.method?.toUpperCase();
-  const isStateChanging = ["POST", "PUT", "PATCH", "DELETE"].includes(method || "");
-
-  if (!isStateChanging) {
+  const method = req.method?.toUpperCase() || 'GET';
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     next();
     return;
   }
 
-  const tokenId = req.headers["x-csrf-token-id"] as string | undefined;
-  const token = req.headers["x-csrf-token"] as string | undefined;
+  const cookies = parseCookies(req.headers.cookie);
+  const authHeader = req.headers['authorization'];
+  const hasBearer = typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
+  const hasSessionCookie = Boolean(cookies['cdes_jwt']);
 
-  if (!tokenId || !token) {
+  if (hasBearer && !hasSessionCookie) {
+    next();
+    return;
+  }
+
+  const secret = cookies[CSRF_COOKIE_NAME];
+  const headerToken = req.headers['x-csrf-token'];
+  const providedToken = typeof headerToken === 'string' ? headerToken.trim() : '';
+
+  if (!secret || !providedToken) {
     res.status(403).json({
       success: false,
-      error: "CSRF validation failed: missing X-CSRF-Token or X-CSRF-Token-Id header.",
+      code: 'CSRF_MISSING',
+      error: 'CSRF validation failed: missing CSRF cookie or X-CSRF-Token header.',
     });
     return;
   }
 
-  const expectedToken = csrfTokenStore.get(tokenId);
-  if (!expectedToken || expectedToken !== token) {
+  const scope = (req as AuthenticatedRequest).user?.userId || 'anon';
+  const expectedToken = computeBoundToken(secret, scope);
+
+  if (!safeEqualHex(expectedToken, providedToken)) {
     res.status(403).json({
       success: false,
-      error: "CSRF validation failed: invalid or expired token.",
+      code: 'CSRF_INVALID',
+      error: 'CSRF validation failed: invalid or session-mismatched token.',
     });
     return;
   }
-
-  // Token valid - delete it to prevent reuse (CSRF token should be single-use)
-  csrfTokenStore.delete(tokenId);
 
   next();
 }

@@ -43,7 +43,9 @@ export interface EducationReportDocument {
 }
 
 export class KnowledgeMapService {
-  private db = getDatabase();
+  private get db() {
+    return getDatabase();
+  }
 
   public getAggregates(): EducationKnowledgeAggregate[] {
     const rows = this.db.prepare(`

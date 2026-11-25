@@ -8,7 +8,7 @@ export const LanguageSelector: React.FC<{ variant?: 'nav' | 'mobile' }> = ({ var
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const languages: Array<{ code: Language; label: string; nativeName: string }> = [
-    { code: 'en', label: 'English', nativeName: 'English (US)' },
+    { code: 'en', label: 'English', nativeName: 'English' },
     { code: 'km', label: 'Khmer', nativeName: 'ភាសាខ្មែរ' },
   ];
 
@@ -26,20 +26,21 @@ export const LanguageSelector: React.FC<{ variant?: 'nav' | 'mobile' }> = ({ var
 
   if (variant === 'mobile') {
     return (
-      <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
         {languages.map((item) => {
           const isActive = language === item.code;
           return (
             <button
               key={item.code}
+              type="button"
               onClick={() => setLanguage(item.code)}
-              className={`flex-1 flex items-center justify-center space-x-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition-all ${
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs border border-slate-200 dark:border-slate-600'
+                  : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <Globe className={`w-3.5 h-3.5 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
+              <Globe className={`w-3.5 h-3.5 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`} />
               <span>{item.nativeName}</span>
             </button>
           );
@@ -52,54 +53,60 @@ export const LanguageSelector: React.FC<{ variant?: 'nav' | 'mobile' }> = ({ var
     <div className="relative shrink-0" ref={dropdownRef}>
       <button
         id="language-selector-btn"
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+        className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
           isOpen
-            ? 'bg-blue-50 border-blue-300 text-blue-900'
-            : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:text-slate-900 shadow-2xs'
+            ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700 text-blue-900 dark:text-blue-200'
+            : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
         }`}
         title="Select Language / ជ្រើសរើសភាសា"
         aria-label="Select Language"
       >
-        <Globe className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+        <Globe className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
         <span className="tracking-tight whitespace-nowrap">{current.nativeName}</span>
         <ChevronDown
           className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${
-            isOpen ? 'rotate-180 text-blue-600' : ''
+            isOpen ? 'rotate-180 text-blue-600 dark:text-blue-400' : ''
           }`}
         />
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
-          <div className="px-3 py-1.5 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            Select Language / ជ្រើសរើសភាសា
+        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 z-50">
+          <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+            Language / ភាសា
           </div>
           {languages.map((item) => {
             const isSelected = language === item.code;
             return (
               <button
                 key={item.code}
+                type="button"
                 onClick={() => {
                   setLanguage(item.code);
                   setIsOpen(false);
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-left transition-colors ${
+                className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-left transition-colors cursor-pointer ${
                   isSelected
-                    ? 'bg-blue-50/80 text-blue-900'
-                    : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                    ? 'bg-blue-50/80 dark:bg-blue-950/50 text-blue-900 dark:text-blue-200'
+                    : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`}
               >
-                <div className="flex items-center space-x-2">
-                  <Globe className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`} />
+                <div className="flex items-center gap-2">
+                  <Globe
+                    className={`w-3.5 h-3.5 shrink-0 ${
+                      isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'
+                    }`}
+                  />
                   <div>
                     <div className="font-bold leading-none">{item.nativeName}</div>
-                    <div className="text-[10px] text-slate-400 leading-tight mt-0.5">
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">
                       {item.label}
                     </div>
                   </div>
                 </div>
-                {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
               </button>
             );
           })}

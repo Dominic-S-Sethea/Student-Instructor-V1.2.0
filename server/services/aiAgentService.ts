@@ -2,17 +2,27 @@ import { GoogleGenAI } from '@google/genai';
 import { knowledgeRepository } from '../repositories/knowledgeRepository';
 import { studentAIMemoryService } from './studentAIMemoryService';
 import { aiSafetyService } from './aiSafetyService';
-import { AIChatMessage, RetrievedKnowledgeChunk, AIStudentInsight } from '../types/aiTypes';
+import { PrivacyService } from './privacyService';
+import { AIChatMessage, RetrievedKnowledgeChunk, AIStudentInsight, StudentAIMemory } from '../types/aiTypes';
 import { getDatabase } from '../db/connection';
 
+const privacyService = new PrivacyService();
+
 let genAIClient: GoogleGenAI | null = null;
+let cachedApiKey = '';
 function getGenAI(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
   if (!apiKey) {
+    genAIClient = null;
+    cachedApiKey = '';
     return null;
   }
-  if (!genAIClient) {
-    genAIClient = new GoogleGenAI({ apiKey });
+  if (!genAIClient || cachedApiKey !== apiKey) {
+    genAIClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: { timeout: 15000 },
+    });
+    cachedApiKey = apiKey;
   }
   return genAIClient;
 }
@@ -72,14 +82,18 @@ export class AIAgentService {
           .map(m => `${m.sender === 'student' || m.sender === 'user' ? 'Student' : 'CDES Intelligence Agent'}: ${m.text}`)
           .join('\n');
 
-        const fullPrompt = `${systemPrompt}\n\nRecent Dialogue History:\n${conversationText}\n\nStudent: ${message}\nCDES Intelligence Agent:`;
+        const turnInput = conversationText
+          ? `Recent Dialogue History:\n${conversationText}\n\nStudent: ${message}`
+          : message;
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: fullPrompt,
+        const response = await ai.interactions.create({
+          model: process.env.GEMINI_MODEL || 'gemini-4-hydrogen',
+          system_instruction: systemPrompt,
+          input: turnInput,
+          generation_config: { thinking_level: 'low' },
         });
 
-        rawResponse = response.text || '';
+        rawResponse = response.output_text || '';
       } catch (err) {
         console.warn('Gemini API call failed, switching to CDES Domain Intelligence Engine:', err);
         rawResponse = this.generateDomainIntelligenceResponse(message, studentMemory, retrievedSources);
@@ -117,7 +131,7 @@ export class AIAgentService {
    * Builds the comprehensive RAG + Student Memory + Safety System Prompt
    */
   private buildSystemPrompt(
-    memory: any,
+    memory: StudentAIMemory,
     sources: RetrievedKnowledgeChunk[]
   ): string {
     const safetyInstructions = aiSafetyService.getPedagogicalSafetySystemPrompt();
@@ -158,7 +172,7 @@ INSTRUCTIONS FOR YOUR RESPONSE:
    */
   private generateDomainIntelligenceResponse(
     query: string,
-    memory: any,
+    memory: StudentAIMemory,
     sources: RetrievedKnowledgeChunk[]
   ): string {
     const qLower = query.toLowerCase();
@@ -245,7 +259,7 @@ What specific milestone is top of mind for you today—preparing for an upcoming
    */
   private generateSuggestedFollowUps(
     query: string,
-    memory: any
+    _memory: StudentAIMemory
   ): string[] {
     const qLower = query.toLowerCase();
     if (qLower.includes('scholarship')) {
@@ -280,12 +294,40 @@ What specific milestone is top of mind for you today—preparing for an upcoming
     const db = getDatabase();
 
     // Fetch profile
-    const profile = db.prepare('SELECT name, education_level FROM student_profiles WHERE id = ? OR user_id = ?').get(studentId, studentId) as any;
-    const studentName = profile?.name || 'Vannak Sam';
-    const gradeLevel = profile?.education_level || 'Grade 12 (Bac II Candidate)';
+    const profile = db
+      .prepare('SELECT name, education_level FROM student_profiles WHERE id = ? OR user_id = ?')
+      .get(studentId, studentId) as { name?: string; education_level?: string } | undefined;
+    const studentName = profile?.name || 'Student';
+    const gradeLevel = profile?.education_level || 'Not specified';
+
+    if (!privacyService.canUseAIMemory(studentId)) {
+      return {
+        studentId,
+        studentName,
+        gradeLevel,
+        memory,
+        cognitiveProfile: {
+          engagementScore: 0,
+          persistenceScore: 0,
+          problemSolvingScore: 0,
+          primaryLearningStyle: 'AI memory disabled under privacy consent',
+          pacingVelocity: 'Not evaluated',
+          frustrationRisk: 'Low',
+        },
+        keyStrengths: [],
+        growthAreas: [],
+        activeRecommendationsCount: 0,
+        generatedAt: new Date().toISOString(),
+      };
+    }
 
     // Recommendations count
-    const recCount = (db.prepare("SELECT COUNT(*) as c FROM ai_recommendation_events WHERE student_id = ? AND status != 'dismissed'").get(studentId) as { c: number })?.c || 0;
+    const recCount =
+      (
+        db
+          .prepare("SELECT COUNT(*) as c FROM ai_recommendation_events WHERE student_id = ? AND status != 'dismissed'")
+          .get(studentId) as { c: number }
+      )?.c || 0;
 
     return {
       studentId,
@@ -298,21 +340,21 @@ What specific milestone is top of mind for you today—preparing for an upcoming
         problemSolvingScore: 79,
         primaryLearningStyle: 'Visual-Interactive & Hands-on Simulation',
         pacingVelocity: 'Accelerated in Logic, Deliberate in Theoretical Physics',
-        frustrationRisk: 'Low'
+        frustrationRisk: 'Low',
       },
       keyStrengths: [
         'Mathematical Logic & Algorithmic Thinking',
         'High Persistence on Complex Multi-Step Puzzles',
         'Active Exploration of Virtual STEM Laboratory Tools',
-        'Intrinsic Curiosity in Clean Energy & Robotics'
+        'Intrinsic Curiosity in Clean Energy & Robotics',
       ],
       growthAreas: [
         'Optics & Wave Physics Snell Law Mathematical Derivations',
         'Academic French Terminology for Polytechnic Tronc Commun',
-        'Time Management during High-Stakes Standardized Exam Simulations'
+        'Time Management during High-Stakes Standardized Exam Simulations',
       ],
       activeRecommendationsCount: recCount,
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
     };
   }
 }

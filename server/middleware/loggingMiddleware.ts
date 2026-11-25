@@ -4,31 +4,35 @@
 
 const isProduction = process.env.NODE_ENV === "production";
 
-function formatLog(args: any[]): string {
+type LogLevel = "error" | "warn" | "info" | "debug";
+
+function formatLog(level: LogLevel, args: unknown[]): string {
   const timestamp = new Date().toISOString();
-  const meta = args.find((a: any) => typeof a === "object" && a !== null) || {};
-  const message = args.find((a: any) => typeof a === "string") || JSON.stringify(args);
+  const meta =
+    (args.find((a): a is Record<string, unknown> => typeof a === "object" && a !== null)) || {};
+  const message =
+    args.find((a): a is string => typeof a === "string") || JSON.stringify(args);
   return JSON.stringify({
     timestamp,
-    level: meta.level || "info",
     service: "cdes-platform",
     ...meta,
+    level,
     message,
   });
 }
 
 export class Logger {
-  static error(...args: any[]): void {
-    console.error(formatLog(args));
+  static error(...args: unknown[]): void {
+    console.error(formatLog("error", args));
   }
-  static warn(...args: any[]): void {
-    console.warn(formatLog(args));
+  static warn(...args: unknown[]): void {
+    console.warn(formatLog("warn", args));
   }
-  static info(...args: any[]): void {
-    console.log(formatLog(args));
+  static info(...args: unknown[]): void {
+    console.log(formatLog("info", args));
   }
-  static debug(...args: any[]): void {
-    if (!isProduction) console.log(formatLog(args));
+  static debug(...args: unknown[]): void {
+    if (!isProduction) console.log(formatLog("debug", args));
   }
 }
 

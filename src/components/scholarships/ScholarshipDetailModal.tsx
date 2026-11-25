@@ -40,7 +40,8 @@ export const ScholarshipDetailModal: React.FC<ScholarshipDetailModalProps> = ({
   onOpenReportModal,
 }) => {
   const { language } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'overview' | 'eligibility' | 'benefits' | 'process' | 'verification'>('overview');
+  type DetailTab = 'overview' | 'eligibility' | 'benefits' | 'process' | 'verification';
+  const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [copiedLink, setCopiedLink] = useState(false);
 
   if (!isOpen || !scholarship) return null;
@@ -57,10 +58,30 @@ export const ScholarshipDetailModal: React.FC<ScholarshipDetailModalProps> = ({
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  // Calculate days remaining
-  const daysLeft = Math.ceil(
-    (new Date(scholarship.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-  );
+  const daysLeft =
+    typeof scholarship.daysRemaining === 'number'
+      ? scholarship.daysRemaining
+      : scholarship.deadline
+        ? Math.ceil((new Date(scholarship.deadline).getTime() - Date.now()) / 86400000)
+        : null;
+  const isRolling = scholarship.deadlineType === 'Rolling' || scholarship.deadlineStatus === 'rolling';
+  const isUnknownDeadline = scholarship.deadlineStatus === 'unknown' || daysLeft === null || Number.isNaN(daysLeft);
+  const deadlineBadgeText = isRolling
+    ? ' (Rolling)'
+    : isUnknownDeadline
+      ? isKhmer ? ' (មិនបានបញ្ជាក់)' : ' (Not specified)'
+      : daysLeft < 0
+        ? ' (Closed / Expired)'
+        : daysLeft === 0
+          ? ' (Closes today)'
+          : ` (${daysLeft} days remaining)`;
+  const tabs: Array<{ id: DetailTab; label: string }> = [
+    { id: 'overview', label: isKhmer ? 'ទិដ្ឋភាពទូទៅ' : 'Overview & Fields' },
+    { id: 'eligibility', label: isKhmer ? 'លក្ខខណ្ឌតម្រូវ' : 'Eligibility & Docs' },
+    { id: 'benefits', label: isKhmer ? 'អត្ថប្រយោជន៍' : 'Financial Package' },
+    { id: 'process', label: isKhmer ? 'ដំណាក់កាលជ្រើសរើស' : 'Selection Timeline' },
+    { id: 'verification', label: isKhmer ? 'ប្រវត្តិផ្ទៀងផ្ទាត់' : 'Verification & Audit' },
+  ];
 
   return (
     <div
@@ -69,7 +90,7 @@ export const ScholarshipDetailModal: React.FC<ScholarshipDetailModalProps> = ({
       aria-modal="true"
       id="scholarship-detail-modal"
     >
-      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6 flex flex-col max-h-[90vh]">
+      <div className="bg-white dark:bg-slate-900 dark:text-slate-100 rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden my-6 flex flex-col max-h-[90vh]">
         {/* Header Ribbon */}
         <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white p-6 relative shrink-0">
           <button
@@ -113,8 +134,11 @@ export const ScholarshipDetailModal: React.FC<ScholarshipDetailModalProps> = ({
             <div className="flex items-center gap-1.5">
               <Clock className="w-4 h-4 text-amber-400" />
               <span>
-                Deadline: <strong className="text-white">{scholarship.deadline}</strong>
-                {daysLeft > 0 ? ` (${daysLeft} days remaining)` : ' (Closed)'}
+                Deadline:{' '}
+                <strong className="text-white">
+                  {scholarship.deadline || (isRolling ? 'Rolling' : isKhmer ? 'មិនបានបញ្ជាក់' : 'Not specified')}
+                </strong>
+                {deadlineBadgeText}
               </span>
             </div>
           </div>
@@ -125,7 +149,9 @@ export const ScholarshipDetailModal: React.FC<ScholarshipDetailModalProps> = ({
           <div>
             <div className="text-[11px] font-semibold text-emerald-800 uppercase tracking-wider">Est. Grant Value</div>
             <div className="text-base font-bold text-emerald-950">
-              ${scholarship.totalEstimatedValueUSD.toLocaleString()} USD
+              {typeof scholarship.totalEstimatedValueUSD === 'number'
+                ? `$${scholarship.totalEstimatedValueUSD.toLocaleString()} USD`
+                : isKhmer ? 'មិនបានបញ្ជាក់' : 'Not specified'}
             </div>
           </div>
           <div>
@@ -150,16 +176,10 @@ export const ScholarshipDetailModal: React.FC<ScholarshipDetailModalProps> = ({
 
         {/* Dossier Tabs */}
         <div className="flex border-b border-slate-200 px-6 bg-slate-50/80 shrink-0 overflow-x-auto no-scrollbar">
-          {[
-            { id: 'overview', label: isKhmer ? 'ទិដ្ឋភាពទូទៅ' : 'Overview & Fields' },
-            { id: 'eligibility', label: isKhmer ? 'លក្ខខណ្ឌតម្រូវ' : 'Eligibility & Docs' },
-            { id: 'benefits', label: isKhmer ? 'អត្ថប្រយោជន៍' : 'Financial Package' },
-            { id: 'process', label: isKhmer ? 'ដំណាក់កាលជ្រើសរើស' : 'Selection Timeline' },
-            { id: 'verification', label: isKhmer ? 'ប្រវត្តិផ្ទៀងផ្ទាត់' : 'Verification & Audit' },
-          ].map((tab) => (
+          {tabs.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id)}
               className={`py-3 px-3 text-xs font-bold whitespace-nowrap border-b-2 transition-colors ${
                 activeTab === tab.id
                   ? 'border-emerald-600 text-emerald-800 bg-white'
@@ -245,7 +265,11 @@ export const ScholarshipDetailModal: React.FC<ScholarshipDetailModalProps> = ({
                 <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                   <div className="text-xs text-slate-500 font-medium">Work Experience</div>
                   <div className="text-base font-bold text-slate-900 mt-0.5">
-                    {scholarship.workExpYears > 0 ? `${scholarship.workExpYears}+ years` : '0 years (Fresh grads ok)'}
+                    {scholarship.workExpYears === null
+                      ? isKhmer ? 'មិនបានបញ្ជាក់' : 'Not specified'
+                      : scholarship.workExpYears > 0
+                        ? `${scholarship.workExpYears}+ years`
+                        : '0 years (Fresh grads ok)'}
                   </div>
                 </div>
               </div>
@@ -340,26 +364,36 @@ export const ScholarshipDetailModal: React.FC<ScholarshipDetailModalProps> = ({
 
           {activeTab === 'verification' && (
             <div className="space-y-6">
-              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 space-y-3">
+              <div
+                className={`p-4 rounded-xl border space-y-3 ${
+                  scholarship.verifiedBadge
+                    ? 'bg-emerald-50 border-emerald-200'
+                    : 'bg-amber-50 border-amber-200'
+                }`}
+              >
                 <div className="flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-emerald-600" />
-                  <span className="font-bold text-emerald-950 text-sm">Data Authenticity Guarantee</span>
+                  <ShieldCheck className={`w-5 h-5 ${scholarship.verifiedBadge ? 'text-emerald-600' : 'text-amber-600'}`} />
+                  <span className={`font-bold text-sm ${scholarship.verifiedBadge ? 'text-emerald-950' : 'text-amber-950'}`}>
+                    {scholarship.verifiedBadge ? 'Editorial Verification Record' : `Status: ${scholarship.verificationStatus}`}
+                  </span>
                 </div>
-                <p className="text-xs text-emerald-900 leading-relaxed">
-                  Every entry in the Cambodia Scholarship Intelligence Platform (CSIP) is manually verified against government gazettes, university bursary pages, and embassy portals before publication.
+                <p className={`text-xs leading-relaxed ${scholarship.verifiedBadge ? 'text-emerald-900' : 'text-amber-900'}`}>
+                  {scholarship.verifiedBadge
+                    ? 'This scholarship record has been reviewed against its official source link. Always confirm final cycle dates on the provider portal before applying.'
+                    : 'This record is currently pending verification or unverified. Confirm eligibility, funding, and deadlines directly on the official source link.'}
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] text-emerald-800">
+                <div className={`grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 text-[11px] ${scholarship.verifiedBadge ? 'text-emerald-800' : 'text-amber-800'}`}>
                   <div>
-                    <span className="text-emerald-600 block">Verified Date</span>
-                    <strong>{scholarship.lastVerifiedDate}</strong>
+                    <span className="opacity-75 block">Verified Date</span>
+                    <strong>{scholarship.lastVerifiedDate || (isKhmer ? 'មិនទាន់ផ្ទៀងផ្ទាត់' : 'Not verified yet')}</strong>
                   </div>
                   <div>
-                    <span className="text-emerald-600 block">Quality Score</span>
+                    <span className="opacity-75 block">Completeness Score</span>
                     <strong>{scholarship.qualityScore} / 100</strong>
                   </div>
                   <div>
-                    <span className="text-emerald-600 block">Verifier</span>
-                    <strong>{scholarship.verifierName}</strong>
+                    <span className="opacity-75 block">Verifier</span>
+                    <strong>{scholarship.verifierName || (isKhmer ? 'មិនទាន់ផ្ទៀងផ្ទាត់' : 'Not verified yet')}</strong>
                   </div>
                 </div>
               </div>

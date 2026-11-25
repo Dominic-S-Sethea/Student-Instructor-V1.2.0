@@ -1,4 +1,14 @@
+import crypto from 'node:crypto';
 import { Router, Request, Response } from 'express';
+import { authenticateToken, requireRole } from '../middleware/authMiddleware';
+import { validate } from '../middleware/validationMiddleware';
+import {
+  KnowledgeContentCreateSchema,
+  KnowledgeVerifySchema,
+  KnowledgeRagSyncSchema,
+  KnowledgeFeedbackSchema,
+} from '../validators/apiSchemas';
+import { safeErrorMessage } from '../utils/httpErrors';
 
 const router = Router();
 
@@ -437,8 +447,8 @@ router.get('/overview', (_req: Request, res: Response): void => {
         recentSubmissions: knowledgeRepository.slice(-3)
       }
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to load overview', 500) });
   }
 });
 
@@ -481,8 +491,8 @@ router.get('/content', (req: Request, res: Response): void => {
       count: results.length,
       data: results
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to load content', 500) });
   }
 });
 
@@ -490,7 +500,7 @@ router.get('/content', (req: Request, res: Response): void => {
  * @route POST /api/knowledge/content
  * @desc Submit new educational knowledge article
  */
-router.post('/content', (req: Request, res: Response): void => {
+router.post('/content', authenticateToken, validate(KnowledgeContentCreateSchema, 'body'), (req: Request, res: Response): void => {
   try {
     const {
       categoryId,
@@ -506,22 +516,15 @@ router.post('/content', (req: Request, res: Response): void => {
       learningObjectives = []
     } = req.body;
 
-    if (!titleEn || !titleKm || !summary || !bodyMarkdown) {
-      res.status(400).json({
-        success: false,
-        error: 'titleEn, titleKm, summary, and bodyMarkdown are mandatory.'
-      });
-      return;
-    }
-
+    const shortId = crypto.randomUUID().slice(0, 12);
     const newContent: KnowledgeContent = {
-      id: `kn_${Date.now()}`,
+      id: `kn_${shortId}`,
       categoryId: categoryId || 'cat_decision',
       authorId: authorId || 'auth_cadt_dean',
       sourceId: sourceId || 'src_moeys_official',
       titleEn,
       titleKm,
-      slug: titleEn.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+      slug: titleEn.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `kn-${shortId}`,
       contentType: contentType || 'decision_guide',
       summary,
       bodyMarkdown,
@@ -538,6 +541,9 @@ router.post('/content', (req: Request, res: Response): void => {
       updatedAt: new Date().toISOString()
     };
 
+    if (knowledgeRepository.length >= 200) {
+      knowledgeRepository.pop();
+    }
     knowledgeRepository.unshift(newContent);
 
     res.status(201).json({
@@ -545,8 +551,8 @@ router.post('/content', (req: Request, res: Response): void => {
       message: 'Knowledge content submitted successfully into verification queue.',
       data: newContent
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to create content', 500) });
   }
 });
 
@@ -554,7 +560,7 @@ router.post('/content', (req: Request, res: Response): void => {
  * @route POST /api/knowledge/verify
  * @desc Multi-tier auditor review and approval
  */
-router.post('/verify', (req: Request, res: Response): void => {
+router.post('/verify', authenticateToken, requireRole('admin'), validate(KnowledgeVerifySchema, 'body'), (req: Request, res: Response): void => {
   try {
     const {
       contentId,
@@ -591,7 +597,7 @@ router.post('/verify', (req: Request, res: Response): void => {
     if (decision === 'approved') {
       item.status = 'published';
       // Automatically trigger vector indexing timestamp
-      item.embeddingId = `emb_vec_${Math.floor(100000 + Math.random() * 900000)}`;
+      item.embeddingId = `emb_vec_${crypto.randomUUID().slice(0, 8)}`;
       item.vectorIndexedAt = new Date().toISOString();
     } else if (decision === 'revision_requested') {
       item.status = 'under_review';
@@ -617,8 +623,8 @@ router.post('/verify', (req: Request, res: Response): void => {
       },
       content: item
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: safeErrorMessage(err, 'Verification failed', 500) });
   }
 });
 
@@ -626,7 +632,7 @@ router.post('/verify', (req: Request, res: Response): void => {
  * @route POST /api/knowledge/rag-sync
  * @desc Trigger AI Knowledge Pipeline vector embedding and Qdrant upsert
  */
-router.post('/rag-sync', (req: Request, res: Response): void => {
+router.post('/rag-sync', authenticateToken, requireRole('admin'), validate(KnowledgeRagSyncSchema, 'body'), (req: Request, res: Response): void => {
   try {
     const { contentId } = req.body;
 
@@ -636,7 +642,7 @@ router.post('/rag-sync', (req: Request, res: Response): void => {
       return;
     }
 
-    target.embeddingId = `emb_vec_${Date.now()}`;
+    target.embeddingId = `emb_vec_${crypto.randomUUID().slice(0, 8)}`;
     target.vectorIndexedAt = new Date().toISOString();
 
     res.json({
@@ -651,8 +657,8 @@ router.post('/rag-sync', (req: Request, res: Response): void => {
         vectorIndexedAt: target.vectorIndexedAt
       }
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: safeErrorMessage(err, 'RAG sync failed', 500) });
   }
 });
 
@@ -660,9 +666,9 @@ router.post('/rag-sync', (req: Request, res: Response): void => {
  * @route POST /api/knowledge/feedback
  * @desc Student feedback loop: upvote/downvote and quality tracking
  */
-router.post('/feedback', (req: Request, res: Response): void => {
+router.post('/feedback', authenticateToken, validate(KnowledgeFeedbackSchema, 'body'), (req: Request, res: Response): void => {
   try {
-    const { contentId, isHelpful, rating = 5, comment } = req.body;
+    const { contentId, isHelpful } = req.body;
 
     const item = knowledgeRepository.find((c) => c.id === contentId);
     if (!item) {
@@ -698,8 +704,8 @@ router.post('/feedback', (req: Request, res: Response): void => {
         trustScore: item.trustScore
       }
     });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ success: false, error: safeErrorMessage(err, 'Feedback recording failed', 500) });
   }
 });
 

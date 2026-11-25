@@ -55,7 +55,7 @@ export const ScholarshipSavedDrawer: React.FC<ScholarshipSavedDrawerProps> = ({
         `[${idx + 1}] ${s.name}`,
         `Provider: ${s.provider} | Country: ${s.country}`,
         `Deadline: ${s.deadline}`,
-        `Funding: ${s.fundingType} (Est. $${s.totalEstimatedValueUSD.toLocaleString()} USD)`,
+        `Funding: ${s.fundingType} (${s.totalEstimatedValueUSD != null ? `Est. $${s.totalEstimatedValueUSD.toLocaleString()} USD` : 'Amount not specified'})`,
         `Required Documents:`,
         ...s.requiredDocuments.map((d) => `   [ ] ${d}`),
         `Application Portal: ${s.applicationLink}`,
@@ -81,7 +81,7 @@ export const ScholarshipSavedDrawer: React.FC<ScholarshipSavedDrawerProps> = ({
       aria-modal="true"
       id="scholarship-saved-drawer"
     >
-      <div className="bg-white w-full max-w-md h-full shadow-2xl flex flex-col border-l border-slate-200">
+      <div className="bg-white dark:bg-slate-900 dark:text-slate-100 w-full max-w-md h-full shadow-2xl flex flex-col border-l border-slate-200 dark:border-slate-700">
         {/* Drawer Header */}
         <div className="p-5 border-b border-slate-200 bg-emerald-900 text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">

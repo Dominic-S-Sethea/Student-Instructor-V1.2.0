@@ -1,1 +1,0 @@
-const cp=require("child_process");const cmd=process.argv.slice(2).join(" ");try{cp.execSync(cmd,{cwd:process.env.REPO||".",shell:true,stdio:"inherit"});console.log("[RUNNER_EXIT 0]");}catch(e){console.log("[RUNNER_EXIT "+(e.status||1)+"]");}

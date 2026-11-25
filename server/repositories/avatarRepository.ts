@@ -1,4 +1,5 @@
 import { getDatabase } from '../db/connection';
+import crypto from 'node:crypto';
 import {
   AvatarProfile,
   AvatarItem,
@@ -11,7 +12,9 @@ import {
 } from '../types/avatarTypes';
 
 export class AvatarRepository {
-  private db = getDatabase();
+  private get db() {
+    return getDatabase();
+  }
 
   // ----------------------------------------------------
   // AVATAR PROFILES
@@ -276,7 +279,7 @@ export class AvatarRepository {
   }
 
   placeRoomObject(roomId: string, objectData: { item_id: string; position_x: number; position_y: number; layer: string; rotation?: number }): RoomObject {
-    const id = `obj-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const id = `obj-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
     this.db

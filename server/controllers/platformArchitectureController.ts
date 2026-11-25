@@ -1,4 +1,7 @@
+import crypto from 'node:crypto';
 import { Request, Response } from 'express';
+import { AuthenticatedRequest } from '../middleware/authMiddleware';
+import { safeErrorMessage } from '../utils/httpErrors';
 
 // ============================================================================
 // CDES SCALABLE PLATFORM ARCHITECTURE & MOBILE ENGINEERING ENGINE (PHASE 9)
@@ -355,8 +358,8 @@ class PlatformArchitectureController {
           evictionPolicy: 'allkeys-lru',
         },
         aiInfrastructure: {
-          primaryModel: 'gemini-3.1-flash-lite',
-          fallbackModel: 'gemini-3.8-flash',
+          primaryModel: 'gemini-4-hydrogen',
+          fallbackModel: 'gemini-3.5-flash-lite',
           rateLimitingRpmPerSchool: 1200,
           vectorDatabase: 'Qdrant Distributed Cluster (Khmer Curriculum Embeddings)',
           averageVectorSearchMs: 14.2,
@@ -370,8 +373,8 @@ class PlatformArchitectureController {
           { module: 'Scholarship Intelligence', phase: 'Modular Monolith (Ready for Microservice Extraction)', targetQtr: 'Q1 2027' },
         ]
       });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message || 'Server error' });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Server error', 500) });
     }
   }
 
@@ -481,8 +484,8 @@ class PlatformArchitectureController {
       };
 
       return res.json({ success: true, roles: rolesData });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Server error', 500) });
     }
   }
 
@@ -490,23 +493,24 @@ class PlatformArchitectureController {
    * POST /api/platform/mobile/devices
    * Register or update mobile push device
    */
-  public registerDevice(req: Request, res: Response) {
+  public registerDevice(req: AuthenticatedRequest, res: Response) {
     try {
       const { deviceId, userId, role, platform, osVersion, appVersion, deviceModel, pushToken, locale } = req.body;
-      if (!deviceId || !platform) {
-        return res.status(400).json({ success: false, error: 'Missing deviceId or platform' });
-      }
+      const boundUserId =
+        req.user?.role === 'admin' && typeof userId === 'string' && userId.trim()
+          ? userId.trim()
+          : req.user?.userId || 'guest-user';
 
       const existingIndex = this.devices.findIndex(d => d.deviceId === deviceId);
       const updatedDevice: MobileDeviceRegistration = {
         deviceId,
-        userId: userId || 'guest-user',
+        userId: boundUserId,
         role: role || 'student',
         platform,
         osVersion: osVersion || '18.0',
         appVersion: appVersion || '2.1.0',
         deviceModel: deviceModel || (platform === 'ios' ? 'iPhone' : 'Android'),
-        pushToken: pushToken || `token-${Date.now()}`,
+        pushToken: pushToken || `token-${crypto.randomUUID().slice(0, 12)}`,
         locale: locale || 'km-KH',
         networkType: '5g',
         lastSeenAt: new Date().toISOString(),
@@ -517,37 +521,36 @@ class PlatformArchitectureController {
       if (existingIndex >= 0) {
         this.devices[existingIndex] = updatedDevice;
       } else {
+        if (this.devices.length >= 500) {
+          this.devices.shift();
+        }
         this.devices.push(updatedDevice);
       }
 
       return res.json({ success: true, device: updatedDevice });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to register device', 500) });
     }
   }
 
   /**
    * POST /api/platform/mobile/sync
-   * Offline mutation sync endpoint with conflict resolution
+   * Offline mutation sync endpoint (simulation acknowledgment when offline mobile sync is previewed)
    */
   public syncOfflineQueue(req: Request, res: Response) {
     try {
       const { deviceId, mutations } = req.body;
-      if (!Array.isArray(mutations)) {
-        return res.status(400).json({ success: false, error: 'mutations must be an array' });
-      }
 
-      const results = mutations.map((m: any) => {
+      const results = (mutations as Array<{ id?: string; action: string }>).map((m) => {
         return {
-          mutationId: m.id || `mut-${Date.now()}`,
+          mutationId: m.id || `mut-${crypto.randomUUID().slice(0, 12)}`,
           action: m.action,
-          status: 'applied',
+          status: 'acknowledged_simulated',
           serverTimestamp: new Date().toISOString(),
           conflictResolved: false,
         };
       });
 
-      // Update device queue size
       const dev = this.devices.find(d => d.deviceId === deviceId);
       if (dev) {
         dev.offlineQueueSize = 0;
@@ -556,12 +559,13 @@ class PlatformArchitectureController {
 
       return res.json({
         success: true,
+        simulated: true,
         syncedCount: mutations.length,
         results,
-        latestServerStateHash: 'sha256_' + Date.now().toString(36),
+        latestServerStateHash: 'sha256_' + crypto.randomUUID().slice(0, 12),
       });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Sync failed', 500) });
     }
   }
 
@@ -637,7 +641,7 @@ class PlatformArchitectureController {
       // Log to audit if unsafe
       if (!isSafe) {
         this.auditLogs.unshift({
-          id: `audit-${Date.now()}`,
+          id: `audit-${crypto.randomUUID()}`,
           timestamp: new Date().toISOString(),
           actor: 'shield.automated_sentinel',
           role: 'child_safety',
@@ -647,6 +651,9 @@ class PlatformArchitectureController {
           ipAddress: req.ip || '127.0.0.1',
           details: `Flagged: ${flaggedCategories.join(', ')}. Action: ${actionTaken}.`,
         });
+        if (this.auditLogs.length > 500) {
+          this.auditLogs.length = 500;
+        }
       }
 
       const result: ChildSafetyScanResult = {
@@ -659,8 +666,8 @@ class PlatformArchitectureController {
       };
 
       return res.json({ success: true, scanResult: result });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Safety scan failed', 500) });
     }
   }
 
@@ -671,14 +678,11 @@ class PlatformArchitectureController {
   public dispatchNotification(req: Request, res: Response) {
     try {
       const { type, title, message, targetRole, priority, payload } = req.body;
-      if (!title || !message) {
-        return res.status(400).json({ success: false, error: 'title and message required' });
-      }
 
       const targetDevices = this.devices.filter(d => !targetRole || d.role === targetRole);
 
       const notificationRecord = {
-        id: `notif-${Date.now()}`,
+        id: `notif-${crypto.randomUUID()}`,
         type: type || 'learning_reminder',
         title,
         message,
@@ -694,8 +698,8 @@ class PlatformArchitectureController {
         notification: notificationRecord,
         status: 'DISPATCHED_TO_APNS_AND_FCM',
       });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Dispatch failed', 500) });
     }
   }
 
@@ -757,8 +761,8 @@ class PlatformArchitectureController {
           }
         }
       });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Server error', 500) });
     }
   }
 
@@ -783,8 +787,8 @@ class PlatformArchitectureController {
           redisHitRatio: '94.6%',
         }
       });
-    } catch (err: any) {
-      return res.status(500).json({ success: false, error: err?.message });
+    } catch (err: unknown) {
+      return res.status(500).json({ success: false, error: safeErrorMessage(err, 'Server error', 500) });
     }
   }
 }

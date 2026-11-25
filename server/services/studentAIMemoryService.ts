@@ -1,13 +1,35 @@
 import { getDatabase } from '../db/connection';
+import { PrivacyService } from './privacyService';
 import { StudentAIMemory } from '../types/aiTypes';
+
+const privacyService = new PrivacyService();
+
+function emptyDisabledMemory(studentId: string): StudentAIMemory {
+  const now = new Date().toISOString();
+  return {
+    student_id: studentId,
+    learning_summary: '',
+    interest_summary: '',
+    career_summary: '',
+    behavior_summary: '',
+    conversation_summary: '',
+    last_interaction_at: '',
+    updated_at: now,
+  };
+}
 
 export class StudentAIMemoryService {
   /**
-   * Retrieves student AI memory or synthesizes an initial profile
+   * Retrieves student AI memory only when enforceable AI memory consent is granted.
+   * When disabled, returns an empty non-persisted memory struct without fabricating profile data.
    */
   public getMemory(studentId: string): StudentAIMemory {
+    if (!privacyService.canUseAIMemory(studentId)) {
+      return emptyDisabledMemory(studentId);
+    }
+
     const db = getDatabase();
-    const existing = db.prepare('SELECT * FROM student_ai_memory WHERE student_id = ?').get(studentId) as any;
+    const existing = db.prepare('SELECT * FROM student_ai_memory WHERE student_id = ?').get(studentId) as Record<string, string> | undefined;
 
     if (existing) {
       return {
@@ -18,22 +40,20 @@ export class StudentAIMemoryService {
         behavior_summary: existing.behavior_summary || '',
         conversation_summary: existing.conversation_summary || '',
         last_interaction_at: existing.last_interaction_at || new Date().toISOString(),
-        updated_at: existing.updated_at || new Date().toISOString()
+        updated_at: existing.updated_at || new Date().toISOString(),
       };
     }
 
-    // If memory doesn't exist yet, synthesize from student profile and existing tables
     return this.synthesizeAndSaveMemory(studentId);
   }
 
   /**
-   * Synthesizes memory from all platform data sources:
-   * 1. student_profiles
-   * 2. student_learning_history & lab_experiment_results
-   * 3. student_intelligence_profile & analytics events
-   * 4. avatar_profiles & achievements
+   * Synthesizes memory only when AI memory consent is granted.
    */
   public synthesizeAndSaveMemory(studentId: string): StudentAIMemory {
+    if (!privacyService.canUseAIMemory(studentId)) {
+      return emptyDisabledMemory(studentId);
+    }
     const db = getDatabase();
     const now = new Date().toISOString();
 
@@ -181,6 +201,9 @@ export class StudentAIMemoryService {
     score: number,
     subject: string
   ): void {
+    if (!privacyService.canUseAIMemory(studentId)) {
+      return;
+    }
     const current = this.getMemory(studentId);
     const now = new Date().toISOString();
 
@@ -203,6 +226,9 @@ export class StudentAIMemoryService {
     userPrompt: string,
     agentReplySnippet: string
   ): void {
+    if (!privacyService.canUseAIMemory(studentId)) {
+      return;
+    }
     const current = this.getMemory(studentId);
     const now = new Date().toISOString();
 
@@ -227,6 +253,9 @@ export class StudentAIMemoryService {
     studentId: string,
     fields: Partial<Omit<StudentAIMemory, 'student_id' | 'updated_at'>>
   ): StudentAIMemory {
+    if (!privacyService.canUseAIMemory(studentId)) {
+      return emptyDisabledMemory(studentId);
+    }
     const current = this.getMemory(studentId);
     const now = new Date().toISOString();
 

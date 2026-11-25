@@ -21,7 +21,7 @@ import {
 import {
   LabExperiment,
   LabExperimentResult,
-} from '../../../server/types/learningTypes';
+} from '../../../shared/types/learningTypes';
 import { learningClient, ExperimentWithStatus } from '../../services/learningClient';
 
 interface VirtualLabViewProps {
@@ -257,12 +257,15 @@ export const VirtualLabView: React.FC<VirtualLabViewProps> = ({
       );
 
       if (res) {
-        setUserSession(res.result);
+        const pointsEarned = res.meritPointsEarned ?? 0;
+        const badge = res.unlockedBadge ?? undefined;
+        const itemReward = res.itemRewardName ?? undefined;
+        setUserSession(res.result ?? null);
         setCompletionReward({
           score,
-          points: res.meritPointsEarned,
-          badge: res.unlockedBadge,
-          item: res.itemRewardName,
+          points: pointsEarned,
+          badge,
+          item: itemReward,
         });
 
         // Update list status
@@ -272,10 +275,10 @@ export const VirtualLabView: React.FC<VirtualLabViewProps> = ({
 
         if (onRewardEarned) {
           onRewardEarned(
-            res.meritPointsEarned,
+            pointsEarned,
             `Verified ${activeExp.title}!`,
-            res.unlockedBadge,
-            res.itemRewardName
+            badge,
+            itemReward
           );
         }
       }

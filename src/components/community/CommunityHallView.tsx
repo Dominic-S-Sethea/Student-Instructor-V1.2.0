@@ -75,9 +75,10 @@ export const CommunityHallView: React.FC<Props> = ({ onOpenReportModal }) => {
       // Merge AI match scores into communities
       // aiRecs is { mentors: [...] } from the API
       (aiRecs as { mentors: { community_id?: string; id?: string; matchScore?: number; matchReason?: string }[] }).mentors.forEach(c => {
-        if (commMap.has(c.community_id || c.id)) {
-          commMap.set(c.community_id || c.id, {
-            ...commMap.get(c.community_id || c.id)!,
+        const cid = c.community_id || c.id;
+        if (cid && commMap.has(cid)) {
+          commMap.set(cid, {
+            ...commMap.get(cid)!,
             matchScore: c.matchScore || 0,
             matchReason: c.matchReason || 'AI suggested'
           });

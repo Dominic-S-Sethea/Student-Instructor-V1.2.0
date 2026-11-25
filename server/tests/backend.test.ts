@@ -37,11 +37,8 @@ async function runTests() {
   const db = getDatabase();
   const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
   console.log('[TEST] userCount after migration =', userCount.count);
-  const adminUser = db.prepare('SELECT id, email, password_hash FROM users WHERE email = ?').get('admin@cdes.edu.kh') as { id: string; email: string; password_hash: string } | undefined;
-  console.log('[TEST] admin user found:', !!adminUser);
-  if (adminUser) {
-    console.log('[TEST] admin password_hash:', adminUser.password_hash);
-  }
+  const adminUser = db.prepare('SELECT id, email FROM users WHERE email = ?').get('admin@cdes.edu.kh') as { id: string; email: string } | undefined;
+  assert(adminUser?.id, 'Seeded admin user should exist');
   assert(userCount.count >= 3, 'Users table should contain seeded users');
   console.log('✓ Database verified: WAL mode active, seeds intact.');
 
@@ -167,7 +164,7 @@ async function runTests() {
     'Approved by editorial desk',
     adminLogin.user.id
   );
-  assert(reviewResult, 'Review should return result');
+  assert(reviewResult && reviewResult.submission, 'Review should return result');
   assert.strictEqual(reviewResult.submission.status, 'Approved & Published');
   assert(reviewResult.publishedScholarship, 'Should automatically publish scholarship upon approval');
 
@@ -207,14 +204,25 @@ async function runTests() {
   assert(cadt.majors.length >= 1, 'CADT should have majors listed');
   console.log('✓ University Service: profile scores, accreditation, and major mappings passed.\n');
 
-  // 6. Testing Analytics Service
+  // 6. Testing Analytics Service (Privacy-first gating)
   console.log('6. Testing Analytics Service...');
   const analyticsService = new AnalyticsService();
-  const event = analyticsService.recordActivity({
+  const skipped = analyticsService.recordActivity({
+    event_type: 'TEST_EVENT_UNCONSENTED',
+    metadata: { test: true }
+  });
+  assert.strictEqual(skipped.persisted, false, 'Unauthenticated/unconsented event should not persist');
+
+  db.prepare('UPDATE student_privacy_consents SET allow_analytics_tracking = 1, is_minor = 0, consent_status = ? WHERE student_id = ?')
+    .run('granted', regResult.user.id);
+  const recorded = analyticsService.recordActivity({
+    user_id: regResult.user.id,
+    student_id: regResult.user.id,
     event_type: 'TEST_EVENT',
     metadata: { test: true }
   });
-  assert(event.id, 'Event should be recorded in SQLite');
+  assert.strictEqual(recorded.persisted, true, 'Consented event should persist');
+  assert(recorded.event?.id, 'Event should be recorded in SQLite');
   const recents = analyticsService.getRecentActivities(5);
   assert(recents.some(e => e.event_type === 'TEST_EVENT'), 'Recorded event should be retrieved');
   console.log('✓ Analytics Service: SQLite activity event tracking passed.\n');

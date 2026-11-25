@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Building2, CheckCircle2, Send, ShieldCheck, Info } from 'lucide-react';
 import { OrganizationSubmission, ScholarshipRegion, DegreeLevel, FieldOfStudy, FundingType } from '../../types/scholarship';
+import { scholarshipClient } from '../../services/scholarshipClient';
 
 interface ScholarshipSubmitModalProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ export const ScholarshipSubmitModal: React.FC<ScholarshipSubmitModalProps> = ({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -56,44 +58,9 @@ export const ScholarshipSubmitModal: React.FC<ScholarshipSubmitModalProps> = ({
     if (!orgName || !scholarshipName || !contactEmail || !deadline) return;
 
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
-      const response = await fetch('/api/scholarships/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          organizationName: orgName,
-          contactPerson,
-          contactEmail,
-          officialWebsite,
-          scholarshipName,
-          scholarshipNameKm,
-          country,
-          region,
-          degreeLevel: degreeLevels,
-          fieldOfStudy: fields,
-          fundingType,
-          fundingDetails: fundingDetails || 'Complete tuition fee waiver and academic stipend.',
-          eligibilitySummary: eligibilitySummary || 'Open to qualified Cambodian citizens.',
-          deadline,
-          applicationLink: applicationLink || officialWebsite,
-          officialSourceUrl: officialSourceUrl || officialWebsite,
-        }),
-      });
-
-      const resData = await response.json();
-      if (resData.success) {
-        onSubmissionSuccess(resData.submission);
-        setIsSuccess(true);
-        setTimeout(() => {
-          setIsSuccess(false);
-          onClose();
-        }, 2200);
-      }
-    } catch (err) {
-      console.error('Submission error:', err);
-      // Fallback local submission
-      const fallback: OrganizationSubmission = {
-        id: `sub-${Date.now()}`,
+      const resData = await scholarshipClient.submitOpportunity({
         organizationName: orgName,
         contactPerson,
         contactEmail,
@@ -105,20 +72,21 @@ export const ScholarshipSubmitModal: React.FC<ScholarshipSubmitModalProps> = ({
         degreeLevel: degreeLevels,
         fieldOfStudy: fields,
         fundingType,
-        fundingDetails,
-        eligibilitySummary,
+        fundingDetails: fundingDetails || '',
+        eligibilitySummary: eligibilitySummary || '',
         deadline,
-        applicationLink,
-        officialSourceUrl,
-        submittedAt: new Date().toISOString(),
-        status: 'Pending Admin Review',
-      };
-      onSubmissionSuccess(fallback);
+        applicationLink: applicationLink || officialWebsite,
+        officialSourceUrl: officialSourceUrl || officialWebsite,
+      });
+
+      onSubmissionSuccess(resData.submission);
       setIsSuccess(true);
       setTimeout(() => {
         setIsSuccess(false);
         onClose();
-      }, 2200);
+      }, 1500);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Submission failed. Please verify your organization session.');
     } finally {
       setIsSubmitting(false);
     }
@@ -131,7 +99,7 @@ export const ScholarshipSubmitModal: React.FC<ScholarshipSubmitModalProps> = ({
       aria-modal="true"
       id="scholarship-submit-modal"
     >
-      <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6 max-h-[92vh] flex flex-col">
+      <div className="bg-white dark:bg-slate-900 dark:text-slate-100 rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden my-6 max-h-[92vh] flex flex-col">
         {/* Header */}
         <div className="bg-slate-900 text-white p-5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -174,6 +142,11 @@ export const ScholarshipSubmitModal: React.FC<ScholarshipSubmitModalProps> = ({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 text-xs flex-1">
+            {submitError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700 font-medium">
+                {submitError}
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block font-bold text-slate-700 mb-1">
@@ -270,7 +243,7 @@ export const ScholarshipSubmitModal: React.FC<ScholarshipSubmitModalProps> = ({
                 <label className="block font-bold text-slate-700 mb-1">Region</label>
                 <select
                   value={region}
-                  onChange={(e) => setRegion(e.target.value as any)}
+                  onChange={(e) => setRegion(e.target.value as ScholarshipRegion)}
                   className="w-full rounded-xl border border-slate-300 p-2 bg-white text-slate-900"
                 >
                   <option value="Cambodia">Cambodia</option>
@@ -291,7 +264,7 @@ export const ScholarshipSubmitModal: React.FC<ScholarshipSubmitModalProps> = ({
                 <label className="block font-bold text-slate-700 mb-1">Funding Type</label>
                 <select
                   value={fundingType}
-                  onChange={(e) => setFundingType(e.target.value as any)}
+                  onChange={(e) => setFundingType(e.target.value as FundingType)}
                   className="w-full rounded-xl border border-slate-300 p-2 bg-white text-slate-900"
                 >
                   <option value="Fully funded">Fully funded (100%)</option>

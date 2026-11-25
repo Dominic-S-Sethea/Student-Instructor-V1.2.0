@@ -14,7 +14,7 @@ import {
   Layers,
   Flame,
 } from 'lucide-react';
-import { StudentAIEducationProfile } from '../../../server/types/learningTypes';
+import { StudentAIEducationProfile } from '../../../shared/types/learningTypes';
 import { learningClient } from '../../services/learningClient';
 
 interface AIEducationProfileModalProps {

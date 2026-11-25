@@ -50,7 +50,7 @@ const translations: Record<Language, Translations> = {
     'dash.q1': "Should I choose Computer Science or Data Science for my bachelor's?",
     'dash.q2': 'What math topics should I master in Grade 12 for AI scholarships?',
     'dash.csipBadge': 'Scholarship Search Engine (CSIP)',
-    'dash.verifiedBadge': '100% Verified',
+    'dash.verifiedBadge': 'Official Source Checked',
     'dash.csipTitle': 'Looking for Verified Global & Domestic Scholarships?',
     'dash.csipDesc': 'Search fully funded global opportunities (Chevening, Fulbright, Australia Awards, CADT MPTC, MEXT, GKS) with live deadline reminders, GPA limits, and verified grants.',
     'dash.searchScholarships': 'Search Scholarships',
@@ -232,7 +232,7 @@ const translations: Record<Language, Translations> = {
     'dash.q1': 'តើខ្ញុំគួររៀនវិទ្យាសាស្ត្រកុំព្យូទ័រ (CS) ឬវិទ្យាសាស្ត្រទិន្នន័យ (Data Science)?',
     'dash.q2': 'តើគួរបំប៉នមេរៀនគណិតវិទ្យាអ្វីខ្លះនៅថ្នាក់ទី១២ ដើម្បីប្រឡងយកអាហារូបករណ៍ AI?',
     'dash.csipBadge': 'ប្រព័ន្ធស្វែងរកអាហារូបករណ៍ (CSIP)',
-    'dash.verifiedBadge': 'បានផ្ទៀងផ្ទាត់ ១០០%',
+    'dash.verifiedBadge': 'ផ្ទៀងផ្ទាត់ប្រភពផ្លូវការ',
     'dash.csipTitle': 'កំពុងស្វែងរកអាហារូបករណ៍សកល និងក្នុងប្រទេសដែលមានការបញ្ជាក់ត្រឹមត្រូវមែនទេ?',
     'dash.csipDesc': 'ស្វែងរកអាហារូបករណ៍ពេញថ្លៃអន្តរជាតិ (Chevening, Fulbright, Australia Awards, CADT MPTC, MEXT, GKS) ជាមួយប្រព័ន្ធរំលឹកកាលបរិច្ឆេទ លក្ខខណ្ឌ GPA និងកញ្ចប់ថវិកាពិតប្រាកដ។',
     'dash.searchScholarships': 'ស្វែងរកអាហារូបករណ៍',
@@ -388,16 +388,27 @@ const LanguageContext = createContext<LanguageContextType>({
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguageState] = useState<Language>(() => {
-    const saved = localStorage.getItem('preferred_language');
-    if (saved === 'km' || saved === 'en') return saved;
-    // Default to 'km' or 'en'
+    try {
+      const saved = localStorage.getItem('preferred_language');
+      if (saved === 'km' || saved === 'en') return saved;
+    } catch {
+      // Ignore storage access errors
+    }
     return 'en';
   });
 
-  const setLanguage = (lang: Language) => {
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
+
+  const setLanguage = (lang: Language): void => {
     setLanguageState(lang);
-    localStorage.setItem('preferred_language', lang);
-    analytics.track('change_language' as any, { language: lang });
+    try {
+      localStorage.setItem('preferred_language', lang);
+    } catch {
+      // Ignore storage access errors
+    }
+    analytics.track('change_language', { language: lang });
   };
 
   const t = (key: string, fallback?: string): string => {

@@ -1,155 +1,181 @@
-// CDES Platform - API Client
-// Handles authentication via httpOnly cookies and CSRF token headers.
-// This client should be used by all frontend components for API calls.
+// CDES Platform - Unified API Client
+// Uses HttpOnly session cookie (cdes_jwt) + session-bound X-CSRF-Token in memory.
 
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
-  details?: any;
+  code?: string;
+  details?: unknown;
 }
 
-export interface ApiError extends Error {
-  status?: number;
-  message: string;
-  data?: any;
-}
+export class ApiClientError extends Error {
+  public readonly status: number;
+  public readonly code?: string;
+  public readonly data?: unknown;
 
-/**
- * Gets the CSRF token ID from a response header.
- * The token ID is sent by the server to the client after the first request.
- */
-export function getCsrfTokenId(): string | null {
-  if (typeof window === "undefined") return null;
-  const el = document.getElementById("cdes-csrf-token-id");
-  return el?.getAttribute("content") || null;
-}
-
-/**
- * Sets the CSRF token ID for subsequent requests.
- */
-export function setCsrfTokenId(tokenId: string): void {
-  if (typeof window === "undefined") return;
-  const meta = document.getElementById("cdes-csrf-token-id");
-  if (meta) {
-    meta.setAttribute("content", tokenId);
-  } else {
-    const m = document.createElement("meta");
-    m.id = "cdes-csrf-token-id";
-    m.name = "csrf-token-id";
-    m.content = tokenId;
-    document.head.appendChild(m);
+  constructor(message: string, status: number, code?: string, data?: unknown) {
+    super(message);
+    this.name = 'ApiClientError';
+    this.status = status;
+    this.code = code;
+    this.data = data;
   }
 }
 
-/**
- * Gets the CSRF token from the cookie.
- * The token is stored in an httpOnly cookie by the server.
- */
+let inMemoryCsrfToken: string | null = null;
+let csrfPromise: Promise<string> | null = null;
+
 export function getCsrfToken(): string | null {
-  if (typeof window === "undefined") return null;
-  const cookies = document.cookie.split(";");
-  for (const cookie of cookies) {
-    const [name, value] = cookie.trim().split("=");
-    if (name === "cdes_csrf_token") {
-      return decodeURIComponent(value);
-    }
+  return inMemoryCsrfToken;
+}
+
+export function setCsrfToken(token: string | null): void {
+  inMemoryCsrfToken = token && token.trim() ? token.trim() : null;
+}
+
+export function clearCsrfToken(): void {
+  inMemoryCsrfToken = null;
+}
+
+async function ensureCsrfToken(): Promise<string> {
+  if (inMemoryCsrfToken) {
+    return inMemoryCsrfToken;
   }
-  return null;
+  if (!csrfPromise) {
+    csrfPromise = fetch('/api/auth/csrf', {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+      .then(async (res) => {
+        const headerToken = res.headers.get('X-CSRF-Token');
+        if (headerToken) {
+          setCsrfToken(headerToken);
+          return headerToken;
+        }
+        const json = (await res.json().catch(() => ({}))) as { data?: { csrfToken?: string } };
+        if (json?.data?.csrfToken) {
+          setCsrfToken(json.data.csrfToken);
+          return json.data.csrfToken;
+        }
+        return '';
+      })
+      .finally(() => {
+        csrfPromise = null;
+      });
+  }
+  return csrfPromise;
 }
 
 /**
- * Gets the authorization header.
- * The JWT is stored in a cookie, so we don't need to send it in the header.
+ * Executes a fetch request with HttpOnly credentials and automatic X-CSRF-Token handling.
+ * Returns the parsed JSON payload directly.
  */
-export function getAuthHeader(): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    "Accept": "application/json",
-  };
-}
-
-/**
- * Gets the CSRF headers for state-changing requests.
- */
-export function getCsrfHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const token = getCsrfToken();
-  const tokenId = getCsrfTokenId();
-
-  if (token) {
-    headers["X-CSRF-Token"] = token;
-  }
-  if (tokenId) {
-    headers["X-CSRF-Token-Id"] = tokenId;
-  }
-  return headers;
-}
-
-/**
- * Creates a standard API fetch with auth and CSRF support.
- */
-export async function apiFetch(
+export async function apiFetchRaw<T = Record<string, unknown>>(
   url: string,
   options: RequestInit = {}
-): Promise<ApiResponse<any>> {
-  const defaultHeaders: Record<string, string> = {
-    "Content-Type": "application/json",
-    "Accept": "application/json",
-  };
+): Promise<T> {
+  const method = (options.method || 'GET').toUpperCase();
+  const needsCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
-  const csrfHeaders = getCsrfHeaders();
-  for (const [key, value] of Object.entries(csrfHeaders)) {
-    defaultHeaders[key] = value;
+  if (needsCsrf && !inMemoryCsrfToken) {
+    await ensureCsrfToken();
   }
 
-  const config: RequestInit = {
-    ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
-    credentials: "include", // Important: send cookies (httpOnly JWT)
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    ...(options.headers as Record<string, string> | undefined),
   };
 
-  const res = await fetch(url, config);
+  if (needsCsrf && inMemoryCsrfToken && !headers['X-CSRF-Token']) {
+    headers['X-CSRF-Token'] = inMemoryCsrfToken;
+  }
 
-  // Check for 401 - auth cookie may have expired
-  if (res.status === 401) {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("auth_token");
+  const execute = () =>
+    fetch(url, {
+      ...options,
+      method,
+      headers,
+      credentials: 'include',
+    });
+
+  let res = await execute();
+  const nextCsrf = res.headers.get('X-CSRF-Token');
+  if (nextCsrf) {
+    setCsrfToken(nextCsrf);
+  }
+
+  // Retry once if CSRF rotated across session change
+  if (res.status === 403 && needsCsrf) {
+    const firstErr = (await res.clone().json().catch(() => ({}))) as { code?: string };
+    if (firstErr?.code === 'CSRF_MISSING' || firstErr?.code === 'CSRF_INVALID') {
+      clearCsrfToken();
+      const refreshed = await ensureCsrfToken();
+      if (refreshed) {
+        headers['X-CSRF-Token'] = refreshed;
+        res = await execute();
+        const headerAfter = res.headers.get('X-CSRF-Token');
+        if (headerAfter) setCsrfToken(headerAfter);
+      }
     }
-    throw { status: 401, message: "Authentication required. Please log in again." };
   }
 
-  const data = await res.json();
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (typeof (body?.data as Record<string, unknown> | undefined)?.csrfToken === 'string') {
+    setCsrfToken(String((body.data as Record<string, unknown>).csrfToken));
+  }
 
   if (!res.ok) {
-    throw {
-      status: res.status,
-      message: data.error || "Request failed",
-      data: data,
-    };
+    throw new ApiClientError(
+      String(body.error || `Request failed with status ${res.status}`),
+      res.status,
+      typeof body.code === 'string' ? body.code : undefined,
+      body
+    );
   }
 
-  return data;
+  return body as T;
 }
 
-/**
- * Wrapper for GET requests
- */
-export async function apiGet<T>(url: string): Promise<any> {
-  const res = await apiFetch(url, { method: "GET" });
-  return res.data;
+export async function apiFetch<T = unknown>(
+  url: string,
+  options: RequestInit = {}
+): Promise<ApiResponse<T>> {
+  return apiFetchRaw<ApiResponse<T>>(url, options);
 }
 
-/**
- * Wrapper for POST requests
- */
-export async function apiPost<T>(url: string, body?: any): Promise<any> {
-  const res = await apiFetch(url, {
-    method: "POST",
-    body: body ? JSON.stringify(body) : undefined,
+export async function apiGet<T = unknown>(url: string): Promise<T> {
+  const res = await apiFetchRaw<ApiResponse<T>>(url, { method: 'GET' });
+  return (res.data !== undefined ? res.data : res) as T;
+}
+
+export async function apiPost<T = unknown>(url: string, body?: unknown): Promise<T> {
+  const res = await apiFetchRaw<ApiResponse<T>>(url, {
+    method: 'POST',
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  return res.data;
+  return (res.data !== undefined ? res.data : res) as T;
+}
+
+export async function apiPut<T = unknown>(url: string, body?: unknown): Promise<T> {
+  const res = await apiFetchRaw<ApiResponse<T>>(url, {
+    method: 'PUT',
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  return (res.data !== undefined ? res.data : res) as T;
+}
+
+export async function apiPatch<T = unknown>(url: string, body?: unknown): Promise<T> {
+  const res = await apiFetchRaw<ApiResponse<T>>(url, {
+    method: 'PATCH',
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  return (res.data !== undefined ? res.data : res) as T;
+}
+
+export async function apiDelete<T = unknown>(url: string): Promise<T> {
+  const res = await apiFetchRaw<ApiResponse<T>>(url, { method: 'DELETE' });
+  return (res.data !== undefined ? res.data : res) as T;
 }

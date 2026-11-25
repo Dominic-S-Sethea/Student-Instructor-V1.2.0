@@ -18,7 +18,7 @@ import {
   LearningPath,
   LearningPathStep,
   StudentLearningPath,
-} from '../../../server/types/learningTypes';
+} from '../../../shared/types/learningTypes';
 import { learningClient, RoadmapWithStatus } from '../../services/learningClient';
 
 interface LearningPathsViewProps {
@@ -186,7 +186,7 @@ export const LearningPathsView: React.FC<LearningPathsViewProps> = ({
                     </h4>
 
                     <div className="space-y-3">
-                      {path.steps.map((step, idx) => {
+                      {(path.steps || []).map((step, idx) => {
                         const isStepDone = isEnrolled && step.step_order < path.current_step_order;
                         const isStepCurrent = isEnrolled && step.step_order === path.current_step_order;
                         const isStepLocked = isEnrolled ? step.step_order > path.current_step_order : idx > 0;

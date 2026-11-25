@@ -1,6 +1,8 @@
 import { AvatarRepository } from '../repositories/avatarRepository';
 import { AnalyticsRepository } from '../repositories/analyticsRepository';
 import { IntelligenceRepository } from '../repositories/intelligenceRepository';
+import { PrivacyService } from './privacyService';
+import { NotFoundError } from '../utils/httpErrors';
 import {
   AvatarProfile,
   VirtualRoom,
@@ -41,6 +43,7 @@ export class AvatarWorldService {
   private avatarRepo = new AvatarRepository();
   private analyticsRepo = new AnalyticsRepository();
   private intelRepo = new IntelligenceRepository();
+  private privacyService = new PrivacyService();
 
   /**
    * Get full consolidated Avatar World state for a student
@@ -98,18 +101,19 @@ export class AvatarWorldService {
       student_id: studentId,
     });
 
-    // Analytics: track avatar_created or avatar_updated
-    this.analyticsRepo.logActivityEvent({
-      student_id: studentId,
-      user_id: studentId,
-      event_type: isNew ? 'avatar_created' : 'avatar_updated',
-      metadata: {
-        gender_presentation: updated.gender_presentation,
-        clothing_outfit: updated.clothing_outfit,
-        accessory: updated.accessory,
-        expression: updated.expression,
-      },
-    });
+    if (this.privacyService.canCollectAnalytics(studentId)) {
+      this.analyticsRepo.logActivityEvent({
+        student_id: studentId,
+        user_id: studentId,
+        event_type: isNew ? 'avatar_created' : 'avatar_updated',
+        metadata: {
+          gender_presentation: updated.gender_presentation,
+          clothing_outfit: updated.clothing_outfit,
+          accessory: updated.accessory,
+          expression: updated.expression,
+        },
+      });
+    }
 
     return updated;
   }
@@ -120,16 +124,18 @@ export class AvatarWorldService {
   customizeRoom(studentId: string, roomData: Partial<VirtualRoom>): VirtualRoom {
     const updated = this.avatarRepo.updateVirtualRoom(studentId, roomData);
 
-    this.analyticsRepo.logActivityEvent({
-      student_id: studentId,
-      user_id: studentId,
-      event_type: 'room_customized',
-      metadata: {
-        theme: updated.background_theme,
-        wallColor: updated.wall_color,
-        floorStyle: updated.floor_style,
-      },
-    });
+    if (this.privacyService.canCollectAnalytics(studentId)) {
+      this.analyticsRepo.logActivityEvent({
+        student_id: studentId,
+        user_id: studentId,
+        event_type: 'room_customized',
+        metadata: {
+          theme: updated.background_theme,
+          wallColor: updated.wall_color,
+          floorStyle: updated.floor_style,
+        },
+      });
+    }
 
     return updated;
   }
@@ -147,24 +153,31 @@ export class AvatarWorldService {
       rotation?: number;
     }
   ): RoomObject {
-    const room = this.avatarRepo.getVirtualRoom(studentId)!;
-    const placed = this.avatarRepo.placeRoomObject(room.id, payload);
     const item = this.avatarRepo.getItemById(payload.item_id);
+    if (!item) {
+      throw new NotFoundError('Avatar item not found.');
+    }
+    const room = this.avatarRepo.getVirtualRoom(studentId);
+    if (!room) {
+      throw new NotFoundError('Virtual room not found.');
+    }
+    const placed = this.avatarRepo.placeRoomObject(room.id, payload);
 
-    // Analytics: track item_placed
-    this.analyticsRepo.logActivityEvent({
-      student_id: studentId,
-      user_id: studentId,
-      event_type: 'item_placed',
-      metadata: {
-        itemId: payload.item_id,
-        itemName: item?.name,
-        category: item?.category,
-        layer: payload.layer,
-        positionX: payload.position_x,
-        positionY: payload.position_y,
-      },
-    });
+    if (this.privacyService.canCollectAnalytics(studentId)) {
+      this.analyticsRepo.logActivityEvent({
+        student_id: studentId,
+        user_id: studentId,
+        event_type: 'item_placed',
+        metadata: {
+          itemId: payload.item_id,
+          itemName: item.name,
+          category: item.category,
+          layer: payload.layer,
+          positionX: payload.position_x,
+          positionY: payload.position_y,
+        },
+      });
+    }
 
     return placed;
   }
@@ -173,7 +186,8 @@ export class AvatarWorldService {
    * Remove an object from the room
    */
   removeObjectFromRoom(studentId: string, objectId: string): boolean {
-    const room = this.avatarRepo.getVirtualRoom(studentId)!;
+    const room = this.avatarRepo.getVirtualRoom(studentId);
+    if (!room) return false;
     return this.avatarRepo.removeRoomObject(objectId, room.id);
   }
 
@@ -181,7 +195,8 @@ export class AvatarWorldService {
    * Update object position (re-arranging)
    */
   updateObjectPosition(studentId: string, objectId: string, posX: number, posY: number): boolean {
-    const room = this.avatarRepo.getVirtualRoom(studentId)!;
+    const room = this.avatarRepo.getVirtualRoom(studentId);
+    if (!room) return false;
     return this.avatarRepo.updateRoomObjectPosition(objectId, room.id, posX, posY);
   }
 
@@ -191,16 +206,18 @@ export class AvatarWorldService {
   toggleWallAchievement(studentId: string, achievementId: string, display: boolean, slotIndex?: number): boolean {
     const success = this.avatarRepo.toggleAchievementWall(studentId, achievementId, display, slotIndex);
 
-    this.analyticsRepo.logActivityEvent({
-      student_id: studentId,
-      user_id: studentId,
-      event_type: 'achievement_viewed',
-      metadata: {
-        achievementId,
-        displayedOnWall: display,
-        slotIndex,
-      },
-    });
+    if (this.privacyService.canCollectAnalytics(studentId)) {
+      this.analyticsRepo.logActivityEvent({
+        student_id: studentId,
+        user_id: studentId,
+        event_type: 'achievement_viewed',
+        metadata: {
+          achievementId,
+          displayedOnWall: display,
+          slotIndex,
+        },
+      });
+    }
 
     return success;
   }
