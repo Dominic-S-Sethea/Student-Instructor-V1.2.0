@@ -4,6 +4,7 @@ import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddl
 import { validate } from '../middleware/validationMiddleware';
 import { UserEducationCreateSchema, UserProfileUpdateSchema } from '../validators/apiSchemas';
 import { safeErrorMessage } from '../utils/httpErrors';
+import { notificationRepository } from '../repositories/notificationRepository';
 
 const router = Router();
 const userService = new UserService();
@@ -82,6 +83,48 @@ router.delete('/education/:id', authenticateToken, (req: AuthenticatedRequest, r
     return;
   }
   res.json({ success: true });
+});
+
+/** GET /api/users/notifications — list authenticated user's persisted notifications. */
+router.get('/notifications', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  try {
+    const rawLimit = Number(req.query.limit);
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : 30;
+    const notifications = notificationRepository.listByUser(req.user!.userId, limit);
+    const unreadCount = notificationRepository.getUnreadCount(req.user!.userId);
+    res.json({ success: true, data: { notifications, unreadCount } });
+  } catch (err: unknown) {
+    res.status(500).json({
+      success: false,
+      error: safeErrorMessage(err, 'Failed to load notifications.', 500),
+    });
+  }
+});
+
+/** PATCH /api/users/notifications/:id/read — mark one owned notification as read. */
+router.patch('/notifications/:id/read', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  const updated = notificationRepository.markRead(req.user!.userId, req.params.id);
+  if (!updated) {
+    res.status(404).json({ success: false, error: 'Notification not found.' });
+    return;
+  }
+  res.json({ success: true, unreadCount: notificationRepository.getUnreadCount(req.user!.userId) });
+});
+
+/** POST /api/users/notifications/read-all — mark all notifications read for authenticated user. */
+router.post('/notifications/read-all', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  const marked = notificationRepository.markAllRead(req.user!.userId);
+  res.json({ success: true, marked, unreadCount: 0 });
+});
+
+/** DELETE /api/users/notifications/:id — delete one owned notification. */
+router.delete('/notifications/:id', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  const removed = notificationRepository.remove(req.user!.userId, req.params.id);
+  if (!removed) {
+    res.status(404).json({ success: false, error: 'Notification not found.' });
+    return;
+  }
+  res.json({ success: true, unreadCount: notificationRepository.getUnreadCount(req.user!.userId) });
 });
 
 export default router;

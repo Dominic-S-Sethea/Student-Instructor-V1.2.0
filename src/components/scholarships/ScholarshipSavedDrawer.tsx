@@ -7,8 +7,16 @@ import {
   Trash2,
   Download,
   Calendar,
+  CheckSquare,
+  Square,
+  CloudCheck,
 } from 'lucide-react';
 import { ScholarshipItem } from '../../types/scholarship';
+import type {
+  PersistedSavedScholarship,
+  SavedChecklistItem,
+  SavedScholarshipStatus,
+} from '../../services/savedScholarshipClient';
 import { useEscapeKey } from '../../hooks/useModalAccessibility';
 import { getSafeHttpUrl } from '../../utils/safeUrl';
 
@@ -16,10 +24,21 @@ interface ScholarshipSavedDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   savedScholarships: ScholarshipItem[];
+  savedMetadataById?: Record<string, PersistedSavedScholarship>;
+  isAccountSynced?: boolean;
+  onUpdateStatus?: (scholarshipId: string, status: SavedScholarshipStatus) => void;
+  onToggleChecklistItem?: (scholarshipId: string, itemId: string) => void;
   onRemoveSaved: (id: string) => void;
   onSelectScholarship: (item: ScholarshipItem) => void;
   userEmail: string;
 }
+
+const STATUS_OPTIONS: Array<{ value: SavedScholarshipStatus; label: string }> = [
+  { value: 'saved', label: 'Saved' },
+  { value: 'preparing', label: 'Preparing' },
+  { value: 'submitted', label: 'Submitted' },
+  { value: 'awarded', label: 'Awarded' },
+];
 
 function formatDeadlineBadge(sch: ScholarshipItem): { text: string; toneClass: string } {
   if (sch.deadlineStatus === 'rolling') {
@@ -45,59 +64,72 @@ function formatDeadlineBadge(sch: ScholarshipItem): { text: string; toneClass: s
     return { text: 'Check official site', toneClass: 'text-slate-500 dark:text-slate-400' };
   }
   const daysLeft = Math.ceil((parsed - Date.now()) / (1000 * 60 * 60 * 24));
-  if (daysLeft <= 0) {
-    return { text: 'Expired', toneClass: 'text-rose-600 dark:text-rose-400' };
-  }
+  if (daysLeft <= 0) return { text: 'Expired', toneClass: 'text-rose-600 dark:text-rose-400' };
   return {
     text: `${daysLeft}d left`,
     toneClass: daysLeft <= 14 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400',
   };
 }
 
+function buildMarkdownChecklist(
+  savedScholarships: ScholarshipItem[],
+  savedMetadataById: Record<string, PersistedSavedScholarship>,
+  userEmail: string
+): string {
+  const lines = [
+    '# CDES Saved Scholarships Preparation Checklist',
+    '',
+    `- **Student**: ${userEmail || 'Guest Student'}`,
+    `- **Exported**: ${new Date().toISOString().split('T')[0]}`,
+    '',
+  ];
+  savedScholarships.forEach((s, idx) => {
+    const meta = savedMetadataById[s.id];
+    const items: SavedChecklistItem[] =
+      meta?.checklist && meta.checklist.length > 0
+        ? meta.checklist
+        : s.requiredDocuments.map((d, i) => ({ id: `d-${i}`, label: d, done: false }));
+    lines.push(`## ${idx + 1}. ${s.name}`);
+    lines.push(`- **Provider**: ${s.provider} (${s.country})`);
+    lines.push(`- **Status**: ${meta?.status || 'saved'}`);
+    lines.push(`- **Deadline**: ${s.deadline || 'Not specified'}`);
+    lines.push(
+      `- **Funding**: ${s.fundingType} (${s.totalEstimatedValueUSD != null ? `Est. $${s.totalEstimatedValueUSD.toLocaleString()} USD` : 'Amount not specified'})`
+    );
+    lines.push(`- **Application Portal**: ${getSafeHttpUrl(s.applicationLink) || 'Not specified'}`);
+    lines.push('');
+    lines.push('### Required Documents');
+    items.forEach((item) => lines.push(`- [${item.done ? 'x' : ' '}] ${item.label}`));
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
 export const ScholarshipSavedDrawer: React.FC<ScholarshipSavedDrawerProps> = ({
   isOpen,
   onClose,
   savedScholarships,
+  savedMetadataById = {},
+  isAccountSynced = false,
+  onUpdateStatus,
+  onToggleChecklistItem,
   onRemoveSaved,
   onSelectScholarship,
   userEmail,
 }) => {
   useEscapeKey(isOpen, onClose);
-
   if (!isOpen) return null;
 
   const closingSoonCount = savedScholarships.filter(
     (s) => s.deadlineStatus === 'closing_soon' || (typeof s.daysRemaining === 'number' && s.daysRemaining > 0 && s.daysRemaining <= 30)
   ).length;
 
-  const handleExportChecklist = (): void => {
-    const textContent = [
-      'CAMBODIA SCHOLARSHIP INTELLIGENCE PLATFORM (CSIP) - SAVED CHECKLIST',
-      `Generated for: ${userEmail || 'Guest Student'}`,
-      `Date: ${new Date().toLocaleDateString()}`,
-      '------------------------------------------------------------',
-      '',
-      ...savedScholarships.map((s, idx) =>
-        [
-          `[${idx + 1}] ${s.name}`,
-          `Provider: ${s.provider} | Country: ${s.country}`,
-          `Deadline: ${s.deadline || 'Not specified'}`,
-          `Funding: ${s.fundingType} (${s.totalEstimatedValueUSD != null ? `Est. $${s.totalEstimatedValueUSD.toLocaleString()} USD` : 'Amount not specified'})`,
-          'Required Documents:',
-          ...s.requiredDocuments.map((d) => `   [ ] ${d}`),
-          `Application Portal: ${getSafeHttpUrl(s.applicationLink) || 'Not specified'}`,
-          `Official Source: ${getSafeHttpUrl(s.officialSourceUrl) || 'Not specified'}`,
-          '------------------------------------------------------------',
-          '',
-        ].join('\n')
-      ),
-    ].join('\n');
-
-    const blob = new Blob([textContent], { type: 'text/plain' });
+  const triggerDownload = (content: string, ext: 'md' | 'txt', mime: string): void => {
+    const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `my-scholarships-checklist-${new Date().toISOString().split('T')[0]}.txt`;
+    a.download = `my-scholarships-checklist-${new Date().toISOString().split('T')[0]}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -120,7 +152,14 @@ export const ScholarshipSavedDrawer: React.FC<ScholarshipSavedDrawerProps> = ({
             <Bookmark className="w-5 h-5 text-emerald-400" />
             <div>
               <h3 className="text-base font-bold text-white">Saved Scholarships & Deadlines</h3>
-              <p className="text-xs text-emerald-200/80">{savedScholarships.length} opportunity(ies) bookmarked</p>
+              <p className="text-xs text-emerald-200/80 flex items-center gap-1.5">
+                <span>{savedScholarships.length} bookmarked</span>
+                {isAccountSynced && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-700/70 text-[10px] font-bold">
+                    <CloudCheck className="w-3 h-3" /> Synced
+                  </span>
+                )}
+              </p>
             </div>
           </div>
           <button
@@ -136,12 +175,14 @@ export const ScholarshipSavedDrawer: React.FC<ScholarshipSavedDrawerProps> = ({
         <div className="p-4 bg-emerald-50/70 dark:bg-emerald-950/40 border-b border-emerald-100 dark:border-emerald-900/60 text-xs text-slate-800 dark:text-slate-200 space-y-1.5 shrink-0">
           <div className="flex items-center gap-1.5 font-bold text-emerald-950 dark:text-emerald-200">
             <Calendar className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
-            <span>In-App Deadline Tracker</span>
+            <span>In-App Deadline & Checklist Tracker</span>
           </div>
           <p className="text-[11px] text-slate-600 dark:text-slate-300">
             {closingSoonCount > 0
-              ? `${closingSoonCount} saved scholarship(s) close within 30 days. Export your checklist below and double-check dates on official portals.`
-              : 'Track your saved scholarship deadlines here and export a preparation checklist anytime.'}
+              ? `${closingSoonCount} saved scholarship(s) close within 30 days. Track your document checklist below and verify dates on official portals.`
+              : isAccountSynced
+              ? 'Your saved scholarships, application status, and document checklists sync automatically to your account.'
+              : 'Track saved deadlines on this device. Sign in to sync checklists across devices.'}
           </p>
         </div>
 
@@ -158,13 +199,16 @@ export const ScholarshipSavedDrawer: React.FC<ScholarshipSavedDrawerProps> = ({
             savedScholarships.map((sch) => {
               const badge = formatDeadlineBadge(sch);
               const safeApplyUrl = getSafeHttpUrl(sch.applicationLink);
+              const meta = savedMetadataById[sch.id];
+              const checklist = meta?.checklist || [];
+              const completedCount = checklist.filter((c) => c.done).length;
               return (
                 <div
                   key={sch.id}
                   className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-emerald-400 dark:hover:border-emerald-500 shadow-2xs transition-all space-y-2.5"
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
                         {sch.country} • {sch.fundingType}
                       </div>
@@ -187,6 +231,46 @@ export const ScholarshipSavedDrawer: React.FC<ScholarshipSavedDrawerProps> = ({
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
+
+                  {isAccountSynced && onUpdateStatus && (
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                        Application Stage:
+                      </label>
+                      <select
+                        value={meta?.status || 'saved'}
+                        onChange={(e) => onUpdateStatus(sch.id, e.target.value as SavedScholarshipStatus)}
+                        className="text-[11px] font-bold rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 px-2 py-1"
+                      >
+                        {STATUS_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {isAccountSynced && checklist.length > 0 && onToggleChecklistItem && (
+                    <div className="pt-1.5 border-t border-slate-100 dark:border-slate-700 space-y-1">
+                      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Prep Checklist ({completedCount}/{checklist.length})
+                      </div>
+                      {checklist.slice(0, 4).map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => onToggleChecklistItem(sch.id, item.id)}
+                          className="w-full text-left flex items-center gap-1.5 text-[11px] text-slate-700 dark:text-slate-200 hover:text-emerald-700 dark:hover:text-emerald-400 cursor-pointer"
+                        >
+                          {item.done ? (
+                            <CheckSquare className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                          ) : (
+                            <Square className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          )}
+                          <span className={item.done ? 'line-through text-slate-400' : ''}>{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-700">
                     <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300 text-[11px]">
@@ -224,14 +308,20 @@ export const ScholarshipSavedDrawer: React.FC<ScholarshipSavedDrawerProps> = ({
         </div>
 
         {savedScholarships.length > 0 && (
-          <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex items-center justify-between gap-3 shrink-0">
+          <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={handleExportChecklist}
-              className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+              onClick={() =>
+                triggerDownload(
+                  buildMarkdownChecklist(savedScholarships, savedMetadataById, userEmail),
+                  'md',
+                  'text/markdown'
+                )
+              }
+              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-900 dark:bg-emerald-600 hover:bg-slate-800 dark:hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>Export Prep Checklist (.txt)</span>
+              <span>Export Checklist (.md)</span>
             </button>
           </div>
         )}

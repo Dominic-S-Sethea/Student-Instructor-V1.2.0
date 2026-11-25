@@ -32,6 +32,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   setCurrentTab: propSetCurrentTab,
   onSelectTab: propOnSelectTab,
   onTabChange: propOnTabChange,
+  notifications = [],
+  onMarkNotificationRead,
+  onClearAllNotifications,
   onOpenAuthModal,
   onBack,
   onGoBack,
@@ -49,6 +52,9 @@ export const Navbar: React.FC<NavbarProps> = ({
       <TopNav
         currentTab={currentTab}
         onSelectTab={handleSelectTab}
+        notifications={notifications}
+        onMarkNotificationRead={onMarkNotificationRead}
+        onClearAllNotifications={onClearAllNotifications}
         onOpenAuthModal={onOpenAuthModal}
         onBack={onBack || onGoBack}
         canGoBack={canGoBack}

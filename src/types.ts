@@ -401,6 +401,7 @@ export interface NotificationItem {
   timestamp: string;
   type: 'booking' | 'meetup' | 'opportunity' | 'system' | 'session';
   isRead: boolean;
+  actionTab?: string | null;
 }
 
 // ----------------------------------------------------

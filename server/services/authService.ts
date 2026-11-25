@@ -142,6 +142,18 @@ export class AuthService {
             granted_at, expires_at, revoked_at
           ) VALUES (?, ?, 'pilot_default_pending', 1, 0, 0, 0, 0, ?, ?, NULL)
         `).run(`cons-${crypto.randomUUID()}`, userId, now, new Date(Date.now() + 365 * 86400 * 1000).toISOString());
+
+        db.prepare(`
+          INSERT INTO user_notifications (
+            id, user_id, category, title, body, action_tab, dedupe_key, is_read, created_at
+          ) VALUES (?, ?, 'privacy', ?, ?, 'profile', 'welcome-privacy', 0, ?)
+        `).run(
+          `ntf-${crypto.randomUUID()}`,
+          userId,
+          'Welcome to CDES Student Instructor',
+          'Your optional analytics & AI memory start OFF by default. Bookmark scholarships to track checklists and review your Privacy Center anytime.',
+          now
+        );
       }
 
       db.exec('COMMIT;');

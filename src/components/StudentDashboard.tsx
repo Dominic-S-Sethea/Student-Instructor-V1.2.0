@@ -23,7 +23,8 @@ import type { ScholarshipItem } from '../types/scholarship';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { scholarshipClient } from '../services/scholarshipClient';
-import { readSavedScholarshipIds } from '../utils/savedScholarships';
+import { savedScholarshipClient } from '../services/savedScholarshipClient';
+import { readSavedScholarshipIds, writeSavedScholarshipIds } from '../utils/savedScholarships';
 import { UpcomingDeadlinesStrip } from './dashboard/UpcomingDeadlinesStrip';
 
 interface StudentDashboardProps {
@@ -104,7 +105,25 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   }, [loadUpcomingDeadlines]);
 
   useEffect(() => {
-    setSavedCount(readSavedScholarshipIds(scopeId).length);
+    if (!scopeId) {
+      setSavedCount(readSavedScholarshipIds(null).length);
+      return;
+    }
+    let active = true;
+    savedScholarshipClient
+      .list()
+      .then((rows) => {
+        if (!active) return;
+        const ids = rows.map((r) => r.scholarshipId);
+        writeSavedScholarshipIds(scopeId, ids);
+        setSavedCount(ids.length);
+      })
+      .catch(() => {
+        if (active) setSavedCount(readSavedScholarshipIds(scopeId).length);
+      });
+    return () => {
+      active = false;
+    };
   }, [scopeId]);
 
   const upcomingStrip = useMemo(() => {

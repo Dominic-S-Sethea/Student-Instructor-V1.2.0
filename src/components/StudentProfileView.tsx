@@ -16,7 +16,8 @@ import { StudentEducationAndPrivacyPanel } from './StudentEducationAndPrivacyPan
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { scholarshipClient } from '../services/scholarshipClient';
-import { readSavedScholarshipIds } from '../utils/savedScholarships';
+import { savedScholarshipClient } from '../services/savedScholarshipClient';
+import { readSavedScholarshipIds, writeSavedScholarshipIds } from '../utils/savedScholarships';
 import { getSafeHttpUrl } from '../utils/safeUrl';
 
 interface StudentProfileViewProps {
@@ -45,25 +46,36 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
   const [savedCatalog, setSavedCatalog] = useState<ScholarshipItem[]>([]);
 
   useEffect(() => {
-    setSavedIds(readSavedScholarshipIds(authenticated ? user?.id : null));
-  }, [authenticated, user?.id]);
-
-  useEffect(() => {
-    if (!authenticated || savedIds.length === 0) {
+    if (!authenticated || !user?.id) {
+      setSavedIds(readSavedScholarshipIds(null));
       setSavedCatalog([]);
       return;
     }
     let active = true;
-    scholarshipClient
-      .list()
-      .then((res) => {
+    const guestIds = readSavedScholarshipIds(null);
+    const loadPromise = guestIds.length > 0 ? savedScholarshipClient.sync(guestIds) : savedScholarshipClient.list();
+    loadPromise
+      .then((rows) => {
         if (!active) return;
-        const list = Array.isArray(res.scholarships) ? res.scholarships : [];
-        setSavedCatalog(list.filter((s) => savedIds.includes(s.id)));
+        const ids = rows.map((r) => r.scholarshipId);
+        setSavedIds(ids);
+        writeSavedScholarshipIds(user.id, ids);
+        if (guestIds.length > 0) writeSavedScholarshipIds(null, []);
+        setSavedCatalog(rows.map((r) => r.scholarship).filter((s): s is ScholarshipItem => Boolean(s)));
       })
-      .catch(() => { /* fallback cleanly to count only */ });
+      .catch(() => {
+        if (!active) return;
+        const fallbackIds = readSavedScholarshipIds(user.id);
+        setSavedIds(fallbackIds);
+        if (fallbackIds.length > 0) {
+          scholarshipClient.list().then((res) => {
+            if (!active) return;
+            setSavedCatalog((res.scholarships || []).filter((s) => fallbackIds.includes(s.id)));
+          }).catch(() => {});
+        }
+      });
     return () => { active = false; };
-  }, [authenticated, savedIds]);
+  }, [authenticated, user?.id]);
 
   if (!authenticated) {
     return (

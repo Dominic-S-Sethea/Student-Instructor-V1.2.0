@@ -47,17 +47,12 @@ import { ScholarshipSavedDrawer } from './scholarships/ScholarshipSavedDrawer';
 import { ScholarshipAdminModal } from './scholarships/ScholarshipAdminModal';
 import { TopUniversityDirectory } from './topUniversities/TopUniversityDirectory';
 import { allTopUniversityPrograms } from '../data/topUniversities';
-import {
-  clearLegacyUnscopedSavedScholarships,
-  readSavedScholarshipIds,
-  writeSavedScholarshipIds,
-} from '../utils/savedScholarships';
+import { useSavedScholarships } from '../hooks/useSavedScholarships';
 
 export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => void }> = ({ onOpenAuthModal }) => {
   const { language, t } = useLanguage();
   const { authenticated, user, profile: authProfile, logout } = useAuth();
   const isKhmer = language === 'km';
-  const accountScopeId = authenticated ? user?.id ?? null : null;
 
   // Directory View Mode
   const [directoryView, setDirectoryView] = useState<'top_universities' | 'flagship'>('flagship');
@@ -71,15 +66,20 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [accessNotice, setAccessNotice] = useState<string | null>(null);
 
-  // Account-scoped bookmarked IDs (never fabricated defaults)
-  const [savedIds, setSavedIds] = useState<string[]>(() => {
-    clearLegacyUnscopedSavedScholarships();
-    return readSavedScholarshipIds(accountScopeId);
+  const {
+    savedIds,
+    savedMetadataById,
+    isAccountSynced,
+    toggleSaveScholarship,
+    updateSavedStatus,
+    toggleChecklistItem,
+  } = useSavedScholarships(authenticated, user?.id, (hydrated) => {
+    setCatalogById((prev) => {
+      const next = { ...prev };
+      for (const item of hydrated) next[item.id] = item;
+      return next;
+    });
   });
-
-  useEffect(() => {
-    setSavedIds(readSavedScholarshipIds(accountScopeId));
-  }, [accountScopeId]);
 
   // Filter & Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -157,14 +157,6 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
     onlyVerified,
     sortBy,
   ]);
-
-  const toggleSaveScholarship = (id: string): void => {
-    setSavedIds((prev) => {
-      const updated = prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
-      writeSavedScholarshipIds(accountScopeId, updated);
-      return updated;
-    });
-  };
 
   const savedList = useMemo(() => {
     return savedIds
@@ -762,6 +754,10 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
         isOpen={isSavedDrawerOpen}
         onClose={() => setIsSavedDrawerOpen(false)}
         savedScholarships={savedList}
+        savedMetadataById={savedMetadataById}
+        isAccountSynced={isAccountSynced}
+        onUpdateStatus={updateSavedStatus}
+        onToggleChecklistItem={toggleChecklistItem}
         onRemoveSaved={toggleSaveScholarship}
         onSelectScholarship={(sch) => {
           setSelectedScholarship(sch);

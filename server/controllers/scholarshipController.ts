@@ -10,6 +10,7 @@ import { rateLimiter } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validationMiddleware';
 import { ScholarshipExtractSchema } from '../validators/apiSchemas';
 import { asyncHandler, HttpError, safeErrorMessage } from '../utils/httpErrors';
+import savedScholarshipRoutes from '../routes/savedScholarshipRoutes';
 
 const router = Router();
 const scholarshipService = new ScholarshipService();
@@ -194,6 +195,9 @@ router.post('/match', optionalAuth, (req: AuthenticatedRequest, res: Response): 
     sendError(res, 400, err, 'Match failed');
   }
 });
+
+// 1b. ACCOUNT-SYNCED BOOKMARKS & CHECKLISTS (must precede /:id)
+router.use('/saved', savedScholarshipRoutes);
 
 // 2. ADMIN SEARCH TELEMETRY
 router.get('/analytics/popular-searches', authenticateToken, requireRole('admin'), (_req, res): void => {

@@ -9,6 +9,7 @@ import { AppTabRouter } from './components/AppTabRouter';
 import { ADMIN_ONLY_TABS } from './components/navigation/navConfig';
 import { topCambodianUniversities } from './data/universityIntelligenceData';
 import { universityClient } from './services/universityClient';
+import { usePersistedNotifications } from './hooks/usePersistedNotifications';
 import { mergeLiveUniversities } from './utils/mergeUniversities';
 import { buildSessionStudentProfile } from './utils/appSessionProfile';
 import { LanguageProvider } from './context/LanguageContext';
@@ -28,7 +29,6 @@ import {
   initialMeetups,
   initialMajorInsights,
   initialOpportunities,
-  initialNotifications,
 } from './data/mockData';
 
 const BookingModal = lazy(() => import('./components/BookingModal').then((m) => ({ default: m.BookingModal })));
@@ -50,7 +50,12 @@ function AppContent() {
   const [meetups, setMeetups] = useState(initialMeetups);
   const [majorInsights] = useState(initialMajorInsights);
   const [opportunities] = useState(initialOpportunities);
-  const [notifications, setNotifications] = useState(initialNotifications);
+  const {
+    notifications,
+    markRead: handleMarkNotificationRead,
+    markAllRead: handleClearAllNotifications,
+    pushNotification,
+  } = usePersistedNotifications(authenticated, sessionKey);
 
   const [bookingMentor, setBookingMentor] = useState<Mentor | null>(null);
   const [advisorPrefillPrompt, setAdvisorPrefillPrompt] = useState<string>('');
@@ -142,17 +147,14 @@ function AppContent() {
         mentorsContacted: prev.explorationProgress.mentorsContacted + 1,
       },
     }));
-    setNotifications((prev) => [
-      {
-        id: `notif-${Date.now()}`,
-        title: 'Guidance Session Confirmed',
-        message: `Your 1-on-1 with ${newBooking.mentorName} is scheduled for ${newBooking.date}.`,
-        timestamp: 'Just now',
-        isRead: false,
-        type: 'session',
-      },
-      ...prev,
-    ]);
+    pushNotification({
+      id: `notif-${Date.now()}`,
+      title: 'Guidance Session Confirmed',
+      message: `Your 1-on-1 with ${newBooking.mentorName} is scheduled for ${newBooking.date}.`,
+      timestamp: 'Just now',
+      isRead: false,
+      type: 'session',
+    });
   };
 
   const handleToggleJoinMeetup = (meetupId: string) => {
@@ -242,10 +244,8 @@ function AppContent() {
         onSelectTab={handleNavigateTab}
         onTabChange={handleNavigateTab}
         notifications={notifications}
-        onMarkNotificationRead={(id) =>
-          setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)))
-        }
-        onClearAllNotifications={() => setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))}
+        onMarkNotificationRead={handleMarkNotificationRead}
+        onClearAllNotifications={handleClearAllNotifications}
         studentProfile={studentProfile}
         studentName={studentProfile.name}
         studentAvatar={studentProfile.avatar}

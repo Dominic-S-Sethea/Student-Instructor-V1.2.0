@@ -20,17 +20,21 @@ import {
   User,
   X,
 } from 'lucide-react';
-import type { TabView } from '../../types';
+import type { NotificationItem, TabView } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { LanguageSelector } from '../LanguageSelector';
 import { ADMIN_NAV_ITEMS, EXPLORE_NAV_ITEMS, PRIMARY_NAV_ITEMS } from './navConfig';
 import { TopNavMobileDrawer } from './TopNavMobileDrawer';
+import { NotificationBellMenu } from './NotificationBellMenu';
 
 interface TopNavProps {
   currentTab: TabView;
   onSelectTab: (tab: TabView) => void;
+  notifications?: NotificationItem[];
+  onMarkNotificationRead?: (id: string) => void;
+  onClearAllNotifications?: () => void;
   onOpenAuthModal?: () => void;
   onBack?: () => void;
   canGoBack?: boolean;
@@ -62,6 +66,9 @@ function getTabIcon(id: TabView): React.ReactNode {
 export const TopNav: React.FC<TopNavProps> = ({
   currentTab,
   onSelectTab,
+  notifications = [],
+  onMarkNotificationRead,
+  onClearAllNotifications,
   onOpenAuthModal,
   onBack,
   canGoBack = false,
@@ -285,6 +292,16 @@ export const TopNav: React.FC<TopNavProps> = ({
           <div className="hidden sm:block">
             <LanguageSelector variant="nav" />
           </div>
+
+          {authenticated && (
+            <NotificationBellMenu
+              notifications={notifications}
+              isKhmer={isKhmer}
+              onMarkRead={onMarkNotificationRead}
+              onMarkAllRead={onClearAllNotifications}
+              onNavigateTab={navigate}
+            />
+          )}
 
           {authenticated ? (
             <div className="relative" ref={accountRef}>
