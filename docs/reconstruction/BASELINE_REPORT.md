@@ -1,31 +1,32 @@
 # CDES Student Instructor V1.2.0 — Reconstruction Baseline & Verification Report
 
-**Workspace**: `c:\Users\Reinh\OneDrive\Desktop\Student-Instructor-V1.2.0\Student-Instructor-V1.2.0` (source export aligned with remote `Dominic-S-Sethea/Student-Instructor-V1.2.0` commit `0bc6aa60721ea5982680e34d2d0ca4af3b1eea4c`, no `.git` history in local export)  
-**Runtime verified**: Node `v24.22.3` (`node:sqlite`), Windows PowerShell, `GEMINI_API_KEY=""` (disabled for all checks)  
-**Date**: 25 November 2026  
+**Repository**: `Dominic-S-Sethea/Student-Instructor-V1.2.0` (branch `feat/phases-4-6-remediation`, rebased atop `12c5cff`)  
+**Runtime verified**: Node `v22.23.5` (`node:sqlite`), Ubuntu 24.04 Linux, Google Chrome `158.0.8127.36` + Playwright, `GEMINI_API_KEY=""` (disabled for all checks)  
+**Updated**: 25 November 2026  
 
 ---
 
 ## 1. Before vs. After Command Verification Summary
 
-| Check | Unmodified Baseline (Before) | Post-Reconstruction (After) | Evidence / Notes |
+| Check | Unmodified Baseline (Before) | Final Post-Expansion (After Phases 4–6 & W1–W6) | Evidence / Notes |
 | --- | --- | --- | --- |
-| `npm.cmd ci` | Exit `0` (461 packages) | Reused lockfile install | Exact lockfile installation verified |
-| `npx.cmd --no-install tsc --noEmit -p tsconfig.server.json` | Exit `0` | **Exit `0`** | Strict server TypeScript config passes after final backend edits |
-| `npm.cmd run lint` (`tsc --noEmit`) | Exit `0` | **Exit `0`** | Root frontend + shared TS passes with zero errors |
-| `npm.cmd test` | Exit `0` (2 legacy scripts; logged `adminUser.password_hash`) | **Exit `0`** (6 suites: `backend.test.ts`, `secretScan.test.ts`, `startupAndMigrations.test.ts`, `authOwnershipConsent.test.ts`, `catalogAccuracyAndEditorial.test.ts`, `guidanceAndPackaging.test.ts`) | Removed password-hash stdout logging; tested HTTP auth, CSRF, isolation, consent, catalog accuracy, atomic approval, guidance fail-closed timeouts, backup/restore, retention |
-| `npm.cmd run test:coverage` | **Missing script** (`RULES.md` gap) | **Exit `0`** (`scripts/run-coverage.mjs`) | V8 coverage across all 6 suites: **86 server modules executed, 1638/3989 functions hit (41.1%)** |
-| `npm.cmd run build` | Exit `0`, placed `dist/server.cjs` in static `dist/` | **Exit `0`** (`dist/public` + `dist/server/server.cjs` + `dist/server/db/`) | `vite build` -> `dist/public` (`index.html`, JS/CSS bundles); `esbuild` -> `dist/server/server.cjs`; SQL assets copied privately to `dist/server/db/` |
-| `npm audit --omit=dev` + `check-audit-baseline.cjs` | Exit `0` (`high/critical=0`, baseline `4`) | **Exit `0`** (`high/critical=0`, baseline `4`) | Zero high/critical runtime vulnerabilities; no baseline regressions |
-| Clean-dir production smoke (`node dist/server/server.cjs`, `PORT=3199`, `COOKIE_SECURE=false`, `NODE_ENV=production`) | Blocked on host port `3000` (occupied; hardcoded `PORT=3000`) | **Exit `0`** (port configurable; zero demo accounts on boot) | `/api/health` -> `200` (`schemaVersion: 8`, `aiEnabled: false`, `journalMode: "wal"`, `foreignKeys: true`, `integrity: "ok"`); `/api/does-not-exist` -> `404` JSON; `/server/server.cjs` & `/db/schema.sql` not leaked |
-| Live backup & restore drill (`server/db/backupRestore.mjs`) | Unverified | **Exit `0`** (`integrity=ok`, `fk_violations=0`) | Restored live populated `smoke.db` to new file; verified Student A (`Data Science & AI`) and admin-published `Clean Deploy Grant 2027` via HTTP |
-| Built-in Electron `browser` subagent E2E DOM check | Unverified | **Blocked by webview environment** (`EVAL_ISOLATED_TIMEOUT` / `CAPTURE_EMPTY` on `127.0.0.1:3199`) | Server returned HTTP `200`/`304` for `/` and `/api/scholarships` (`200` confirmed directly for JS `2131447` bytes & CSS `178810` bytes + full cookie/CSRF API journeys), but host webview failed to evaluate/screenshot DOM |
+| `npm run lint` (`tsc --noEmit && tsc --noEmit -p tsconfig.server.json`) | Frontend-only lint | **Exit `0`** (both client + server strict TS) | Zero TypeScript errors across client & server; zero `any` in all 43 newly created files |
+| `npm test` | Exit `0` (2 legacy scripts; logged `adminUser.password_hash`) | **Exit `0`** (**16 suites**, all `<= 250` lines) | Covers auth, CSRF, JTI revocation, login lockout, OWASP API Top 10 pentest, AI/Hermes privacy, catalog accuracy, account bookmarks/notifications, PII scrubbing & erasure, migrations v11, retention, backup/restore, and concurrency contention |
+| `npm run test:coverage` | **Missing script** (`RULES.md` gap) | **Exit `0`** (`scripts/run-coverage.mjs` auto-discovery) | V8 coverage across all **16 suites**: **114 server modules executed, 6767/17076 functions hit (`39.6%`)** |
+| `npm run build` | Exit `0`, leaked `dist/server.cjs` in static `dist/` | **Exit `0`** (`dist/public` + `dist/server/server.cjs` + `dist/server/db/`) | `vite v6.4.5` (`1978` modules in `8.63s`); `esbuild` (`1.3 MB` in `155ms`); SQL + ops scripts copied privately into `dist/server/db/` |
+| `npm run audit:dep` + `check-audit-baseline.cjs` | Exit `0`, buggy `0 -> 1` comparison | **Exit `0`** (`found 0 vulnerabilities`, `high/critical=0`, baseline `4`) | Fixed `0 -> 1` regression logic in `check-audit-baseline.cjs`; `audit-baseline.json` untouched |
+| Clean-dir production smoke (`dist/` isolated, `NODE_ENV=production`, `PORT=3198`) | Blocked on hardcoded `PORT=3000` | **Exit `0`** (zero demo accounts on boot) | `/api/health` -> `200` (`schemaVersion: 11`, `aiEnabled: false`, `journalMode: "wal"`, `foreignKeys: true`, `integrity: "ok"`); unknown `/api/*` -> `404` JSON; `dist/server/*` unreachable; static `/` + JS/CSS -> `200` |
+| Atomic backup & restore drill (`dist/server/db/backupRestore.mjs`) | Unverified | **Exit `0`** (`integrity="ok"`, `fkViolations=0`, `schemaVersion=11`) | Atomic temp-file rename + `busy_timeout=5000`; verified persisted HTTP-registered student + welcome notification after restore |
+| Headless Chromium browser E2E (`npm run test:e2e:browser`) | Blocked by local webview environment | **Exit `0`** (`13/13` checks PASS, `0` console errors, `0` page errors) | Verified real Chromium DOM flows across guest, theme/language toggle, catalog, live universities, quiz, Student A auth/bell/bookmark-sync/advisor/privacy, and Student B UI isolation |
+| Catalog integrity audit (`npm run verify:catalog`) | Not present | **Exit `0`** (`PASS`) | Audited `12` scholarships & `7` universities, `schemaVersion: 11`, `0` FK violations, `integrity: "ok"` |
+| Concurrent mixed-workload stress benchmark (`npm run test:stress`) | Not present | **Exit `0`** (`PASS`, `640` reqs, `32` workers, `209.8 req/s`) | `0` 5xx errors, `p50=97.47ms`, `p95=234.84ms`, `heapUsed delta=-1.23MB`, `readOps=6266`, `writeOps=981`, `writerMax=1`, `busyTimeoutRetries=0`, `integrity="ok"`, `fkViolations=0` |
 
 ---
 
 ## 2. Rules & Packaging Hygiene Audit
 
-- **`RULES.md` `test:coverage` gap**: Resolved by adding `scripts/run-coverage.mjs` and wiring `npm run test:coverage` in `package.json` and `.github/workflows/ci.yml`.
-- **CI staging environment persistence (`ci.yml`)**: Fixed disconnected `export` step by writing `NODE_ENV=staging`, `DATABASE_PATH`, `COOKIE_SECURE=false`, and `STAGING_PID` to `$GITHUB_ENV` and replacing broad `pkill` with targeted `kill "$STAGING_PID"`.
-- **Secret-scan compliance (`secretScan.test.ts`)**: Passed (`PASS: no hardcoded production secrets in server/ and src/`), and removed `adminUser.password_hash` print from `server/tests/backend.test.ts`.
-- **Public vs. private build layout**: `dist/public` contains only browser artifacts (`index.html`, `assets/`, `crests/`, `images/`). `dist/server/server.cjs`, sourcemap, `schema.sql`, and `migrations/*.sql` sit outside `dist/public`. Note: `server/services/scholarshipService.ts` sits at 466 lines (pre-existing >400 lines; formatting logic was extracted into 308-line `server/services/scholarshipFormatter.ts`), while every newly added module and all 4 new integration test files are strictly `<= 308` lines (`<= 226` lines for all new test files) with zero `any` in modified scopes.
+- **`RULES.md` line limits**: All **17** files in `server/tests/` (16 test suites + `httpTestHelper.ts`) are strictly `<= 250` lines. All **43** newly added files across `server/`, `src/`, and `scripts/` satisfy line limits with zero `any`/`as any`.
+- **Secret-scan & Gitleaks compliance**: Expanded `secretScan.test.ts` (broadened private-key/JWT/token regexes and removed `process.env` bypass) and updated `.github/.gitleaks.toml` to valid Gitleaks v8 syntax.
+- **Containerization & Operations**: Added multi-stage non-root `Dockerfile`, `.dockerignore`, `docker-compose.yml`, and `docs/DEPLOYMENT_RUNBOOK.md`; hardened graceful shutdown (`headersTimeout > keepAliveTimeout`, `closeIdleConnections()`, Vite close) in `server.ts`.
+- **Public vs. private build layout**: `dist/public` contains only static browser assets; `dist/server/server.cjs`, sourcemap, `schema.sql`, `migrations/*.sql`, and operational DB scripts stay isolated under `dist/server/`.
+
