@@ -17,12 +17,15 @@ import {
 } from 'lucide-react';
 import { ClientStudentProject } from '../../types';
 import { communityClient } from '../../services/communityClient';
+import { useAuth } from '../../context/AuthContext';
+import { getSafeHttpUrl } from '../../utils/safeUrl';
 
 interface Props {
   onOpenReportModal: (itemType: string, itemId: string) => void;
 }
 
 export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
+  const { authenticated, user, profile } = useAuth();
   const [projects, setProjects] = useState<ClientStudentProject[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedStage, setSelectedStage] = useState<string>('ALL');
@@ -35,8 +38,8 @@ export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
   const [joining, setJoining] = useState(false);
   const [joinSuccess, setJoinSuccess] = useState(false);
 
-  const studentId = 'usr-student-01';
-  const studentName = 'Dara Chan';
+  const studentId = authenticated && user?.id ? user.id : '';
+  const studentName = authenticated ? profile?.name || user?.email?.split('@')[0] || 'Student' : 'Guest';
 
   useEffect(() => {
     loadProjects();
@@ -282,11 +285,11 @@ export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
                 ))}
               </div>
 
-              {selectedProject.repository_url && (
+              {getSafeHttpUrl(selectedProject.repository_url) && (
                 <a
-                  href={selectedProject.repository_url}
+                  href={getSafeHttpUrl(selectedProject.repository_url)!}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="w-full py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition"
                 >
                   <Github className="w-4 h-4" /> Open Source Repository

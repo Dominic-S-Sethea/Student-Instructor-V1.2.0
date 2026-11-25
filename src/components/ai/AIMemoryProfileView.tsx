@@ -14,6 +14,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { ClientStudentInsight } from '../../types';
+import { apiFetchRaw } from '../../services/apiClient';
 
 interface AIMemoryProfileViewProps {
   studentId: string;
@@ -24,42 +25,45 @@ export const AIMemoryProfileView: React.FC<AIMemoryProfileViewProps> = ({ studen
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const fetchInsight = async () => {
+  const fetchInsight = async (): Promise<void> => {
     setIsLoading(true);
+    setErrorMsg(null);
     try {
-      const res = await fetch(`/api/ai/student-insight?studentId=${encodeURIComponent(studentId)}`);
-      const data = await res.json();
+      const data = await apiFetchRaw<ClientStudentInsight>(
+        `/api/ai/student-insight?studentId=${encodeURIComponent(studentId)}`
+      );
       if (data && data.memory) {
         setInsight(data);
       }
     } catch (err) {
-      console.error('Failed to load student insight:', err);
+      setErrorMsg(err instanceof Error ? err.message : 'Unable to load student AI insight.');
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchInsight();
+    void fetchInsight();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId]);
 
-  const handleSyncMemory = async () => {
+  const handleSyncMemory = async (): Promise<void> => {
     setIsSyncing(true);
+    setErrorMsg(null);
     try {
-      const res = await fetch('/api/ai/memory/sync', {
+      const data = await apiFetchRaw<{ success?: boolean }>('/api/ai/memory/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentId })
       });
-      const data = await res.json();
       if (data.success) {
         setSyncToast('Student AI Memory successfully re-synthesized from multi-source platform events!');
-        fetchInsight();
+        await fetchInsight();
         setTimeout(() => setSyncToast(null), 3500);
       }
     } catch (err) {
-      console.error('Failed to sync memory:', err);
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to sync memory.');
     } finally {
       setIsSyncing(false);
     }
@@ -67,6 +71,12 @@ export const AIMemoryProfileView: React.FC<AIMemoryProfileViewProps> = ({ studen
 
   return (
     <div className="space-y-6">
+      {errorMsg && (
+        <div role="alert" className="p-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-xl text-red-700 dark:text-red-300 text-xs font-medium flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{errorMsg}</span>
+        </div>
+      )}
       {/* Toast */}
       {syncToast && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center justify-between shadow-xs animate-fade-in">

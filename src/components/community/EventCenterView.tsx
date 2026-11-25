@@ -26,15 +26,12 @@ export const EventCenterView: React.FC<Props> = ({ onOpenReportModal, studentRol
   const [registeredEventIds, setRegisteredEventIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
-  const studentId = 'usr-student-01';
-  const studentName = 'Dara Chan';
-  const studentEmail = 'dara.chan@student.cdes.edu.kh';
-
   useEffect(() => {
-    loadEvents();
+    void loadEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventTypeFilter]);
 
-  const loadEvents = async () => {
+  const loadEvents = async (): Promise<void> => {
     try {
       setLoading(true);
       const data = await communityClient.getEvents(eventTypeFilter !== 'ALL' ? eventTypeFilter : undefined);
@@ -46,17 +43,17 @@ export const EventCenterView: React.FC<Props> = ({ onOpenReportModal, studentRol
     }
   };
 
-  const handleRsvp = async (eventId: string, role: string = 'Student') => {
+  const handleRsvp = async (eventId: string): Promise<void> => {
     try {
       await communityClient.rsvpEvent(eventId, {
-        response: studentRole === 'Super Admin' ? 'yes' : 'maybe',
+        response: 'yes',
         notes: studentRole
       });
 
       setRegisteredEventIds(prev => new Set(prev).add(eventId));
       setEvents(prev => prev.map(e => e.id === eventId ? { ...e, current_rsvp_count: e.current_rsvp_count + 1 } : e));
-    } catch (err: any) {
-      alert(err.message || 'Could not register for event');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not register for event');
     }
   };
 
@@ -68,6 +65,17 @@ export const EventCenterView: React.FC<Props> = ({ onOpenReportModal, studentRol
         return { label: 'Hybrid Format', icon: <Sparkles className="w-3 h-3 text-purple-500" />, bg: 'bg-purple-50 text-purple-700' };
       default:
         return { label: 'Physical Campus', icon: <MapPin className="w-3 h-3 text-emerald-500" />, bg: 'bg-emerald-50 text-emerald-700' };
+    }
+  };
+
+  const parseTags = (rawTags: string | string[] | undefined): string[] => {
+    if (Array.isArray(rawTags)) return rawTags;
+    if (typeof rawTags !== 'string') return [];
+    try {
+      const parsed: unknown = JSON.parse(rawTags);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
     }
   };
 
@@ -110,7 +118,7 @@ export const EventCenterView: React.FC<Props> = ({ onOpenReportModal, studentRol
         {events.map((event) => {
           const isRegistered = registeredEventIds.has(event.id);
           const format = getFormatBadge(event.event_format);
-          const tags = typeof event.tags === 'string' ? JSON.parse(event.tags) : event.tags;
+          const tags = parseTags(event.tags);
           const startDate = new Date(event.start_time).toLocaleDateString('en-US', {
             weekday: 'short',
             month: 'short',
@@ -190,7 +198,7 @@ export const EventCenterView: React.FC<Props> = ({ onOpenReportModal, studentRol
                   </div>
                 ) : (
                   <button
-                    onClick={() => handleRsvp(event.id, studentRole)}
+                    onClick={() => void handleRsvp(event.id)}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs"
                   >
                     RSVP Free Registration

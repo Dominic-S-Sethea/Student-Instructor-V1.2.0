@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { StudentAIEducationProfile } from '../../../shared/types/learningTypes';
 import { learningClient } from '../../services/learningClient';
+import { useAuth } from '../../context/AuthContext';
+import { useEscapeKey } from '../../hooks/useModalAccessibility';
 
 interface AIEducationProfileModalProps {
   studentId?: string;
@@ -25,31 +27,59 @@ interface AIEducationProfileModalProps {
 }
 
 export const AIEducationProfileModal: React.FC<AIEducationProfileModalProps> = ({
-  studentId = 'usr-student-01',
+  studentId: propStudentId,
   isOpen,
   onClose,
   onSelectRecommendedAction,
 }) => {
+  const { user } = useAuth();
+  const studentId = user?.id || propStudentId || '';
   const [profile, setProfile] = useState<StudentAIEducationProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEscapeKey(isOpen, onClose);
 
   useEffect(() => {
-    if (isOpen) {
-      setLoading(true);
-      learningClient
-        .getStudentAIProfile(studentId)
-        .then((data) => setProfile(data))
-        .finally(() => setLoading(false));
-    }
+    if (!isOpen) return;
+    let active = true;
+    setLoading(true);
+    setLoadError(null);
+    learningClient
+      .getStudentAIProfile(studentId)
+      .then((data) => {
+        if (active) setProfile(data);
+      })
+      .catch((err) => {
+        if (active) {
+          setProfile(null);
+          setLoadError(err instanceof Error ? err.message : 'Sign in to view your learning pattern analytics.');
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [isOpen, studentId]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fadeIn">
-      <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Student Intelligence and Learning Pattern Analytics"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fadeIn"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-slate-900 w-full max-w-3xl rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[90vh]"
+      >
         {/* Modal Header */}
-        <div className="p-5 sm:p-6 border-b border-slate-200 bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 text-white flex items-center justify-between shrink-0">
+        <div className="p-5 sm:p-6 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 text-white flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
               <Brain className="w-5 h-5" />
@@ -66,18 +96,25 @@ export const AIEducationProfileModal: React.FC<AIEducationProfileModalProps> = (
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label="Close AI education profile modal"
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Scrollable Content */}
-        <div className="p-5 sm:p-7 overflow-y-auto space-y-6 text-slate-800 text-xs sm:text-sm">
-          {loading || !profile ? (
+        <div className="p-5 sm:p-7 overflow-y-auto space-y-6 text-slate-800 dark:text-slate-100 text-xs sm:text-sm">
+          {loading ? (
             <div className="flex items-center justify-center py-16">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+            </div>
+          ) : loadError || !profile ? (
+            <div role="alert" className="p-6 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span>{loadError || 'Analytics profile unavailable right now.'}</span>
             </div>
           ) : (
             <>

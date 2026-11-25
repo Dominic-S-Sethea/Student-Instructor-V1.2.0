@@ -939,11 +939,11 @@ export const ConferencesAndAMAsView: React.FC<ConferencesAndAMAsViewProps> = ({
               </div>
             </div>
 
-            {activeTicketEvent.meetingLink && (
+            {activeTicketEvent.meetingLink && /^https?:\/\//i.test(activeTicketEvent.meetingLink) && (
               <a
                 href={activeTicketEvent.meetingLink}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center space-x-2 transition shadow-xs"
               >
                 <Video className="w-4 h-4" />

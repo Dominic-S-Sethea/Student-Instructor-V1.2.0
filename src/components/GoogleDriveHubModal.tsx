@@ -86,7 +86,8 @@ export const GoogleDriveHubModal: React.FC<GoogleDriveHubModalProps> = ({
       }
 
       if (searchQuery.trim()) {
-        const searchPart = `name contains '${searchQuery.trim().replace(/'/g, "\\'")}'`;
+        const escaped = searchQuery.trim().replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const searchPart = `name contains '${escaped}'`;
         q = q ? `${q} and ${searchPart}` : searchPart;
       }
 
@@ -293,11 +294,11 @@ export const GoogleDriveHubModal: React.FC<GoogleDriveHubModalProps> = ({
               )}
               <span>{statusMessage.text}</span>
             </div>
-            {statusMessage.link && (
+            {statusMessage.link && /^https?:\/\//i.test(statusMessage.link) && (
               <a
                 href={statusMessage.link}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="font-bold underline flex items-center gap-1 hover:text-emerald-900"
               >
                 <span>Open in Drive</span>
@@ -423,11 +424,11 @@ export const GoogleDriveHubModal: React.FC<GoogleDriveHubModalProps> = ({
                         </div>
 
                         <div className="mt-3 pt-2.5 border-t border-gray-100 flex items-center justify-between text-[11px]">
-                          {file.webViewLink ? (
+                          {file.webViewLink && /^https?:\/\//i.test(file.webViewLink) ? (
                             <a
                               href={file.webViewLink}
                               target="_blank"
-                              rel="noreferrer"
+                              rel="noopener noreferrer"
                               className="text-gray-500 hover:text-indigo-600 flex items-center gap-1 transition-colors"
                             >
                               <span>View in Drive</span>

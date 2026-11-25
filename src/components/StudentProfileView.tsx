@@ -16,6 +16,8 @@ import { StudentEducationAndPrivacyPanel } from './StudentEducationAndPrivacyPan
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { scholarshipClient } from '../services/scholarshipClient';
+import { readSavedScholarshipIds } from '../utils/savedScholarships';
+import { getSafeHttpUrl } from '../utils/safeUrl';
 
 interface StudentProfileViewProps {
   studentProfile: StudentProfile;
@@ -28,17 +30,6 @@ interface StudentProfileViewProps {
   onNavigateTab?: (tab: TabView) => void;
 }
 
-function readSavedScholarshipIds(): string[] {
-  try {
-    const raw = localStorage.getItem('csip_saved_scholarships');
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
-
 export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
   studentProfile,
   onCancelBooking,
@@ -48,11 +39,20 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
   const { authenticated, user, profile: authProfile } = useAuth();
   const { language } = useLanguage();
   const isKhmer = language === 'km';
-  const [savedIds] = useState<string[]>(readSavedScholarshipIds);
+  const [savedIds, setSavedIds] = useState<string[]>(() =>
+    readSavedScholarshipIds(authenticated ? user?.id : null)
+  );
   const [savedCatalog, setSavedCatalog] = useState<ScholarshipItem[]>([]);
 
   useEffect(() => {
-    if (!authenticated || savedIds.length === 0) return;
+    setSavedIds(readSavedScholarshipIds(authenticated ? user?.id : null));
+  }, [authenticated, user?.id]);
+
+  useEffect(() => {
+    if (!authenticated || savedIds.length === 0) {
+      setSavedCatalog([]);
+      return;
+    }
     let active = true;
     scholarshipClient
       .list()
@@ -237,21 +237,23 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <a
-                  href={session.meetingLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold inline-flex items-center gap-1.5"
-                >
-                  <Video className="w-3.5 h-3.5" />
-                  <span>Join Meet</span>
-                </a>
+                {getSafeHttpUrl(session.meetingLink) && (
+                  <a
+                    href={getSafeHttpUrl(session.meetingLink)!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold inline-flex items-center gap-1.5"
+                  >
+                    <Video className="w-3.5 h-3.5" />
+                    <span>{isKhmer ? 'ចូលរួម' : 'Join Meet'}</span>
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={() => onCancelBooking(session.id)}
                   className="px-3 py-2 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-medium cursor-pointer"
                 >
-                  Cancel
+                  {isKhmer ? 'បោះបង់' : 'Cancel'}
                 </button>
               </div>
             </div>

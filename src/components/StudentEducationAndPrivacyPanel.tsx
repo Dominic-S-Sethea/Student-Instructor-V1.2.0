@@ -38,7 +38,7 @@ export const StudentEducationAndPrivacyPanel: React.FC = () => {
   }, [profile, education]);
 
   useEffect(() => {
-    if (!authenticated || user?.role !== 'student') {
+    if (!authenticated) {
       setConsent(null);
       return;
     }
@@ -66,10 +66,10 @@ export const StudentEducationAndPrivacyPanel: React.FC = () => {
         setConsent(c);
         setParentEmail(c.parentEmail || '');
       })
-      .catch(() => { /* non-student roles */ });
+      .catch(() => { /* privacy record unavailable for account */ });
 
     return () => { active = false; };
-  }, [authenticated, user?.id, user?.role]);
+  }, [authenticated, user?.id]);
 
   if (!authenticated) {
     return (
@@ -330,7 +330,7 @@ export const StudentEducationAndPrivacyPanel: React.FC = () => {
                 onChange={(e) => void handleConsentChange({ allowAnalyticsTracking: e.target.checked })}
                 className="rounded text-blue-600"
               />
-              <span>Analytics telemetry</span>
+              <span>{isKhmer ? 'ការវិភាគការប្រើប្រាស់' : 'Analytics telemetry'}</span>
             </label>
             <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 p-3 cursor-pointer text-slate-800 dark:text-slate-200">
               <input
@@ -339,7 +339,7 @@ export const StudentEducationAndPrivacyPanel: React.FC = () => {
                 onChange={(e) => void handleConsentChange({ allowAiMemory: e.target.checked })}
                 className="rounded text-blue-600"
               />
-              <span>Study Advisor memory</span>
+              <span>{isKhmer ? 'ការចងចាំទីប្រឹក្សាសិក្សា' : 'Study Advisor memory'}</span>
             </label>
             <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 p-3 cursor-pointer text-slate-800 dark:text-slate-200">
               <input
@@ -348,7 +348,7 @@ export const StudentEducationAndPrivacyPanel: React.FC = () => {
                 onChange={(e) => void handleConsentChange({ allowResearchInclusion: e.target.checked })}
                 className="rounded text-blue-600"
               />
-              <span>Anonymized research cohort</span>
+              <span>{isKhmer ? 'ការស្រាវជ្រាវអនាមិក' : 'Anonymized research cohort'}</span>
             </label>
           </div>
 
@@ -358,14 +358,18 @@ export const StudentEducationAndPrivacyPanel: React.FC = () => {
                 type="email"
                 value={parentEmail}
                 onChange={(e) => setParentEmail(e.target.value)}
-                placeholder="Parent or guardian email (for under-18 students)"
+                placeholder={
+                  isKhmer
+                    ? 'អ៊ីមែលឪពុកម្តាយ ឬអាណាព្យាបាល (សម្រាប់សិស្សក្រោម ១៨ ឆ្នាំ)'
+                    : 'Parent or guardian email (for under-18 students)'
+                }
                 className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 min-w-[230px]"
               />
               <button
                 type="submit"
                 className="rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
               >
-                Save Guardian Email
+                {isKhmer ? 'រក្សាទុកអ៊ីមែលអាណាព្យាបាល' : 'Save Guardian Email'}
               </button>
             </form>
 
@@ -374,7 +378,7 @@ export const StudentEducationAndPrivacyPanel: React.FC = () => {
               onClick={() => void handleConsentChange({ withdrawAll: true })}
               className="rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/50 px-3 py-2 text-xs font-semibold text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/60 cursor-pointer"
             >
-              Turn Off All Optional Sharing
+              {isKhmer ? 'បិទការចែករំលែកទាំងអស់' : 'Turn Off All Optional Sharing'}
             </button>
           </div>
         </div>

@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Brain, Lock, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import {
   memoryClient,
   type HermesFactCategory,
@@ -23,6 +24,8 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
   onNavigateTab,
 }) => {
   const { authenticated } = useAuth();
+  const { language } = useLanguage();
+  const isKhmer = language === 'km';
   const [snapshot, setSnapshot] = useState<HermesMemorySnapshotResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +39,8 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
   const [newFactEntities, setNewFactEntities] = useState('');
   const [editingFactId, setEditingFactId] = useState<string | null>(null);
   const [editingFactText, setEditingFactText] = useState('');
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   const loadSnapshot = useCallback(async () => {
     if (!authenticated) return;
@@ -55,6 +60,10 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
 
   useEffect(() => {
     void loadSnapshot();
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      searchAbortRef.current?.abort();
+    };
   }, [loadSnapshot]);
 
   const handleSaveDoc = async (docType: 'USER' | 'MEMORY'): Promise<void> => {
@@ -102,17 +111,28 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
     }
   };
 
-  const handleSearchFacts = async (q: string): Promise<void> => {
+  const handleSearchFacts = (q: string): void => {
     setSearchQuery(q);
     if (!authenticated || !snapshot?.enabled) return;
-    try {
-      const res = q.trim()
-        ? await memoryClient.searchFacts(q.trim())
-        : await memoryClient.getSnapshot(false);
-      setSnapshot((prev) => (prev ? { ...prev, facts: res.facts } : prev));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Fact search failed.');
-    }
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      searchAbortRef.current?.abort();
+      const controller = new AbortController();
+      searchAbortRef.current = controller;
+      const req = q.trim()
+        ? memoryClient.searchFacts(q.trim(), controller.signal)
+        : memoryClient.getSnapshot(false, controller.signal);
+      void req
+        .then((res) => {
+          if (!controller.signal.aborted) {
+            setSnapshot((prev) => (prev ? { ...prev, facts: res.facts } : prev));
+          }
+        })
+        .catch((err) => {
+          if (err instanceof DOMException && err.name === 'AbortError') return;
+          setError(err instanceof Error ? err.message : 'Fact search failed.');
+        });
+    }, 220);
   };
 
   const handleFeedback = async (
@@ -151,10 +171,12 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
       <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
         <Lock className="w-8 h-8 text-blue-600 mx-auto" />
         <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-          Sign in to enable My Growth Memory
+          {isKhmer ? 'សូមចូលគណនីដើម្បីបើកការចងចាំការសិក្សា' : 'Sign in to enable My Growth Memory'}
         </h2>
         <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mx-auto">
-          Study Advisor remembers your study style, target universities, and Bac II milestones across sessions once you sign in and enable AI memory consent.
+          {isKhmer
+            ? 'ទីប្រឹក្សាសិក្សានឹងចងចាំវិធីសិក្សា សាកលវិទ្យាល័យគោលដៅ និងគោលដៅ Bac II របស់អ្នកនៅពេលអ្នកចូលគណនី និងបើកការយល់ព្រម។'
+            : 'Study Advisor remembers your study style, target universities, and Bac II milestones across sessions once you sign in and enable AI memory consent.'}
         </p>
       </div>
     );

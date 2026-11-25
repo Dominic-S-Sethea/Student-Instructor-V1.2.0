@@ -33,6 +33,8 @@ import {
   Flame,
   Zap,
 } from 'lucide-react';
+import { apiFetchRaw } from '../../services/apiClient';
+import { useAuth } from '../../context/AuthContext';
 
 interface ExperimentGroup {
   id: string;
@@ -165,20 +167,29 @@ export const ResearchLaboratoryView: React.FC = () => {
   const [selectedCohort, setSelectedCohort] = useState<TeacherCohort | null>(null);
 
   // Telemetry & Privacy
-  const [telemetryEvents, setTelemetryEvents] = useState<any[]>([]);
-  const [anonymizedDataset, setAnonymizedDataset] = useState<any[]>([]);
+  const [telemetryEvents, setTelemetryEvents] = useState<
+    Array<{
+      id: string;
+      event_name: string;
+      timestamp: string;
+      anonymized_id: string;
+      metric_value: number | string | null;
+    }>
+  >([]);
+  const [anonymizedDataset, setAnonymizedDataset] = useState<Array<Record<string, unknown>>>([]);
+  const { user } = useAuth();
+  const effectiveStudentId = user?.id || '';
 
   // Fetch initial research laboratory data
   useEffect(() => {
-    fetchResearchData();
-  }, []);
+    void fetchResearchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveStudentId]);
 
-  const fetchResearchData = async () => {
+  const fetchResearchData = async (): Promise<void> => {
     setLoading(true);
     try {
-      // 1. Fetch experiments
-      const expRes = await fetch('/api/research/experiments');
-      const expJson = await expRes.json();
+      const expJson = await apiFetchRaw<{ success?: boolean; data?: ResearchExperiment[] }>('/api/research/experiments');
       if (expJson.success && Array.isArray(expJson.data)) {
         setExperiments(expJson.data);
         if (expJson.data.length > 0) {
@@ -186,40 +197,36 @@ export const ResearchLaboratoryView: React.FC = () => {
         }
       }
 
-      // 2. Fetch mastery states
-      const mstRes = await fetch('/api/learning-science/mastery/usr-student-01');
-      const mstJson = await mstRes.json();
-      if (mstJson.success && mstJson.data?.concepts) {
-        setMasteryStates(mstJson.data.concepts);
+      if (effectiveStudentId) {
+        const encodedId = encodeURIComponent(effectiveStudentId);
+        const mstJson = await apiFetchRaw<{ success?: boolean; data?: { concepts?: MasteryState[] } }>(
+          `/api/learning-science/mastery/${encodedId}`
+        );
+        if (mstJson.success && mstJson.data?.concepts) {
+          setMasteryStates(mstJson.data.concepts);
+        }
+
+        const zpdJson = await apiFetchRaw<{ success?: boolean; data?: typeof zpdData }>(
+          `/api/learning-science/zpd/${encodedId}`
+        );
+        if (zpdJson.success && zpdJson.data) {
+          setZpdData(zpdJson.data);
+        }
       }
 
-      // 3. Fetch ZPD
-      const zpdRes = await fetch('/api/learning-science/zpd/usr-student-01');
-      const zpdJson = await zpdRes.json();
-      if (zpdJson.success) {
-        setZpdData(zpdJson.data);
-      }
+      void updateRetentionForecast(14, 2);
 
-      // 4. Fetch retention forecast initial
-      updateRetentionForecast(14, 2);
-
-      // 5. Fetch teaching methods
-      const tmRes = await fetch('/api/learning-science/teaching-methods');
-      const tmJson = await tmRes.json();
-      if (tmJson.success) {
+      const tmJson = await apiFetchRaw<{ success?: boolean; data?: typeof teachingSummary }>('/api/learning-science/teaching-methods');
+      if (tmJson.success && tmJson.data) {
         setTeachingSummary(tmJson.data);
       }
 
-      // 6. Fetch knowledge map
-      const kmRes = await fetch('/api/learning-science/knowledge-map');
-      const kmJson = await kmRes.json();
+      const kmJson = await apiFetchRaw<{ success?: boolean; data?: KnowledgeAggregate[] }>('/api/learning-science/knowledge-map');
       if (kmJson.success && Array.isArray(kmJson.data)) {
         setKnowledgeAggregates(kmJson.data);
       }
 
-      // 7. Fetch teacher cohorts
-      const tcRes = await fetch('/api/learning-science/teacher-intelligence');
-      const tcJson = await tcRes.json();
+      const tcJson = await apiFetchRaw<{ success?: boolean; data?: TeacherCohort[] }>('/api/learning-science/teacher-intelligence');
       if (tcJson.success && Array.isArray(tcJson.data)) {
         setTeacherCohorts(tcJson.data);
         if (tcJson.data.length > 0) {
@@ -227,15 +234,25 @@ export const ResearchLaboratoryView: React.FC = () => {
         }
       }
 
-      // 8. Fetch telemetry & anonymized dataset
-      const telemRes = await fetch('/api/learning-science/telemetry');
-      const telemJson = await telemRes.json();
+      const telemJson = await apiFetchRaw<{
+        success?: boolean;
+        data?: {
+          recent?: Array<{
+            id: string;
+            event_name: string;
+            timestamp: string;
+            anonymized_id: string;
+            metric_value: number | string | null;
+          }>;
+        };
+      }>('/api/learning-science/telemetry');
       if (telemJson.success && telemJson.data) {
         setTelemetryEvents(telemJson.data.recent || []);
       }
 
-      const anonRes = await fetch('/api/research/anonymized-dataset');
-      const anonJson = await anonRes.json();
+      const anonJson = await apiFetchRaw<{ success?: boolean; data?: Array<Record<string, unknown>> }>(
+        '/api/research/anonymized-dataset'
+      );
       if (anonJson.success && Array.isArray(anonJson.data)) {
         setAnonymizedDataset(anonJson.data);
       }
@@ -246,15 +263,16 @@ export const ResearchLaboratoryView: React.FC = () => {
     }
   };
 
-  const updateRetentionForecast = async (days: number, reviews: number) => {
+  const updateRetentionForecast = async (days: number, reviews: number): Promise<void> => {
     try {
-      const res = await fetch('/api/learning-science/retention-forecast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ daysElapsed: days, reviewCount: reviews }),
-      });
-      const json = await res.json();
-      if (json.success) {
+      const json = await apiFetchRaw<{ success?: boolean; data?: typeof retentionForecast }>(
+        '/api/learning-science/retention-forecast',
+        {
+          method: 'POST',
+          body: JSON.stringify({ daysElapsed: days, reviewCount: reviews }),
+        }
+      );
+      if (json.success && json.data) {
         setRetentionForecast(json.data);
       }
     } catch (err) {
@@ -263,28 +281,29 @@ export const ResearchLaboratoryView: React.FC = () => {
   };
 
   // Interactive BKT Trial Simulation
-  const handleSimulateQuestionAttempt = async (isCorrect: boolean) => {
+  const handleSimulateQuestionAttempt = async (isCorrect: boolean): Promise<void> => {
+    if (!effectiveStudentId) return;
     setSimulatingBKT(true);
     try {
-      const res = await fetch('/api/learning-science/mastery/update', {
+      const json = await apiFetchRaw<{
+        success?: boolean;
+        data?: { previousMastery: number; updatedMastery: number; masteryStatus: MasteryState['mastery_status'] };
+      }>('/api/learning-science/mastery/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          studentId: 'usr-student-01',
+          studentId: effectiveStudentId,
           conceptId: activeConceptId,
           isCorrect,
           teachingMethod: 'interactive',
         }),
       });
-      const json = await res.json();
-      if (json.success) {
+      if (json.success && json.data) {
         const update = json.data;
         const msg = `[BKT Update] Opportunity #${new Date().toLocaleTimeString()} - Outcome: ${
           isCorrect ? 'Correct (+)' : 'Incorrect (-)'
         } | P(L): ${(update.previousMastery * 100).toFixed(1)}% -> ${(update.updatedMastery * 100).toFixed(1)}% (${update.masteryStatus.toUpperCase()})`;
         setBktSimulationLog((prev) => [msg, ...prev.slice(0, 7)]);
 
-        // Refresh mastery states list
         setMasteryStates((prev) =>
           prev.map((c) =>
             c.concept_id === activeConceptId
@@ -308,11 +327,10 @@ export const ResearchLaboratoryView: React.FC = () => {
   };
 
   // Generate National MoEYS Report
-  const handleGenerateReport = async () => {
+  const handleGenerateReport = async (): Promise<void> => {
     try {
-      const res = await fetch('/api/learning-science/education-report');
-      const json = await res.json();
-      if (json.success) {
+      const json = await apiFetchRaw<{ success?: boolean; data?: typeof educationReport }>('/api/learning-science/education-report');
+      if (json.success && json.data) {
         setEducationReport(json.data);
         setReportModalOpen(true);
       }

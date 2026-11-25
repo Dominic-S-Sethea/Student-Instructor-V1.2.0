@@ -29,6 +29,8 @@ import {
 } from '../../types/scholarship';
 import { scholarshipClient } from '../../services/scholarshipClient';
 import { apiFetchRaw } from '../../services/apiClient';
+import { useEscapeKey } from '../../hooks/useModalAccessibility';
+import { getSafeHttpUrl } from '../../utils/safeUrl';
 
 interface ScholarshipAdminModalProps {
   isOpen: boolean;
@@ -50,6 +52,8 @@ export const ScholarshipAdminModal: React.FC<ScholarshipAdminModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  useEscapeKey(isOpen, onClose);
 
   // AI Extraction state
   const [rawText, setRawText] = useState(
@@ -135,8 +139,13 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
 
   const handleResolveReport = async (repId: string, applyFix: boolean) => {
     try {
-      await scholarshipClient.resolveErrorReport(repId, applyFix ? 'Verified & Fixed' : 'Dismissed');
-      notifySuccess('Report resolved.');
+      await scholarshipClient.resolveErrorReport(
+        repId,
+        applyFix ? 'Verified & Fixed' : 'Dismissed',
+        undefined,
+        applyFix
+      );
+      notifySuccess(applyFix ? 'Report resolved and correction applied.' : 'Report dismissed.');
       void loadAdminData();
       onRefreshData();
     } catch (err) {
@@ -197,7 +206,7 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
     setActionError(null);
     try {
       const res = await apiFetchRaw<{ success: boolean; extractedData?: Record<string, unknown>; data?: Record<string, unknown> }>(
-        '/api/scholarships/ai-extract',
+        '/api/scholarships/extract',
         { method: 'POST', body: JSON.stringify({ rawText }) }
       );
       setExtractedResult(res.extractedData || res.data || null);
@@ -232,9 +241,14 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
       role="dialog"
       aria-modal="true"
+      aria-label="CSIP Editorial and Verification Admin"
       id="scholarship-admin-modal"
+      onClick={onClose}
     >
-      <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6 max-h-[92vh] flex flex-col">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden my-6 max-h-[92vh] flex flex-col"
+      >
         {/* Header */}
         <div className="bg-slate-950 text-white p-5 px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -367,15 +381,19 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
                       </div>
 
                       <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                        <a
-                          href={sub.officialWebsite}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline inline-flex items-center gap-1 font-semibold"
-                        >
-                          <span>Official Portal ({sub.officialWebsite})</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
+                        {getSafeHttpUrl(sub.officialWebsite) ? (
+                          <a
+                            href={getSafeHttpUrl(sub.officialWebsite)!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline inline-flex items-center gap-1 font-semibold"
+                          >
+                            <span>Official Portal ({sub.officialWebsite})</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 text-xs">Invalid portal URL</span>
+                        )}
 
                         {sub.status === 'Pending Admin Review' && (
                           <div className="flex items-center gap-2">
@@ -661,7 +679,7 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
                 />
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400 text-[11px]">Powered by @google/genai & gemini-3.1-flash-lite</span>
+                  <span className="text-slate-400 text-[11px]">Powered by @google/genai &amp; gemini-3.5-flash-lite</span>
                   <button
                     onClick={handleRunAiExtraction}
                     disabled={isExtracting}

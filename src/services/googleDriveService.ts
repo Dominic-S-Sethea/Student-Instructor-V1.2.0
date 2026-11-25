@@ -49,9 +49,7 @@ async function getFirebaseAuthInstance() {
   const app = !getApps().length ? initializeApp(cfg) : getApp();
   const auth = getAuth(app);
   const provider = new GoogleAuthProvider();
-  provider.addScope('https://www.googleapis.com/auth/drive');
   provider.addScope('https://www.googleapis.com/auth/drive.file');
-  provider.addScope('https://www.googleapis.com/auth/drive.readonly');
   return { auth, provider };
 }
 

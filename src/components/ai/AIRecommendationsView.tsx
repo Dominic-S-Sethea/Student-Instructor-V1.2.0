@@ -14,6 +14,7 @@ import {
   Filter
 } from 'lucide-react';
 import { ClientAIRecommendation } from '../../types';
+import { apiFetchRaw } from '../../services/apiClient';
 
 interface AIRecommendationsViewProps {
   studentId: string;
@@ -27,48 +28,46 @@ export const AIRecommendationsView: React.FC<AIRecommendationsViewProps> = ({
   const [recommendations, setRecommendations] = useState<ClientAIRecommendation[]>([]);
   const [filterType, setFilterType] = useState<'all' | 'learning' | 'career' | 'scholarship'>('all');
   const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeFeedbackId, setActiveFeedbackId] = useState<string | null>(null);
   const [feedbackRating, setFeedbackRating] = useState<number>(5);
   const [feedbackComment, setFeedbackComment] = useState<string>('');
   const [feedbackSuccessToast, setFeedbackSuccessToast] = useState<string | null>(null);
 
-  const fetchRecommendations = async (forceRefresh = false) => {
+  const fetchRecommendations = async (forceRefresh = false): Promise<void> => {
     setIsLoading(true);
+    setErrorMsg(null);
     try {
-      const res = await fetch('/api/ai/recommend', {
+      const data = await apiFetchRaw<{ recommendations?: ClientAIRecommendation[] }>('/api/ai/recommend', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentId, forceRefresh })
       });
-      const data = await res.json();
       if (data && Array.isArray(data.recommendations)) {
         setRecommendations(data.recommendations);
       }
     } catch (err) {
-      console.error('Failed to load recommendations:', err);
+      setErrorMsg(err instanceof Error ? err.message : 'Unable to load recommendations.');
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchRecommendations();
+    void fetchRecommendations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId]);
 
-  const handleActionClick = async (rec: ClientAIRecommendation) => {
-    // Record 'clicked' action in feedback loop
+  const handleActionClick = async (rec: ClientAIRecommendation): Promise<void> => {
     try {
-      await fetch('/api/ai/feedback', {
+      await apiFetchRaw('/api/ai/feedback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recommendationId: rec.id, action: 'clicked' })
       });
-      // update local state
       setRecommendations(prev =>
         prev.map(r => (r.id === rec.id ? { ...r, status: 'clicked' } : r))
       );
-    } catch (err) {
-      console.error('Failed to record click feedback:', err);
+    } catch {
+      // Non-blocking telemetry click feedback
     }
 
     if (rec.action_link && onNavigateTab) {
@@ -82,31 +81,29 @@ export const AIRecommendationsView: React.FC<AIRecommendationsViewProps> = ({
     }
   };
 
-  const handleCompleteClick = async (recId: string) => {
+  const handleCompleteClick = async (recId: string): Promise<void> => {
     try {
-      const res = await fetch('/api/ai/feedback', {
+      const data = await apiFetchRaw<{ success?: boolean; recommendation?: ClientAIRecommendation }>('/api/ai/feedback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ recommendationId: recId, action: 'completed' })
       });
-      const data = await res.json();
       if (data.success && data.recommendation) {
+        const updated = data.recommendation;
         setRecommendations(prev =>
-          prev.map(r => (r.id === recId ? data.recommendation : r))
+          prev.map(r => (r.id === recId ? updated : r))
         );
         setFeedbackSuccessToast('Recommendation marked as Completed! AI priority re-weighted.');
         setTimeout(() => setFeedbackSuccessToast(null), 3500);
       }
     } catch (err) {
-      console.error('Failed to complete recommendation:', err);
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to complete recommendation.');
     }
   };
 
-  const submitRatingFeedback = async (recId: string) => {
+  const submitRatingFeedback = async (recId: string): Promise<void> => {
     try {
-      const res = await fetch('/api/ai/feedback', {
+      const data = await apiFetchRaw<{ success?: boolean; recommendation?: ClientAIRecommendation }>('/api/ai/feedback', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recommendationId: recId,
           action: 'clicked',
@@ -114,10 +111,10 @@ export const AIRecommendationsView: React.FC<AIRecommendationsViewProps> = ({
           comments: feedbackComment
         })
       });
-      const data = await res.json();
       if (data.success && data.recommendation) {
+        const updated = data.recommendation;
         setRecommendations(prev =>
-          prev.map(r => (r.id === recId ? data.recommendation : r))
+          prev.map(r => (r.id === recId ? updated : r))
         );
         setActiveFeedbackId(null);
         setFeedbackComment('');
@@ -125,7 +122,7 @@ export const AIRecommendationsView: React.FC<AIRecommendationsViewProps> = ({
         setTimeout(() => setFeedbackSuccessToast(null), 3500);
       }
     } catch (err) {
-      console.error('Failed to submit rating feedback:', err);
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to submit rating feedback.');
     }
   };
 
@@ -136,6 +133,11 @@ export const AIRecommendationsView: React.FC<AIRecommendationsViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {errorMsg && (
+        <div role="alert" className="p-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-xl text-red-700 dark:text-red-300 text-xs font-medium">
+          {errorMsg}
+        </div>
+      )}
       {/* Toast */}
       {feedbackSuccessToast && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs font-semibold flex items-center justify-between shadow-sm animate-fade-in">

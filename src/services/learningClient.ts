@@ -25,11 +25,11 @@ export interface ActivityWithStatus extends LearningActivity {
 }
 
 export interface RoadmapWithStatus extends LearningPath {
-  student_id: string;
-  is_enrolled: number;
+  student_id?: string;
+  is_enrolled: boolean | number;
   progress_percentage: number;
-  current_step_order: number;
-  current_step?: LearningPathStep;
+  current_step_order?: number;
+  current_step?: number | LearningPathStep;
 }
 
 export interface LearningRewardResponse {
@@ -71,12 +71,17 @@ export class LearningClient {
     });
   }
 
-  public async getExperimentResult(experimentId: string, _studentId?: string): Promise<LabExperimentResult> {
-    return apiGet<LabExperimentResult>(`${this.baseUrl}/experiments/${encodeURIComponent(experimentId)}`);
+  public async getExperimentResult(
+    experimentId: string,
+    _studentId?: string
+  ): Promise<{ experiment: LabExperiment; user_session: LabExperimentResult | null }> {
+    return apiGet<{ experiment: LabExperiment; user_session: LabExperimentResult | null }>(
+      `${this.baseUrl}/experiments/${encodeURIComponent(experimentId)}`
+    );
   }
 
-  public async getStudentProgress(_pathId?: string, _studentId?: string): Promise<StudentLearningPath> {
-    return apiGet<StudentLearningPath>(`${this.baseUrl}/paths`);
+  public async getStudentProgress(_pathId?: string, _studentId?: string): Promise<RoadmapWithStatus[]> {
+    return (await apiGet<RoadmapWithStatus[]>(`${this.baseUrl}/paths`)) || [];
   }
 
   public async enrollPath(_studentId: string, pathId: string): Promise<void> {
@@ -92,7 +97,7 @@ export class LearningClient {
   }
 
   public async trackEvent(eventType: string, payload: Record<string, unknown>): Promise<void> {
-    await apiPost(`${this.baseUrl}/analytics/event`, { ...payload, eventType });
+    await apiPost(`${this.baseUrl}/analytics/event`, { eventType, metadata: payload });
   }
 
   public async getContentCatalog(
@@ -110,7 +115,7 @@ export class LearningClient {
   }
 
   public async logAnalyticsEvent(eventType: string, payload?: Record<string, unknown>): Promise<void> {
-    await apiPost(`${this.baseUrl}/analytics/event`, { eventType, ...(payload || {}) });
+    await apiPost(`${this.baseUrl}/analytics/event`, { eventType, metadata: payload || {} });
   }
 
   public async getContentDetail(contentId: string, _studentId?: string): Promise<LearningContent> {

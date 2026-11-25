@@ -825,15 +825,17 @@ export const MajorsAndCareersView: React.FC<MajorsAndCareersViewProps> = ({
                         <span>{opp.matchScore}% Match for your Profile</span>
                       </span>
 
-                      <a
-                        href={opp.link}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center space-x-1.5 transition shadow-xs"
-                      >
-                        <span>Official Portal</span>
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
+                      {opp.link && /^https?:\/\//i.test(opp.link) && (
+                        <a
+                          href={opp.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center space-x-1.5 transition shadow-xs"
+                        >
+                          <span>Official Portal</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
                     </div>
                   </div>
                 );

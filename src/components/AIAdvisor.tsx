@@ -1,10 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Award,
   BookOpen,
-  Bot,
-  Brain,
-  Database,
   Layers,
   RotateCcw,
   Send,
@@ -13,8 +9,10 @@ import {
 } from 'lucide-react';
 import type { ChatMessage, Mentor, StudentProfile } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { useLanguage } from '../context/LanguageContext';
 import { guidanceClient } from '../services/guidanceClient';
 import { AdvisorMessageBubble } from './ai/AdvisorMessageBubble';
+import { AdvisorSubTabs, type AIAdvisorSubTab } from './ai/AdvisorSubTabs';
 import { AIRecommendationsView } from './ai/AIRecommendationsView';
 import { AIKnowledgeSearchView } from './ai/AIKnowledgeSearchView';
 import { AIMemoryProfileView } from './ai/AIMemoryProfileView';
@@ -25,36 +23,49 @@ interface AIAdvisorProps {
   studentProfile: StudentProfile;
   mentors: Mentor[];
   initialPrompt?: string;
+  onConsumeInitialPrompt?: () => void;
   onOpenBooking: (mentor: Mentor) => void;
   onNavigateTab?: (tab: string) => void;
 }
 
-type AIAdvisorSubTab = 'chat' | 'growth-memory' | 'recommendations' | 'education-os' | 'knowledge' | 'memory';
-
-const STARTER_CHIPS = [
+const STARTER_CHIPS_EN = [
   'Compare Computer Science at CADT vs ITC',
   'How should I prepare for Bac II to win a scholarship?',
   'Which major fits someone who likes tech and design?',
   'Explain fully funded scholarships open to Cambodian students',
 ];
 
+const STARTER_CHIPS_KM = [
+  'ប្រៀបធៀបជំនាញ Computer Science នៅ CADT និង ITC',
+  'តើគួរត្រៀមប្រឡង Bac II យ៉ាងណាដើម្បីឈ្នះអាហារូបករណ៍?',
+  'ជំនាញណាដែលត្រូវនឹងសិស្សចូលចិត្តបច្ចេកវិទ្យា និងឌីហ្សាញ?',
+  'ពន្យល់អំពីអាហារូបករណ៍ពេញលេញសម្រាប់សិស្សកម្ពុជា',
+];
+
+const MAX_HISTORY_MESSAGES = 28;
+const MAX_MESSAGE_CHARS = 3800;
+
 export const AIAdvisor: React.FC<AIAdvisorProps> = ({
-  studentProfile,
   mentors,
   initialPrompt,
+  onConsumeInitialPrompt,
   onOpenBooking,
   onNavigateTab,
 }) => {
   const { authenticated, user, profile: authProfile } = useAuth();
+  const { language } = useLanguage();
+  const isKhmer = language === 'km';
+  const isAdmin = user?.role === 'admin';
+  const starterChips = isKhmer ? STARTER_CHIPS_KM : STARTER_CHIPS_EN;
   const displayName = authenticated
-    ? authProfile?.name || user?.email?.split('@')[0] || 'Scholar'
-    : 'there';
+    ? authProfile?.name || user?.email?.split('@')[0] || (isKhmer ? 'សិស្ស' : 'Scholar')
+    : isKhmer ? 'អ្នក' : 'there';
 
   const [activeSubTab, setActiveSubTab] = useState<AIAdvisorSubTab>('chat');
   const [showAdvancedTools, setShowAdvancedTools] = useState(false);
   const [advisorMode, setAdvisorMode] = useState<'ready' | 'live' | 'offline'>('ready');
   const [expandedSourcesMsgId, setExpandedSourcesMsgId] = useState<string | null>(null);
-  const [input, setInput] = useState(initialPrompt || '');
+  const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -62,12 +73,11 @@ export const AIAdvisor: React.FC<AIAdvisorProps> = ({
     {
       id: 'welcome',
       sender: 'ai',
-      text: `### Welcome to Study Advisor
-Hello **${displayName}**! Ask me anything about choosing a major, comparing Cambodian universities (like ITC, CADT, RUPP, or UHS), preparing for Bac II, or planning scholarship applications.
-
-What would you like to figure out today?`,
+      text: isKhmer
+        ? `### សូមស្វាគមន៍មកកាន់ទីប្រឹក្សាសិក្សា\nសួស្តី **${displayName}**! សួរខ្ញុំអំពីការជ្រើសរើសមុខជំនាញ ការប្រៀបធៀបសាកលវិទ្យាល័យ (ITC, CADT, RUPP, UHS) ការត្រៀម Bac II ឬអាហារូបករណ៍។`
+        : `### Welcome to Study Advisor\nHello **${displayName}**! Ask me anything about choosing a major, comparing Cambodian universities (like ITC, CADT, RUPP, or UHS), preparing for Bac II, or planning scholarship applications.\n\nWhat would you like to figure out today?`,
       timestamp: 'Just now',
-      suggestedQuestions: STARTER_CHIPS,
+      suggestedQuestions: starterChips,
     },
   ]);
 
@@ -93,14 +103,25 @@ What would you like to figure out today?`,
     setInput('');
     setIsLoading(true);
 
+    const boundedMessages = nextHistory.slice(-MAX_HISTORY_MESSAGES).map((m) => ({
+      sender: m.sender === 'user' ? 'user' : 'model',
+      text: m.text.slice(0, MAX_MESSAGE_CHARS),
+    }));
+
+    const verifiedStudentContext = authenticated && authProfile
+      ? {
+          name: authProfile.name || undefined,
+          educationLevel: authProfile.education_level || undefined,
+          favoriteSubjects: Array.isArray(authProfile.favorite_subjects) ? authProfile.favorite_subjects : undefined,
+          targetMajor: authProfile.major || undefined,
+        }
+      : undefined;
+
     try {
       const advisorData = await guidanceClient.chat({
-        userPrompt: messageText,
-        studentProfile,
-        messages: nextHistory.map((m) => ({
-          sender: m.sender === 'user' ? 'user' : 'model',
-          text: m.text,
-        })),
+        userPrompt: messageText.slice(0, MAX_MESSAGE_CHARS),
+        studentProfile: verifiedStudentContext,
+        messages: boundedMessages,
       });
 
       setAdvisorMode(advisorData.mode === 'deterministic_offline' ? 'offline' : 'live');
@@ -147,7 +168,9 @@ What would you like to figure out today?`,
   useEffect(() => {
     if (initialPrompt && initialPrompt.trim() !== '') {
       setActiveSubTab('chat');
-      void handleSendMessage(initialPrompt);
+      const promptToRun = initialPrompt;
+      onConsumeInitialPrompt?.();
+      void handleSendMessage(promptToRun);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt]);
@@ -157,9 +180,11 @@ What would you like to figure out today?`,
       {
         id: `welcome-reset-${Date.now()}`,
         sender: 'ai',
-        text: `Fresh conversation started for **${displayName}**. What major, university, or scholarship question can I help with next?`,
+        text: isKhmer
+          ? `ការសន្ទនាថ្មីបានចាប់ផ្តើមសម្រាប់ **${displayName}**។ តើអ្នកចង់សួរអំពីជំនាញ សាកលវិទ្យាល័យ ឬអាហារូបករណ៍អ្វី?`
+          : `Fresh conversation started for **${displayName}**. What major, university, or scholarship question can I help with next?`,
         timestamp: 'Just now',
-        suggestedQuestions: STARTER_CHIPS,
+        suggestedQuestions: starterChips,
       },
     ]);
   };
@@ -173,7 +198,9 @@ What would you like to figure out today?`,
           </div>
           <div>
             <div className="flex items-center flex-wrap gap-2">
-              <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Study Advisor</h1>
+              <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                {isKhmer ? 'ទីប្រឹក្សាសិក្សា' : 'Study Advisor'}
+              </h1>
               <span
                 className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
                   advisorMode === 'live'
@@ -186,12 +213,14 @@ What would you like to figure out today?`,
                 {advisorMode === 'live'
                   ? 'Gemini 4 + MCP + Web Search'
                   : advisorMode === 'offline'
-                    ? 'Offline Guidance Mode'
-                    : 'Study Advisor + Memory'}
+                    ? isKhmer ? 'របៀបណែនាំក្រៅបណ្តាញ' : 'Offline Guidance Mode'
+                    : isKhmer ? 'ទីប្រឹក្សាសិក្សា + ការចងចាំ' : 'Study Advisor + Memory'}
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Friendly answers on Cambodian university majors, Bac II prep, and scholarships.
+              {isKhmer
+                ? 'ចម្លើយងាយយល់អំពីជំនាញសាកលវិទ្យាល័យ ការត្រៀម Bac II និងអាហារូបករណ៍។'
+                : 'Friendly answers on Cambodian university majors, Bac II prep, and scholarships.'}
             </p>
           </div>
         </div>
@@ -203,7 +232,11 @@ What would you like to figure out today?`,
             className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 inline-flex items-center gap-1.5 cursor-pointer"
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>{showAdvancedTools ? 'Hide Advanced Tools' : 'Advanced Tools'}</span>
+            <span>
+              {showAdvancedTools
+                ? isKhmer ? 'លាក់ឧបករណ៍បន្ថែម' : 'Hide Advanced Tools'
+                : isKhmer ? 'ឧបករណ៍បន្ថែម' : 'Advanced Tools'}
+            </span>
           </button>
           <button
             type="button"
@@ -217,94 +250,24 @@ What would you like to figure out today?`,
         </div>
       </div>
 
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('chat')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border cursor-pointer shrink-0 ${
-            activeSubTab === 'chat'
-              ? 'bg-blue-600 text-white border-blue-600'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Bot className="w-4 h-4" />
-          <span>Study Chat</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('growth-memory')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border cursor-pointer shrink-0 ${
-            activeSubTab === 'growth-memory'
-              ? 'bg-emerald-600 text-white border-emerald-600'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Brain className="w-4 h-4" />
-          <span>My Growth Memory</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('recommendations')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border cursor-pointer shrink-0 ${
-            activeSubTab === 'recommendations'
-              ? 'bg-blue-600 text-white border-blue-600'
-              : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-          }`}
-        >
-          <Award className="w-4 h-4" />
-          <span>Recommendations</span>
-        </button>
-
-        {showAdvancedTools && (
-          <>
-            <button
-              type="button"
-              onClick={() => setActiveSubTab('education-os')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border cursor-pointer shrink-0 ${
-                activeSubTab === 'education-os'
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-              }`}
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>Personal Education OS</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveSubTab('knowledge')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border cursor-pointer shrink-0 ${
-                activeSubTab === 'knowledge'
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-              }`}
-            >
-              <Database className="w-4 h-4" />
-              <span>Knowledge Search</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveSubTab('memory')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border cursor-pointer shrink-0 ${
-                activeSubTab === 'memory'
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-800'
-              }`}
-            >
-              <Brain className="w-4 h-4" />
-              <span>AI Memory</span>
-            </button>
-          </>
-        )}
-      </div>
+      <AdvisorSubTabs
+        activeSubTab={activeSubTab}
+        onSelectSubTab={setActiveSubTab}
+        showAdvancedTools={showAdvancedTools}
+        isKhmer={isKhmer}
+        isAdmin={isAdmin}
+        authenticated={authenticated}
+      />
 
       {activeSubTab === 'chat' && (
         <div className="space-y-4">
           <div className="bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-800 rounded-2xl px-4 py-2.5 text-xs text-amber-900 dark:text-amber-200 flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-amber-700 dark:text-amber-400 shrink-0" />
             <span>
-              <strong>Study Planning Aid:</strong> Answers help you explore majors and scholarships; always double-check official admission and deadline rules on university websites.
+              <strong>{isKhmer ? 'ជំនួយរៀបចំផែនការសិក្សា៖' : 'Study Planning Aid:'}</strong>{' '}
+              {isKhmer
+                ? 'ចម្លើយជួយអ្នកស្វែងយល់អំពីជំនាញ និងអាហារូបករណ៍ — សូមផ្ទៀងផ្ទាត់កាលបរិច្ឆេទ និងលក្ខខណ្ឌលើគេហទំព័រផ្លូវការជានិច្ច។'
+                : 'Answers help you explore majors and scholarships; always double-check official admission and deadline rules on university websites.'}
             </span>
           </div>
 
@@ -323,7 +286,7 @@ What would you like to figure out today?`,
               ))}
               {isLoading && (
                 <div className="text-xs text-slate-500 dark:text-slate-400 italic px-2">
-                  Study Advisor is thinking...
+                  {isKhmer ? 'ទីប្រឹក្សាសិក្សាកំពុងគិត...' : 'Study Advisor is thinking...'}
                 </div>
               )}
               <div ref={messagesEndRef} />
@@ -340,7 +303,12 @@ What would you like to figure out today?`,
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about a university, major, Bac II study tip, or scholarship..."
+                aria-label={isKhmer ? 'សួរទីប្រឹក្សាសិក្សា' : 'Ask the Study Advisor'}
+                placeholder={
+                  isKhmer
+                    ? 'សួរអំពីសាកលវិទ្យាល័យ មុខជំនាញ ការត្រៀម Bac II ឬអាហារូបករណ៍...'
+                    : 'Ask about a university, major, Bac II study tip, or scholarship...'
+                }
                 className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:border-blue-500"
               />
               <button
@@ -349,7 +317,7 @@ What would you like to figure out today?`,
                 className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs sm:text-sm font-bold inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <Send className="w-4 h-4" />
-                <span>Send</span>
+                <span>{isKhmer ? 'ផ្ញើ' : 'Send'}</span>
               </button>
             </form>
           </div>
@@ -359,10 +327,12 @@ What would you like to figure out today?`,
               <div className="text-xs text-slate-700 dark:text-slate-300">
                 <span className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                   <BookOpen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                  Want advice from a university senior?
+                  {isKhmer ? 'ចង់បានដំបូន្មានពីរៀមច្បងសាកលវិទ្យាល័យ?' : 'Want advice from a university senior?'}
                 </span>
                 <span className="block mt-0.5">
-                  Book a free 1-on-1 Q&amp;A session with seniors from ITC, CADT, and RUPP.
+                  {isKhmer
+                    ? 'កក់ការជជែកសំណួរ-ចម្លើយដោយឥតគិតថ្លៃជាមួយរៀមច្បងពី ITC, CADT និង RUPP។'
+                    : 'Book a free 1-on-1 Q&A session with seniors from ITC, CADT, and RUPP.'}
                 </span>
               </div>
               <button
@@ -370,7 +340,7 @@ What would you like to figure out today?`,
                 onClick={() => onOpenBooking(mentors[0])}
                 className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shrink-0 cursor-pointer"
               >
-                Meet a Senior Mentor
+                {isKhmer ? 'ជួបរៀមច្បងណែនាំ' : 'Meet a Senior Mentor'}
               </button>
             </div>
           )}
@@ -378,21 +348,20 @@ What would you like to figure out today?`,
       )}
 
       {activeSubTab === 'growth-memory' && <GrowthMemoryPanel onNavigateTab={onNavigateTab} />}
-      {activeSubTab === 'recommendations' && (
-        <AIRecommendationsView
-          studentId={user?.id || studentProfile.id || 'usr-student-01'}
-          onNavigateTab={onNavigateTab}
-        />
+      {activeSubTab === 'recommendations' && authenticated && user?.id && (
+        <AIRecommendationsView studentId={user.id} onNavigateTab={onNavigateTab} />
       )}
-      {activeSubTab === 'education-os' && (
-        <PersonalEducationOSView
-          studentId={user?.id || studentProfile.id || 'usr-student-01'}
-          onNavigateTab={onNavigateTab}
-        />
+      {activeSubTab === 'recommendations' && !authenticated && (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center text-sm text-slate-600 dark:text-slate-300">
+          {isKhmer ? 'សូមចូលគណនីដើម្បីមើលការណែនាំផ្ទាល់ខ្លួនរបស់អ្នក។' : 'Sign in to view personalized recommendations.'}
+        </div>
+      )}
+      {activeSubTab === 'education-os' && isAdmin && user?.id && (
+        <PersonalEducationOSView studentId={user.id} onNavigateTab={onNavigateTab} />
       )}
       {activeSubTab === 'knowledge' && <AIKnowledgeSearchView />}
-      {activeSubTab === 'memory' && (
-        <AIMemoryProfileView studentId={user?.id || studentProfile.id || 'usr-student-01'} />
+      {activeSubTab === 'memory' && authenticated && user?.id && (
+        <AIMemoryProfileView studentId={user.id} />
       )}
     </div>
   );

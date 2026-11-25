@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { authClient, AuthUser, EducationEntry, SessionState, StudentProfile } from '../services/authClient';
 import { analytics } from '../utils/analytics';
+import { clearLegacyUnscopedSavedScholarships } from '../utils/savedScholarships';
 
 interface AuthContextValue {
   authenticated: boolean;
@@ -97,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setEducation([]);
     analytics.setUserId('guest');
     analytics.clear();
+    clearLegacyUnscopedSavedScholarships();
   }, []);
 
   const setProfileData = useCallback((nextProfile: StudentProfile | null, nextEducation: EducationEntry[]) => {

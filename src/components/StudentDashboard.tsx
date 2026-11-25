@@ -23,27 +23,13 @@ import type { ScholarshipItem } from '../types/scholarship';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
 import { scholarshipClient } from '../services/scholarshipClient';
+import { readSavedScholarshipIds } from '../utils/savedScholarships';
 import { UpcomingDeadlinesStrip } from './dashboard/UpcomingDeadlinesStrip';
 
 interface StudentDashboardProps {
   studentProfile: StudentProfile;
   mentors: Mentor[];
   opportunities: OpportunityItem[];
-  events?: Array<{
-    id: string;
-    title: string;
-    category: string;
-    date: string;
-    hostName: string;
-    description?: string;
-  }>;
-  communityPosts?: Array<{
-    id: string;
-    title: string;
-    category: string;
-    authorName: string;
-    commentsCount: number;
-  }>;
   meetups?: StudentMeetup[];
   majorInsights?: UniversityMajorInsight[];
   onNavigateTab?: (tab: TabView) => void;
@@ -52,26 +38,13 @@ interface StudentDashboardProps {
   canGoBack?: boolean;
   onSelectMentor?: (mentor: Mentor) => void;
   onOpenBooking?: (mentor: Mentor) => void;
-  onSelectOpportunity?: (opp: OpportunityItem) => void;
   onOpenMajorInsight?: (major: UniversityMajorInsight) => void;
-  onSelectEvent?: (event: { id: string; title: string }) => void;
   onSelectPrompt?: (promptText: string) => void;
   onStartAIChatWithPrompt?: (prompt: string) => void;
   onToggleSaveMentor?: (mentorId: string) => void;
   onToggleSaveOpportunity?: (oppId: string) => void;
   onOpenMeetup?: (meetup: StudentMeetup) => void;
   onOpenAuthModal?: () => void;
-}
-
-function getSavedScholarshipCount(): number {
-  try {
-    const raw = localStorage.getItem('csip_saved_scholarships');
-    if (!raw) return 0;
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.length : 0;
-  } catch {
-    return 0;
-  }
 }
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({
@@ -84,13 +57,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const { language } = useLanguage();
   const isKhmer = language === 'km';
   const { authenticated, user, profile: authProfile } = useAuth();
+  const scopeId = authenticated ? user?.id ?? null : null;
 
   const [aiQuestion, setAiQuestion] = useState('');
   const [liveScholarships, setLiveScholarships] = useState<ScholarshipItem[]>([]);
   const [totalScholarships, setTotalScholarships] = useState<number>(0);
   const [loadingScholarships, setLoadingScholarships] = useState(true);
   const [scholarshipError, setScholarshipError] = useState<string | null>(null);
-  const [savedCount, setSavedCount] = useState<number>(getSavedScholarshipCount);
+  const [savedCount, setSavedCount] = useState<number>(() => readSavedScholarshipIds(scopeId).length);
 
   const navigate = (tab: TabView): void => {
     if (onNavigate) onNavigate(tab);
@@ -127,8 +101,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
   useEffect(() => {
     void loadUpcomingDeadlines();
-    setSavedCount(getSavedScholarshipCount());
   }, [loadUpcomingDeadlines]);
+
+  useEffect(() => {
+    setSavedCount(readSavedScholarshipIds(scopeId).length);
+  }, [scopeId]);
 
   const upcomingStrip = useMemo(() => {
     const open = liveScholarships.filter((s) => s.deadlineStatus !== 'expired');
@@ -142,6 +119,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const hasSchoolOrMajor = Boolean(
     authenticated && (authProfile?.school?.trim() || authProfile?.major?.trim())
   );
+
+  const readyCount = [authenticated, hasSchoolOrMajor, savedCount > 0].filter(Boolean).length;
 
   const quickPrompts = isKhmer
     ? [
@@ -240,7 +219,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
               </div>
               <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
                 {loadingScholarships
-                  ? 'Loading...'
+                  ? isKhmer ? 'កំពុងផ្ទុក...' : 'Loading...'
                   : `${totalScholarships} ${isKhmer ? 'កម្មវិធី' : 'verified grants'}`}
               </span>
             </div>
@@ -270,7 +249,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <Compass className="w-5 h-5" />
               </div>
               <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                2 min • 5 steps
+                {isKhmer ? '២ នាទី • ៥ ជំហាន' : '2 min • 5 steps'}
               </span>
             </div>
             <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -299,7 +278,7 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
                 <CheckCircle2 className="w-5 h-5" />
               </div>
               <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                {[authenticated, hasSchoolOrMajor, savedCount > 0].filter(Boolean).length}/3 ready
+                {isKhmer ? `${readyCount}/3 រួចរាល់` : `${readyCount}/3 ready`}
               </span>
             </div>
             <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
@@ -307,27 +286,15 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
             </h2>
             <ul className="space-y-2 text-xs text-slate-700 dark:text-slate-300">
               <li className="flex items-center gap-2">
-                {authenticated ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                ) : (
-                  <Circle className="w-4 h-4 text-slate-400 shrink-0" />
-                )}
+                {authenticated ? <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" /> : <Circle className="w-4 h-4 text-slate-400 shrink-0" />}
                 <span>{isKhmer ? 'ចូលគណនីផ្ទាល់ខ្លួនដោយសុវត្ថិភាព' : 'Create or sign in to your private account'}</span>
               </li>
               <li className="flex items-center gap-2">
-                {hasSchoolOrMajor ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                ) : (
-                  <Circle className="w-4 h-4 text-slate-400 shrink-0" />
-                )}
+                {hasSchoolOrMajor ? <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" /> : <Circle className="w-4 h-4 text-slate-400 shrink-0" />}
                 <span>{isKhmer ? 'បន្ថែមថ្នាក់រៀន សាលា និងមុខជំនាញគោលដៅ' : 'Add your grade, school, and target major'}</span>
               </li>
               <li className="flex items-center gap-2">
-                {savedCount > 0 ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                ) : (
-                  <Circle className="w-4 h-4 text-slate-400 shrink-0" />
-                )}
+                {savedCount > 0 ? <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" /> : <Circle className="w-4 h-4 text-slate-400 shrink-0" />}
                 <span>{isKhmer ? 'រក្សាទុកអាហារូបករណ៍ដែលអ្នកចាប់អារម្មណ៍' : 'Bookmark scholarships to track deadlines'}</span>
               </li>
             </ul>
@@ -359,59 +326,47 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
 
       {/* 4. Secondary Quick Study Spaces Row */}
       <section aria-label="Quick study spaces" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <button
-          type="button"
-          onClick={() => navigate('university-intelligence')}
-          className="text-left rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-500 p-4 transition-colors cursor-pointer flex items-center gap-3.5"
-        >
-          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-            <Building2 className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-              {isKhmer ? 'ប្រៀបធៀបសាកលវិទ្យាល័យ' : 'Compare Universities'}
+        {[
+          {
+            tab: 'university-intelligence' as TabView,
+            icon: <Building2 className="w-5 h-5" />,
+            box: 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400',
+            hover: 'hover:border-blue-400 dark:hover:border-blue-500',
+            title: isKhmer ? 'ប្រៀបធៀបសាកលវិទ្យាល័យ' : 'Compare Universities',
+            desc: isKhmer ? 'ថ្លៃសិក្សា និងកម្មវិធីសិក្សាកម្ពុជា' : 'Tuition, majors & Year 1–4 courses',
+          },
+          {
+            tab: 'stem-discovery' as TabView,
+            icon: <Sparkles className="w-5 h-5" />,
+            box: 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400',
+            hover: 'hover:border-emerald-400 dark:hover:border-emerald-500',
+            title: isKhmer ? 'ល្បែងសិក្សា STEM' : 'STEM Discovery Lab',
+            desc: isKhmer ? 'សាកល្បងល្បែងឡូហ្ស៊ីក និងវិទ្យាសាស្ត្រ' : 'No-stress logic and circuit puzzles',
+          },
+          {
+            tab: 'mentors' as TabView,
+            icon: <Users className="w-5 h-5" />,
+            box: 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400',
+            hover: 'hover:border-amber-400 dark:hover:border-amber-500',
+            title: isKhmer ? 'រៀមច្បងណែនាំ និងក្រុមសិក្សា' : 'Mentors & Study Circles',
+            desc: isKhmer ? 'ជួបជាមួយរៀមច្បង ITC, CADT និង RUPP' : 'Talk with seniors from local campuses',
+          },
+        ].map((item) => (
+          <button
+            key={item.tab}
+            type="button"
+            onClick={() => navigate(item.tab)}
+            className={`text-left rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 ${item.hover} p-4 transition-colors cursor-pointer flex items-center gap-3.5`}
+          >
+            <div className={`w-10 h-10 rounded-xl ${item.box} flex items-center justify-center shrink-0`}>
+              {item.icon}
             </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">
-              {isKhmer ? 'ថ្លៃសិក្សា និងកម្មវិធីសិក្សាកម្ពុជា' : 'Tuition, majors & Year 1–4 courses'}
+            <div>
+              <div className="text-sm font-bold text-slate-900 dark:text-slate-100">{item.title}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">{item.desc}</div>
             </div>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => navigate('stem-discovery')}
-          className="text-left rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-400 dark:hover:border-emerald-500 p-4 transition-colors cursor-pointer flex items-center gap-3.5"
-        >
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-              {isKhmer ? 'ល្បែងសិក្សា STEM' : 'STEM Discovery Lab'}
-            </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">
-              {isKhmer ? 'សាកល្បងល្បែងឡូហ្ស៊ីក និងវិទ្យាសាស្ត្រ' : 'No-stress logic and circuit puzzles'}
-            </div>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => navigate('mentors')}
-          className="text-left rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-amber-400 dark:hover:border-amber-500 p-4 transition-colors cursor-pointer flex items-center gap-3.5"
-        >
-          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-              {isKhmer ? 'រៀមច្បងណែនាំ និងក្រុមសិក្សា' : 'Mentors & Study Circles'}
-            </div>
-            <div className="text-xs text-slate-500 dark:text-slate-400">
-              {isKhmer ? 'ជួបជាមួយរៀមច្បង ITC, CADT និង RUPP' : 'Talk with seniors from local campuses'}
-            </div>
-          </div>
-        </button>
+          </button>
+        ))}
       </section>
     </div>
   );

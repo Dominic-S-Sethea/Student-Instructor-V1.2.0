@@ -15,12 +15,16 @@ export function createDecisionRouter(): Router {
       mathAbility?: string;
       strengths?: string[];
       budgetTier?: string;
+      workStyle?: string;
+      careerGoal?: string;
     };
 
     const interests = Array.isArray(body.interests) ? body.interests : [];
     const strengths = Array.isArray(body.strengths) ? body.strengths : [];
     const mathAbility = body.mathAbility || '';
     const budgetTier = body.budgetTier || '';
+    const workStyle = typeof body.workStyle === 'string' ? body.workStyle : '';
+    const careerGoal = typeof body.careerGoal === 'string' ? body.careerGoal : '';
 
     const hatesMath = mathAbility === 'hates_math';
     const lovesCoding = interests.includes('Technology') || strengths.includes('Logic');
@@ -52,6 +56,13 @@ export function createDecisionRouter(): Router {
       topMajor = 'Accounting & Finance (ACCA Track)';
       alternativeMajor = 'International Business & FinTech';
       fitReason = 'Business and communication strengths align with finance and management tracks.';
+    }
+
+    const styleHints: string[] = [];
+    if (workStyle) styleHints.push(`study style (${workStyle.replace(/_/g, ' ')})`);
+    if (careerGoal) styleHints.push(`career goal (${careerGoal.replace(/_/g, ' ')})`);
+    if (styleHints.length > 0) {
+      fitReason = `${fitReason} Considered ${styleHints.join(' and ')}.`;
     }
 
     const recommendedUniversities: Array<Record<string, unknown>> = [];

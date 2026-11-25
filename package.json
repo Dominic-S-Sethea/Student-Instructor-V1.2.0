@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
-    "test": "tsx server/tests/backend.test.ts && tsx server/tests/secretScan.test.ts && tsx server/tests/startupAndMigrations.test.ts && tsx server/tests/authOwnershipConsent.test.ts && tsx server/tests/catalogAccuracyAndEditorial.test.ts && tsx server/tests/guidanceAndPackaging.test.ts && tsx server/tests/mcpAndHermesMemory.test.ts && tsx server/tests/phase3ApiHardening.test.ts",
+    "test": "tsx server/tests/backend.test.ts && tsx server/tests/secretScan.test.ts && tsx server/tests/startupAndMigrations.test.ts && tsx server/tests/authOwnershipConsent.test.ts && tsx server/tests/catalogAccuracyAndEditorial.test.ts && tsx server/tests/guidanceAndPackaging.test.ts && tsx server/tests/mcpAndHermesMemory.test.ts && tsx server/tests/phase3ApiHardening.test.ts && tsx server/tests/phase4FrontendContracts.test.ts",
     "test:coverage": "node scripts/run-coverage.mjs",
     "audit:dep": "npm audit --omit=dev",
     "retention:cron": "node server/db/retention_cron.js"

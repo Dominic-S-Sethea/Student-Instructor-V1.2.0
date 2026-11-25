@@ -47,30 +47,39 @@ import { ScholarshipSavedDrawer } from './scholarships/ScholarshipSavedDrawer';
 import { ScholarshipAdminModal } from './scholarships/ScholarshipAdminModal';
 import { TopUniversityDirectory } from './topUniversities/TopUniversityDirectory';
 import { allTopUniversityPrograms } from '../data/topUniversities';
+import {
+  clearLegacyUnscopedSavedScholarships,
+  readSavedScholarshipIds,
+  writeSavedScholarshipIds,
+} from '../utils/savedScholarships';
 
 export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => void }> = ({ onOpenAuthModal }) => {
   const { language, t } = useLanguage();
   const { authenticated, user, profile: authProfile, logout } = useAuth();
   const isKhmer = language === 'km';
+  const accountScopeId = authenticated ? user?.id ?? null : null;
 
   // Directory View Mode
   const [directoryView, setDirectoryView] = useState<'top_universities' | 'flagship'>('flagship');
 
   // Data state
   const [scholarships, setScholarships] = useState<ScholarshipItem[]>(initialScholarships);
+  const [catalogById, setCatalogById] = useState<Record<string, ScholarshipItem>>(() =>
+    Object.fromEntries(initialScholarships.map((item) => [item.id, item]))
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [accessNotice, setAccessNotice] = useState<string | null>(null);
 
-  // Bookmarked IDs
+  // Account-scoped bookmarked IDs (never fabricated defaults)
   const [savedIds, setSavedIds] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem('csip_saved_scholarships');
-      return stored ? JSON.parse(stored) : ['sch-chevening-uk', 'sch-cadt-mptc'];
-    } catch {
-      return ['sch-chevening-uk', 'sch-cadt-mptc'];
-    }
+    clearLegacyUnscopedSavedScholarships();
+    return readSavedScholarshipIds(accountScopeId);
   });
+
+  useEffect(() => {
+    setSavedIds(readSavedScholarshipIds(accountScopeId));
+  }, [accountScopeId]);
 
   // Filter & Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,8 +99,8 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [showFiltersMobile, setShowFiltersMobile] = useState(false);
 
-  // Fetch from API with recoverable error state
-  const fetchScholarships = async () => {
+  // Fetch from API with AbortController + recoverable error state
+  const fetchScholarships = async (signal?: AbortSignal): Promise<void> => {
     setIsLoading(true);
     setFetchError(null);
     try {
@@ -104,22 +113,40 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
         studentCategory: selectedCategory,
         onlyVerified,
         sortBy,
+        signal,
       });
-      if (data.success && Array.isArray(data.scholarships)) {
+      if (!signal?.aborted && data.success && Array.isArray(data.scholarships)) {
         setScholarships(data.scholarships);
+        setCatalogById((prev) => {
+          const next = { ...prev };
+          for (const item of data.scholarships) {
+            next[item.id] = item;
+          }
+          return next;
+        });
       }
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'Unable to load scholarships from server.');
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (!signal?.aborted) {
+        setFetchError(err instanceof Error ? err.message : 'Unable to load scholarships from server.');
+      }
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
+    const controller = new AbortController();
     const delayDebounce = setTimeout(() => {
-      fetchScholarships();
+      void fetchScholarships(controller.signal);
     }, 250);
-    return () => clearTimeout(delayDebounce);
+    return () => {
+      clearTimeout(delayDebounce);
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     searchQuery,
     selectedRegion,
@@ -131,22 +158,19 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
     sortBy,
   ]);
 
-  // Save bookmarked IDs to localStorage
-  const toggleSaveScholarship = (id: string) => {
+  const toggleSaveScholarship = (id: string): void => {
     setSavedIds((prev) => {
       const updated = prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
-      try {
-        localStorage.setItem('csip_saved_scholarships', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
+      writeSavedScholarshipIds(accountScopeId, updated);
       return updated;
     });
   };
 
   const savedList = useMemo(() => {
-    return scholarships.filter((s) => savedIds.includes(s.id));
-  }, [scholarships, savedIds]);
+    return savedIds
+      .map((id) => catalogById[id])
+      .filter((item): item is ScholarshipItem => Boolean(item));
+  }, [catalogById, savedIds]);
 
   // Popular search chips
   const searchChips = [

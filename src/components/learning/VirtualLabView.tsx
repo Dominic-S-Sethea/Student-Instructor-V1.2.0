@@ -23,6 +23,7 @@ import {
   LabExperimentResult,
 } from '../../../shared/types/learningTypes';
 import { learningClient, ExperimentWithStatus } from '../../services/learningClient';
+import { useAuth } from '../../context/AuthContext';
 
 interface VirtualLabViewProps {
   studentId?: string;
@@ -32,11 +33,13 @@ interface VirtualLabViewProps {
 }
 
 export const VirtualLabView: React.FC<VirtualLabViewProps> = ({
-  studentId = 'usr-student-01',
+  studentId: propStudentId,
   initialExperimentId,
   onRewardEarned,
   onNavigateToRoom,
 }) => {
+  const { user } = useAuth();
+  const studentId = user?.id || propStudentId || '';
   const [experiments, setExperiments] = useState<ExperimentWithStatus[]>([]);
   const [selectedExpId, setSelectedExpId] = useState<string>(initialExperimentId || 'exp-chem-01');
   const [activeExp, setActiveExp] = useState<LabExperiment | null>(null);
@@ -78,10 +81,10 @@ export const VirtualLabView: React.FC<VirtualLabViewProps> = ({
   } | null>(null);
 
   // Load experiments
-  const loadExperiments = async () => {
+  const loadExperiments = async (): Promise<void> => {
     try {
       setLoading(true);
-      const list = await learningClient.getLabExperiments(undefined, studentId);
+      const list = await learningClient.getLabExperiments();
       setExperiments(list);
       if (list.length > 0) {
         const toSelect = initialExperimentId && list.some((e) => e.id === initialExperimentId)
@@ -97,24 +100,32 @@ export const VirtualLabView: React.FC<VirtualLabViewProps> = ({
   };
 
   useEffect(() => {
-    loadExperiments();
+    void loadExperiments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId]);
 
   // Load active experiment detail
   useEffect(() => {
     if (!selectedExpId) return;
-    const fetchDetail = async () => {
-      const data = await learningClient.getExperimentDetail(selectedExpId, studentId);
-      if (data) {
+    let active = true;
+    const fetchDetail = async (): Promise<void> => {
+      try {
+        const data = await learningClient.getExperimentDetail(selectedExpId, studentId);
+        if (!active || !data) return;
         setActiveExp(data.experiment);
         setUserSession(data.user_session);
         setObservationNotes(data.user_session?.observation_notes || '');
         setCompletionReward(null);
         resetParametersFor(selectedExpId);
+      } catch (err) {
+        console.error('Failed to load experiment detail:', err);
       }
     };
-    fetchDetail();
-  }, [selectedExpId]);
+    void fetchDetail();
+    return () => {
+      active = false;
+    };
+  }, [selectedExpId, studentId]);
 
   const resetParametersFor = (expId: string) => {
     if (expId === 'exp-chem-01') {
@@ -139,7 +150,7 @@ export const VirtualLabView: React.FC<VirtualLabViewProps> = ({
 
   // Titration Interval animation
   useEffect(() => {
-    let timer: any;
+    let timer: ReturnType<typeof setInterval> | undefined;
     if (isDripping && selectedExpId === 'exp-chem-01') {
       timer = setInterval(() => {
         setTitrantVolume((prev) => {
@@ -149,30 +160,33 @@ export const VirtualLabView: React.FC<VirtualLabViewProps> = ({
         });
       }, 100);
     }
-    return () => clearInterval(timer);
+    return () => {
+      if (timer) clearInterval(timer);
+    };
   }, [isDripping, dripRate, selectedExpId]);
 
   // Pendulum Oscillation Interval
   useEffect(() => {
-    let animTimer: any;
+    let animTimer: ReturnType<typeof setInterval> | undefined;
     if (isOscillating && selectedExpId === 'exp-physics-01') {
       animTimer = setInterval(() => {
         setOscillationTime((prev) => prev + 0.05);
       }, 50);
     }
-    return () => clearInterval(animTimer);
+    return () => {
+      if (animTimer) clearInterval(animTimer);
+    };
   }, [isOscillating, selectedExpId]);
 
   // Calculate simulated values
-  // Titration pH calculation (0.1M HCl 25mL titrated with 0.1M NaOH)
   const calcTitrationPH = (vol: number) => {
     if (vol < 25) {
-      const remainingMoles = (25 - vol) * 0.0001; // Liters * 0.1M
+      const remainingMoles = (25 - vol) * 0.0001;
       const totalVolL = (25 + vol) / 1000;
       const hConc = remainingMoles / totalVolL;
       return Math.max(1.0, Math.min(6.5, -Math.log10(hConc)));
     } else if (Math.abs(vol - 25) < 0.1) {
-      return 7.0; // Equivalence
+      return 7.0;
     } else {
       const excessMoles = (vol - 25) * 0.0001;
       const totalVolL = (25 + vol) / 1000;
@@ -185,16 +199,13 @@ export const VirtualLabView: React.FC<VirtualLabViewProps> = ({
   const currentPH = calcTitrationPH(titrantVolume);
   const isPhenolphthaleinPink = currentPH >= 8.2;
 
-  // Pendulum period: T = 2*pi*sqrt(L/g), where g = 9.81
   const pendulumPeriod = 2 * Math.PI * Math.sqrt(pendulumLength / 9.81);
   const experimentalG = (4 * Math.PI * Math.PI * pendulumLength) / (pendulumPeriod * pendulumPeriod);
 
-  // Snell's law: sin(theta2) = (1 / n) * sin(theta1)
   const rad1 = (incidentAngle * Math.PI) / 180;
   const sinTheta2 = (1.0 / refractiveIndex) * Math.sin(rad1);
   const theta2Deg = ((Math.asin(Math.min(1.0, sinTheta2)) * 180) / Math.PI).toFixed(1);
 
-  // Plant osmosis: Plasmolysis percentage based on sucrose M
   const plasmolysisPercent =
     sucroseConcentration <= 0.2
       ? 0
@@ -202,7 +213,6 @@ export const VirtualLabView: React.FC<VirtualLabViewProps> = ({
       ? 100
       : Math.round(((sucroseConcentration - 0.2) / 0.6) * 100);
 
-  // Logic Gate output
   const logicOutput =
     gateType === 'AND'
       ? inputA & inputB
@@ -215,14 +225,14 @@ export const VirtualLabView: React.FC<VirtualLabViewProps> = ({
       : 1;
 
   // Verify and Submit Experiment
-  const handleVerifyExperiment = async () => {
+  const handleVerifyExperiment = async (): Promise<void> => {
     if (!activeExp) return;
     try {
       setSubmitting(true);
 
       let score = 90;
-      let parametersUsed: any = {};
-      let outcomeData: any = {};
+      let parametersUsed: Record<string, unknown> = {};
+      let outcomeData: Record<string, unknown> = {};
 
       if (activeExp.id === 'exp-chem-01') {
         const errorMargin = Math.abs(titrantVolume - 25.0);
@@ -252,8 +262,8 @@ export const VirtualLabView: React.FC<VirtualLabViewProps> = ({
         parametersUsed,
         outcomeData,
         score,
-        observationNotes,
-        studentId
+        studentId,
+        observationNotes
       );
 
       if (res) {

@@ -16,6 +16,9 @@ import {
   Search,
   BookOpen,
 } from 'lucide-react';
+import { useEscapeKey } from '../hooks/useModalAccessibility';
+
+type ReleaseVersion = 'v1.2.0' | 'v1.1.3' | 'v1.1.2' | 'v1.1.1' | 'v1.1.0';
 
 interface PatchNotesModalProps {
   isOpen: boolean;
@@ -28,7 +31,9 @@ export const PatchNotesModal: React.FC<PatchNotesModalProps> = ({
   onClose,
   onNavigateToScholarships,
 }) => {
-  const [selectedVersion, setSelectedVersion] = useState<'v1.2.0' | 'v1.1.3' | 'v1.1.2' | 'v1.1.1' | 'v1.1.0'>('v1.2.0');
+  const [selectedVersion, setSelectedVersion] = useState<ReleaseVersion>('v1.2.0');
+
+  useEscapeKey(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -37,9 +42,14 @@ export const PatchNotesModal: React.FC<PatchNotesModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto"
       role="dialog"
       aria-modal="true"
+      aria-label="Platform Release Notes"
       id="patch-notes-modal"
+      onClick={onClose}
     >
-      <div className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6 max-h-[92vh] flex flex-col animate-fadeIn">
+      <div
+        className="bg-white dark:bg-slate-900 rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden my-6 max-h-[92vh] flex flex-col animate-fadeIn"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header Ribbon */}
         <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 text-white p-6 relative overflow-hidden shrink-0">
           <div className="flex items-start justify-between relative z-10">
@@ -57,13 +67,14 @@ export const PatchNotesModal: React.FC<PatchNotesModalProps> = ({
                 What&apos;s New in Version V1.2.0
               </h2>
               <p className="text-xs text-slate-300">
-                High School Pilot Validation Suite & Education Intelligence Platform (EIDP) • September 2026
+                High School Pilot Validation Suite &amp; Education Intelligence Platform (EIDP) • 2026
               </p>
             </div>
 
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors cursor-pointer"
               aria-label="Close patch notes"
             >
               <X className="w-4 h-4" />
@@ -74,33 +85,39 @@ export const PatchNotesModal: React.FC<PatchNotesModalProps> = ({
         </div>
 
         {/* Version Selector Tabs */}
-        <div className="flex border-b border-slate-200 px-6 bg-slate-50 gap-3 shrink-0 overflow-x-auto no-scrollbar">
-          {[
-            { id: 'v1.2.0', label: 'V1.2.0 (Current Release)', badge: 'Pilot & EIDP Suite', active: selectedVersion === 'v1.2.0' },
-            { id: 'v1.1.3', label: 'V1.1.3', badge: 'EIDP Foundation', active: selectedVersion === 'v1.1.3' },
-            { id: 'v1.1.2', label: 'V1.1.2', badge: 'Scholarship Search', active: selectedVersion === 'v1.1.2' },
-            { id: 'v1.1.1', label: 'V1.1.1', badge: 'University Decision Engine', active: selectedVersion === 'v1.1.1' },
-            { id: 'v1.1.0', label: 'V1.1.0', badge: 'Mentorship & STEM Lab', active: selectedVersion === 'v1.1.0' },
-          ].map((v) => (
-            <button
-              key={v.id}
-              onClick={() => setSelectedVersion(v.id as any)}
-              className={`py-3 px-3 text-xs font-bold whitespace-nowrap border-b-2 flex items-center gap-2 transition-colors ${
-                v.active
-                  ? 'border-indigo-600 text-indigo-900 bg-white font-black'
-                  : 'border-transparent text-slate-500 hover:text-slate-800'
-              }`}
-            >
-              <span>{v.label}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded font-normal ${v.active ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-600'}`}>
-                {v.badge}
-              </span>
-            </button>
-          ))}
+        <div className="flex border-b border-slate-200 dark:border-slate-800 px-6 bg-slate-50 dark:bg-slate-800/70 gap-3 shrink-0 overflow-x-auto no-scrollbar">
+          {(
+            [
+              { id: 'v1.2.0', label: 'V1.2.0 (Current Release)', badge: 'Pilot & EIDP Suite' },
+              { id: 'v1.1.3', label: 'V1.1.3', badge: 'EIDP Foundation' },
+              { id: 'v1.1.2', label: 'V1.1.2', badge: 'Scholarship Search' },
+              { id: 'v1.1.1', label: 'V1.1.1', badge: 'University Decision Engine' },
+              { id: 'v1.1.0', label: 'V1.1.0', badge: 'Mentorship & STEM Lab' },
+            ] as const
+          ).map((v) => {
+            const active = selectedVersion === v.id;
+            return (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setSelectedVersion(v.id)}
+                className={`py-3 px-3 text-xs font-bold whitespace-nowrap border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
+                  active
+                    ? 'border-indigo-600 text-indigo-900 dark:text-indigo-300 bg-white dark:bg-slate-900 font-black'
+                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                <span>{v.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded font-normal ${active ? 'bg-indigo-100 dark:bg-indigo-950 text-indigo-800 dark:text-indigo-300' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                  {v.badge}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Body Content */}
-        <div className="p-6 overflow-y-auto flex-1 text-slate-700 text-xs sm:text-sm space-y-6">
+        <div className="p-6 overflow-y-auto flex-1 text-slate-700 dark:text-slate-200 text-xs sm:text-sm space-y-6">
           {selectedVersion === 'v1.2.0' && (
             <div className="space-y-6">
               <div className="p-4 rounded-2xl bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 space-y-2">
@@ -202,12 +219,12 @@ export const PatchNotesModal: React.FC<PatchNotesModalProps> = ({
                       Dedicated Scholarship Search Engine (Phase 1 Strategy)
                     </h5>
                   </div>
-                  <p className="text-xs text-slate-600 leading-relaxed pl-8">
-                    Built as a laser-focused search and discovery engine rather than an AI counselor or marketplace. Enforces strict data reliability with a <strong>98%+ verification score guarantee</strong>.
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-8">
+                    Built as a focused search and discovery engine with source provenance badges and editorial verification workflows.
                   </p>
-                  <ul className="text-xs text-slate-600 list-disc list-inside pl-8 space-y-1">
-                    <li><strong>Global & Domestic Coverage</strong>: 150+ verified opportunities including Chevening UK, Fulbright USA, Australia Awards, CADT MPTC Talent, Japan MEXT, Korea GKS, France Eiffel, Erasmus+, and Singapore ASEAN scholarships.</li>
-                    <li><strong>Estimated Funding Value</strong>: Displays total grant pool ($12.5M+ USD in tuition waivers, monthly living allowances, flight tickets, and health coverage).</li>
+                  <ul className="text-xs text-slate-600 dark:text-slate-300 list-disc list-inside pl-8 space-y-1">
+                    <li><strong>Global &amp; Domestic Coverage</strong>: Curated Cambodian and international scholarships including Chevening UK, Fulbright USA, Australia Awards, CADT MPTC Talent, Japan MEXT, Korea GKS, France Eiffel, Erasmus+, and Singapore ASEAN programs, plus Top 100 university fellowship profiles.</li>
+                    <li><strong>Honest Funding Labels</strong>: Unknown stipends, insurance, or deadlines are explicitly marked as &ldquo;Not specified&rdquo; rather than guessed.</li>
                   </ul>
                 </div>
 

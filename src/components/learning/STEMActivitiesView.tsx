@@ -23,6 +23,7 @@ import {
   StudentActivityProgress,
 } from '../../../shared/types/learningTypes';
 import { learningClient, ActivityWithStatus } from '../../services/learningClient';
+import { useAuth } from '../../context/AuthContext';
 
 interface STEMActivitiesViewProps {
   studentId?: string;
@@ -31,10 +32,12 @@ interface STEMActivitiesViewProps {
 }
 
 export const STEMActivitiesView: React.FC<STEMActivitiesViewProps> = ({
-  studentId = 'usr-student-01',
+  studentId: propStudentId,
   onRewardEarned,
   onNavigateToRoom,
 }) => {
+  const { user } = useAuth();
+  const studentId = user?.id || propStudentId || '';
   const [activities, setActivities] = useState<ActivityWithStatus[]>([]);
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedSubject, setSelectedSubject] = useState<string>('all');
@@ -43,7 +46,7 @@ export const STEMActivitiesView: React.FC<STEMActivitiesViewProps> = ({
   // Active Runner Modal
   const [activeActivity, setActiveActivity] = useState<ActivityWithStatus | null>(null);
   const [showHint, setShowHint] = useState<boolean>(false);
-  const [userSubmission, setUserSubmission] = useState<any>({});
+  const [userSubmission, setUserSubmission] = useState<Record<string, unknown>>({});
   const [completedFeedback, setCompletedFeedback] = useState<{
     score: number;
     points: number;
@@ -65,7 +68,7 @@ export const STEMActivitiesView: React.FC<STEMActivitiesViewProps> = ({
   const [solarPanelsCount, setSolarPanelsCount] = useState<number>(12);
   const [batteryCapacityKwh, setBatteryCapacityKwh] = useState<number>(30);
 
-  const fetchActivities = async () => {
+  const fetchActivities = async (): Promise<void> => {
     try {
       setLoading(true);
       const list = await learningClient.getActivities(
@@ -82,17 +85,17 @@ export const STEMActivitiesView: React.FC<STEMActivitiesViewProps> = ({
   };
 
   useEffect(() => {
-    fetchActivities();
-  }, [selectedType, selectedSubject]);
+    void fetchActivities();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedType, selectedSubject, studentId]);
 
-  const handleLaunchActivity = (act: ActivityWithStatus) => {
+  const handleLaunchActivity = (act: ActivityWithStatus): void => {
     setActiveActivity(act);
     setShowHint(false);
     setCompletedFeedback(null);
     setUserSubmission({});
     setSelectedQuizAnswer(null);
 
-    // Initial configurations
     if (act.id === 'act-puzzle-logic') {
       setPuzzleWireA(0);
       setPuzzleWireB(1);
@@ -104,30 +107,27 @@ export const STEMActivitiesView: React.FC<STEMActivitiesViewProps> = ({
       setBatteryCapacityKwh(30);
     }
 
-    // Log started action
-    learningClient.recordActivityAction(act.id, 'started', {}, 0, studentId);
+    void learningClient.recordActivityAction(act.id, 'started', {}, 0, studentId).catch(() => undefined);
   };
 
-  const handleUseHint = async () => {
+  const handleUseHint = async (): Promise<void> => {
     if (!activeActivity || showHint) return;
     setShowHint(true);
-    await learningClient.recordActivityAction(activeActivity.id, 'hint_used', {}, undefined, studentId);
-    learningClient.logAnalyticsEvent('HINT_USED', { activityId: activeActivity.id });
+    await learningClient.recordActivityAction(activeActivity.id, 'hint_used', {}, undefined, studentId).catch(() => undefined);
+    await learningClient.logAnalyticsEvent('HINT_USED', { activityId: activeActivity.id }).catch(() => undefined);
   };
 
-  const handleSubmitActivity = async () => {
+  const handleSubmitActivity = async (): Promise<void> => {
     if (!activeActivity) return;
 
     let score = 90;
-    let responseData: any = {};
+    let responseData: Record<string, unknown> = {};
 
     if (activeActivity.id === 'act-puzzle-logic') {
-      // Logic test: We want output = 1
       const out = puzzleGate === 'AND' ? puzzleWireA & puzzleWireB : puzzleGate === 'OR' ? puzzleWireA | puzzleWireB : puzzleWireA ^ puzzleWireB;
       score = out === 1 ? 100 : 40;
       responseData = { wireA: puzzleWireA, wireB: puzzleWireB, gate: puzzleGate, output: out };
     } else if (activeActivity.id === 'act-sim-orbit') {
-      // Circular orbital velocity ~ 7.8 km/s
       const diff = Math.abs(orbitSpeed - 7.8);
       score = diff <= 0.2 ? 100 : diff <= 0.6 ? 85 : 50;
       responseData = { orbitalSpeedKmS: orbitSpeed };
@@ -135,38 +135,40 @@ export const STEMActivitiesView: React.FC<STEMActivitiesViewProps> = ({
       score = selectedQuizAnswer === 1 ? 100 : 40;
       responseData = { selectedAnswerIndex: selectedQuizAnswer };
     } else if (activeActivity.id === 'act-proj-solar') {
-      // Daily generation: 12 panels * 400W * 5h = 24kWh. Battery 30kWh is good!
       score = solarPanelsCount >= 10 && batteryCapacityKwh >= 20 ? 95 : 70;
       responseData = { solarPanelsCount, batteryCapacityKwh };
     }
 
-    const res = await learningClient.recordActivityAction(
-      activeActivity.id,
-      'completed',
-      responseData,
-      score,
-      studentId
-    );
-
-    if (res) {
-      const pointsEarned = res.meritPointsEarned ?? 0;
-      const badge = res.unlockedBadge ?? undefined;
-      setCompletedFeedback({
+    try {
+      const res = await learningClient.recordActivityAction(
+        activeActivity.id,
+        'completed',
+        responseData,
         score,
-        points: pointsEarned,
-        badge,
-      });
-
-      // Update in local list
-      setActivities((prev) =>
-        prev.map((a) =>
-          a.id === activeActivity.id ? { ...a, student_status: 'completed', student_score: score } : a
-        )
+        studentId
       );
 
-      if (onRewardEarned) {
-        onRewardEarned(pointsEarned, `Completed ${activeActivity.title}!`, badge);
+      if (res) {
+        const pointsEarned = res.meritPointsEarned ?? 0;
+        const badge = res.unlockedBadge ?? undefined;
+        setCompletedFeedback({
+          score,
+          points: pointsEarned,
+          badge,
+        });
+
+        setActivities((prev) =>
+          prev.map((a) =>
+            a.id === activeActivity.id ? { ...a, student_status: 'completed', student_score: score } : a
+          )
+        );
+
+        if (onRewardEarned) {
+          onRewardEarned(pointsEarned, `Completed ${activeActivity.title}!`, badge);
+        }
       }
+    } catch (err) {
+      console.error('Failed to submit STEM activity:', err);
     }
   };
 
