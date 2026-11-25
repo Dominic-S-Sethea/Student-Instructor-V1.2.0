@@ -489,23 +489,47 @@ class PlatformArchitectureController {
     }
   }
 
+  // Separate bounded log for child-safety scans so unprivileged scans cannot evict admin audit logs
+  private safetyScanLogs: Array<{
+    id: string;
+    timestamp: string;
+    resource: string;
+    flaggedCategories: string[];
+    actionTaken: string;
+  }> = [];
+
   /**
    * POST /api/platform/mobile/devices
-   * Register or update mobile push device
+   * Register or update mobile push device (ownership and role enforced)
    */
   public registerDevice(req: AuthenticatedRequest, res: Response) {
     try {
       const { deviceId, userId, role, platform, osVersion, appVersion, deviceModel, pushToken, locale } = req.body;
+      const isAdmin = req.user?.role === 'admin';
       const boundUserId =
-        req.user?.role === 'admin' && typeof userId === 'string' && userId.trim()
+        isAdmin && typeof userId === 'string' && userId.trim()
           ? userId.trim()
           : req.user?.userId || 'guest-user';
 
-      const existingIndex = this.devices.findIndex(d => d.deviceId === deviceId);
+      const existingIndex = this.devices.findIndex((d) => d.deviceId === deviceId);
+      if (existingIndex >= 0 && !isAdmin && this.devices[existingIndex].userId !== boundUserId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden: cannot overwrite a mobile device owned by another account.',
+        });
+      }
+
+      const derivedRole: MobileDeviceRegistration['role'] =
+        isAdmin && role
+          ? role
+          : req.user?.role === 'mentor' || req.user?.role === 'organization'
+            ? req.user.role
+            : 'student';
+
       const updatedDevice: MobileDeviceRegistration = {
         deviceId,
         userId: boundUserId,
-        role: role || 'student',
+        role: derivedRole,
         platform,
         osVersion: osVersion || '18.0',
         appVersion: appVersion || '2.1.0',
@@ -535,11 +559,19 @@ class PlatformArchitectureController {
 
   /**
    * POST /api/platform/mobile/sync
-   * Offline mutation sync endpoint (simulation acknowledgment when offline mobile sync is previewed)
+   * Offline mutation sync endpoint (ownership enforced for registered devices)
    */
-  public syncOfflineQueue(req: Request, res: Response) {
+  public syncOfflineQueue(req: AuthenticatedRequest, res: Response) {
     try {
       const { deviceId, mutations } = req.body;
+      const isAdmin = req.user?.role === 'admin';
+      const dev = deviceId ? this.devices.find((d) => d.deviceId === deviceId) : undefined;
+      if (dev && !isAdmin && dev.userId !== req.user?.userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Forbidden: cannot sync mutations for another user device.',
+        });
+      }
 
       const results = (mutations as Array<{ id?: string; action: string }>).map((m) => {
         return {
@@ -551,7 +583,6 @@ class PlatformArchitectureController {
         };
       });
 
-      const dev = this.devices.find(d => d.deviceId === deviceId);
       if (dev) {
         dev.offlineQueueSize = 0;
         dev.lastSeenAt = new Date().toISOString();
@@ -575,7 +606,7 @@ class PlatformArchitectureController {
    */
   public scanContentForSafety(req: Request, res: Response) {
     try {
-      const { text, senderAge, recipientAge, channelType } = req.body;
+      const { text, channelType } = req.body;
       if (!text || typeof text !== 'string') {
         return res.status(400).json({ success: false, error: 'text is required' });
       }
@@ -586,17 +617,19 @@ class PlatformArchitectureController {
       let redactedText = text;
 
       // 1. Phone numbers / Telegram handles / PII
-      const phoneRegex = /(\+?855|0)[1-9]\d{7,8}/g;
+      const phoneRegex = /(\+?855|0)[\s-]?[1-9]\d[\s-]?\d{3}[\s-]?\d{3,4}/g;
       const telegramRegex = /(@[a-zA-Z0-9_]{5,})/g;
-      if (phoneRegex.test(text)) {
+      const phoneRedacted = redactedText.replace(phoneRegex, '[PHONE REDACTED FOR SAFETY]');
+      if (phoneRedacted !== redactedText) {
         flaggedCategories.push('pii_leakage');
         details.push('Detected Cambodian phone number. Direct phone sharing is restricted for child protection.');
-        redactedText = redactedText.replace(phoneRegex, '[PHONE REDACTED FOR SAFETY]');
+        redactedText = phoneRedacted;
       }
-      if (telegramRegex.test(text)) {
-        flaggedCategories.push('pii_leakage');
+      const handleRedacted = redactedText.replace(telegramRegex, '[HANDLE REDACTED]');
+      if (handleRedacted !== redactedText) {
+        if (!flaggedCategories.includes('pii_leakage')) flaggedCategories.push('pii_leakage');
         details.push('Detected external Telegram handle. Unmonitored off-platform redirection blocked.');
-        redactedText = redactedText.replace(telegramRegex, '[HANDLE REDACTED]');
+        redactedText = handleRedacted;
       }
 
       // 2. Predatory / grooming / private meetup triggers
@@ -638,21 +671,17 @@ class PlatformArchitectureController {
         isSafe = false;
       }
 
-      // Log to audit if unsafe
+      // Log into dedicated safetyScanLogs buffer (never evicts admin auditLogs)
       if (!isSafe) {
-        this.auditLogs.unshift({
-          id: `audit-${crypto.randomUUID()}`,
+        this.safetyScanLogs.unshift({
+          id: `scan-${crypto.randomUUID()}`,
           timestamp: new Date().toISOString(),
-          actor: 'shield.automated_sentinel',
-          role: 'child_safety',
-          action: 'SAFETY_INTERVENTION',
           resource: channelType || 'community_chat',
-          status: 'blocked',
-          ipAddress: req.ip || '127.0.0.1',
-          details: `Flagged: ${flaggedCategories.join(', ')}. Action: ${actionTaken}.`,
+          flaggedCategories: [...flaggedCategories],
+          actionTaken,
         });
-        if (this.auditLogs.length > 500) {
-          this.auditLogs.length = 500;
+        if (this.safetyScanLogs.length > 500) {
+          this.safetyScanLogs.length = 500;
         }
       }
 

@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
+import { rateLimiter } from '../middleware/rateLimiter';
 import { hermesMemoryService } from '../services/hermesMemoryService';
 import type {
   HermesDocType,
@@ -19,8 +20,10 @@ const VALID_CATEGORIES: readonly HermesFactCategory[] = [
 
 const VALID_ACTIONS: readonly HermesFactFeedbackAction[] = ['confirm', 'correct', 'end', 'revert'];
 
+const memoryLimiter = rateLimiter(60_000, 60, 'Too many memory requests. Please slow down.');
 const router = Router();
 router.use(authenticateToken);
+router.use(memoryLimiter);
 
 /** GET /api/memory — returns student's USER/MEMORY docs and active facts (consent-enforced). */
 router.get('/', (req: AuthenticatedRequest, res: Response): void => {
@@ -81,8 +84,8 @@ router.post('/facts', (req: AuthenticatedRequest, res: Response): void => {
   const result = hermesMemoryService.addFact(userId!, {
     factText,
     category,
-    entities: Array.isArray(req.body?.entities) ? req.body.entities.slice(0, 20).map(String) : undefined,
-    keywords: Array.isArray(req.body?.keywords) ? req.body.keywords.slice(0, 20).map(String) : undefined,
+    entities: Array.isArray(req.body?.entities) ? req.body.entities.slice(0, 20).map((v: unknown) => String(v).slice(0, 64)) : undefined,
+    keywords: Array.isArray(req.body?.keywords) ? req.body.keywords.slice(0, 20).map((v: unknown) => String(v).slice(0, 64)) : undefined,
     source: 'explicit_user',
   });
   if (!result.enabled) {
@@ -116,8 +119,8 @@ router.post('/facts/:id/feedback', (req: AuthenticatedRequest, res: Response): v
     res.status(400).json({ success: false, error: 'action must be confirm, correct, end, or revert.' });
     return;
   }
-  const updatedText = typeof req.body?.updatedText === 'string' ? req.body.updatedText : undefined;
-  const note = typeof req.body?.note === 'string' ? req.body.note : undefined;
+  const updatedText = typeof req.body?.updatedText === 'string' ? req.body.updatedText.slice(0, 400) : undefined;
+  const note = typeof req.body?.note === 'string' ? req.body.note.slice(0, 300) : undefined;
   const result = hermesMemoryService.applyFactFeedback(
     req.user!.userId,
     req.params.id,
@@ -142,8 +145,8 @@ router.post('/facts/:id/feedback', (req: AuthenticatedRequest, res: Response): v
 
 /** GET /api/memory/facts/:id/history — returns change/correction audit trail for one fact. */
 router.get('/facts/:id/history', (req: AuthenticatedRequest, res: Response): void => {
-  const history = hermesMemoryService.getFactHistory(req.user!.userId, req.params.id);
-  res.json({ success: true, history });
+  const status = hermesMemoryService.getFactHistoryWithStatus(req.user!.userId, req.params.id);
+  res.json({ success: true, ...status });
 });
 
 /** DELETE /api/memory — wipes all Hermes memory docs, facts, and history for the user. */

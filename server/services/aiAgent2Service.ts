@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { getDatabase } from '../db/connection';
 import { PrivacyService } from './privacyService';
 import {
@@ -228,9 +229,9 @@ export class AIAgent2Service {
     };
   }
 
-  public saveLongTermMemory(memory: StudentLongTermMemory): void {
+  public saveLongTermMemory(memory: StudentLongTermMemory): boolean {
     if (!this.privacy.canUseAIMemory(memory.studentId)) {
-      return;
+      return false;
     }
     const db = getDatabase();
     const now = new Date().toISOString();
@@ -260,10 +261,11 @@ export class AIAgent2Service {
       JSON.stringify(memory.weaknesses),
       JSON.stringify(memory.learningPatterns),
       JSON.stringify(memory.achievements),
-      memory.memoryConfidenceScore,
-      memory.lastReflectionAt,
+      memory.memoryConfidenceScore ?? 0,
+      memory.lastReflectionAt || now,
       now
     );
+    return true;
   }
 
   /**
@@ -371,10 +373,18 @@ Your interaction has been safely processed within the sandboxed CDES learning en
     };
   }
 
+  private redactAuditPrompt(prompt: string): string {
+    return prompt
+      .replace(/(\+?855|0)[\s-]?[1-9]\d[\s-]?\d{3}[\s-]?\d{3,4}/g, '[PHONE REDACTED]')
+      .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL REDACTED]')
+      .replace(/(t\.me\/|telegram\.me\/|telegram:\s*@?|@)[a-zA-Z0-9_]{4,}/gi, '[HANDLE REDACTED]')
+      .substring(0, 160);
+  }
+
   private logSafetyAudit(studentId: string, agentKey: string, prompt: string, policy: string, risk: string, action: string, explanation: string) {
     try {
       const db = getDatabase();
-      const id = `safe-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const id = `safe-${crypto.randomUUID()}`;
       db.prepare(`
         INSERT INTO ai_safety_guardrail_audits (
           id, student_id, session_id, agent_key, user_prompt_snippet,
@@ -385,7 +395,7 @@ Your interaction has been safely processed within the sandboxed CDES learning en
         studentId,
         `sess-${studentId}`,
         agentKey,
-        prompt.substring(0, 160),
+        this.redactAuditPrompt(prompt),
         policy,
         risk,
         action,
@@ -709,9 +719,11 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
     }
 
     // Initialize 2 default action plans: 1 Learning Plan + 1 Career Roadmap
+    const bac2PlanId = `plan-bac2-sprint-${studentId}`;
+    const careerPlanId = `plan-career-cloud-${studentId}`;
     const initialPlans: AIActionPlan[] = [
       {
-        id: `plan-bac2-sprint-${studentId}`,
+        id: bac2PlanId,
         studentId,
         planType: 'learning_plan',
         title: '12-Week Bac II Grade-A Examination Sprint',
@@ -721,7 +733,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
         status: 'active',
         milestones: [
           {
-            id: 'm-1',
+            id: `${bac2PlanId}-m1`,
             order: 1,
             title: 'Diagnostic Mastery Baseline across Math, Physics, Chemistry',
             description: 'Complete 3 standardized 2024 Bac II past exam papers under timed examination conditions.',
@@ -731,7 +743,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             linkedEntityId: 'diag-bac2-01'
           },
           {
-            id: 'm-2',
+            id: `${bac2PlanId}-m2`,
             order: 2,
             title: 'Calculus Limit Theorems & 3D Vector Geometry Mastery',
             description: 'Solve 60 high-difficulty calculus proofs; eliminate recurring sign errors in integration.',
@@ -741,7 +753,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             linkedEntityId: 'math-calc-grade12'
           },
           {
-            id: 'm-3',
+            id: `${bac2PlanId}-m3`,
             order: 3,
             title: 'Virtual STEM Laboratory: Electromagnetic & Kinematics Mastery',
             description: 'Run virtual experiments on projectile drag and magnetic induction in CDES Virtual Lab.',
@@ -751,7 +763,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             linkedEntityId: 'exp-phys-em-01'
           },
           {
-            id: 'm-4',
+            id: `${bac2PlanId}-m4`,
             order: 4,
             title: 'Full National Simulation & Timed Mock Exam Review',
             description: 'Participate in national digital mock exam run by CDES and receive AI misconception breakdown.',
@@ -761,7 +773,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             linkedEntityId: 'mock-national-01'
           },
           {
-            id: 'm-5',
+            id: `${bac2PlanId}-m5`,
             order: 5,
             title: 'Final Revision & Metacognitive Peak Focus Conditioning',
             description: 'Light active recall flashcards, sleep rhythm stabilization, and formula synthesis cheatsheets.',
@@ -773,7 +785,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
         updatedAt: new Date().toISOString()
       },
       {
-        id: `plan-career-cloud-${studentId}`,
+        id: careerPlanId,
         studentId,
         planType: 'career_roadmap',
         title: '5-Year Journey: High School Scholar to Cloud Infrastructure Architect',
@@ -783,7 +795,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
         status: 'active',
         milestones: [
           {
-            id: 'cr-1',
+            id: `${careerPlanId}-cr1`,
             order: 1,
             title: 'High School Distinction & MPTC Techo Scholarship Win',
             description: 'Graduate Bac II with distinction and secure 100% full-tuition scholarship to CADT or ITC.',
@@ -791,7 +803,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             isCompleted: true
           },
           {
-            id: 'cr-2',
+            id: `${careerPlanId}-cr2`,
             order: 2,
             title: 'Foundation Year: Data Structures, Algorithms & Linux Core',
             description: 'Master C/C++, algorithmic Big-O optimization, and Linux shell systems programming.',
@@ -799,7 +811,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             isCompleted: false
           },
           {
-            id: 'cr-3',
+            id: `${careerPlanId}-cr3`,
             order: 3,
             title: 'Makerspace Capstone: Distributed Microservices System',
             description: 'Build open-source distributed event queue and present at Cambodia Digital Tech Expo.',
@@ -807,7 +819,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             isCompleted: false
           },
           {
-            id: 'cr-4',
+            id: `${careerPlanId}-cr4`,
             order: 4,
             title: 'Industry Internship at Top Tier Telecom/Bank in Phnom Penh',
             description: 'Complete 6-month enterprise infrastructure internship at Smart Axiata or ABA Bank.',
@@ -815,7 +827,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             isCompleted: false
           },
           {
-            id: 'cr-5',
+            id: `${careerPlanId}-cr5`,
             order: 5,
             title: 'Professional Cloud Certification & Junior Architect Role',
             description: 'Pass AWS/GCP Certified Solutions Architect Associate exam and join enterprise engineering team.',
@@ -828,9 +840,11 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
       }
     ];
 
-    // Persist defaults to database
-    for (const plan of initialPlans) {
-      this.saveActionPlan(plan);
+    // Persist defaults only when AI memory/personalization consent is granted
+    if (this.privacy.canUseAIMemory(studentId)) {
+      for (const plan of initialPlans) {
+        this.saveActionPlan(plan);
+      }
     }
 
     return initialPlans;
@@ -886,20 +900,37 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
 
   public toggleMilestone(planId: string, milestoneId: string, studentId: string): boolean {
     const db = getDatabase();
-    const row = db.prepare('SELECT is_completed FROM ai_action_milestones WHERE id = ? AND plan_id = ?').get(milestoneId, planId) as any;
+    const row = db
+      .prepare(`
+        SELECT m.is_completed
+        FROM ai_action_milestones m
+        JOIN ai_action_plans p ON p.id = m.plan_id
+        WHERE m.id = ? AND m.plan_id = ? AND p.student_id = ?
+      `)
+      .get(milestoneId, planId, studentId) as { is_completed: number } | undefined;
     if (!row) return false;
 
     const newCompleted = row.is_completed ? 0 : 1;
     const completedAt = newCompleted ? new Date().toISOString() : null;
 
-    db.prepare('UPDATE ai_action_milestones SET is_completed = ?, completed_at = ? WHERE id = ?').run(newCompleted, completedAt, milestoneId);
+    db.prepare('UPDATE ai_action_milestones SET is_completed = ?, completed_at = ? WHERE id = ? AND plan_id = ?').run(
+      newCompleted,
+      completedAt,
+      milestoneId,
+      planId
+    );
 
     // Recalculate plan percentage
-    const allM = db.prepare('SELECT is_completed FROM ai_action_milestones WHERE plan_id = ?').all(planId) as any[];
+    const allM = db.prepare('SELECT is_completed FROM ai_action_milestones WHERE plan_id = ?').all(planId) as Array<{ is_completed: number }>;
     if (allM.length > 0) {
-      const completedCount = allM.filter(m => m.is_completed === 1).length;
+      const completedCount = allM.filter((m) => m.is_completed === 1).length;
       const pct = Math.round((completedCount / allM.length) * 100);
-      db.prepare('UPDATE ai_action_plans SET progress_percentage = ?, updated_at = ? WHERE id = ?').run(pct, new Date().toISOString(), planId);
+      db.prepare('UPDATE ai_action_plans SET progress_percentage = ?, updated_at = ? WHERE id = ? AND student_id = ?').run(
+        pct,
+        new Date().toISOString(),
+        planId,
+        studentId
+      );
     }
 
     if (newCompleted) {

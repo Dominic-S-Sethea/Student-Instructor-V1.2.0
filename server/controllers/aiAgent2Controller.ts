@@ -7,6 +7,23 @@ import {
 } from '../middleware/authMiddleware';
 import { safeErrorMessage } from '../utils/httpErrors';
 
+const ALLOWED_AGENT_KEYS = new Set<AgentKey>([
+  'education_advisor',
+  'career_intelligence',
+  'learning_coach',
+  'research_agent',
+  'parent_assistant',
+  'teacher_assistant',
+]);
+
+function parseAgentKey(raw: unknown): AgentKey | null {
+  if (raw === undefined || raw === null || raw === '') return 'education_advisor';
+  if (typeof raw === 'string' && ALLOWED_AGENT_KEYS.has(raw as AgentKey)) {
+    return raw as AgentKey;
+  }
+  return null;
+}
+
 export class AIAgent2Controller {
   /** GET /api/ai-os/agents */
   public async getAgents(_req: Request, res: Response): Promise<void> {
@@ -37,7 +54,11 @@ export class AIAgent2Controller {
       );
       if (!studentId) return;
 
-      const agentKey = (typeof body.agentKey === 'string' ? body.agentKey : 'education_advisor') as AgentKey;
+      const agentKey = parseAgentKey(body.agentKey);
+      if (!agentKey) {
+        res.status(400).json({ success: false, error: 'Invalid agentKey.' });
+        return;
+      }
       const message = typeof body.message === 'string' ? body.message : '';
 
       if (!message || message.trim() === '') {
@@ -86,8 +107,17 @@ export class AIAgent2Controller {
       if (!authorizedStudentId) return;
 
       const scopedMemory: StudentLongTermMemory = { ...memory, studentId: authorizedStudentId };
-      aiAgent2Service.saveLongTermMemory(scopedMemory);
-      res.json({ success: true, message: 'Long-term memory updated successfully', memory: scopedMemory });
+      const saved = aiAgent2Service.saveLongTermMemory(scopedMemory);
+      if (!saved) {
+        res.status(403).json({
+          success: false,
+          persisted: false,
+          code: 'AI_MEMORY_CONSENT_REQUIRED',
+          error: 'AI memory persistence is disabled by student/guardian privacy preferences.',
+        });
+        return;
+      }
+      res.json({ success: true, persisted: true, message: 'Long-term memory updated successfully', memory: scopedMemory });
     } catch (error: unknown) {
       res.status(500).json({
         success: false,
@@ -206,7 +236,11 @@ export class AIAgent2Controller {
     try {
       const body = (req.body || {}) as Record<string, unknown>;
       const prompt = typeof body.prompt === 'string' ? body.prompt : '';
-      const agentKey = (typeof body.agentKey === 'string' ? body.agentKey : 'education_advisor') as AgentKey;
+      const agentKey = parseAgentKey(body.agentKey);
+      if (!agentKey) {
+        res.status(400).json({ success: false, error: 'Invalid agentKey.' });
+        return;
+      }
       const studentId = resolveAuthorizedStudentId(
         req,
         res,

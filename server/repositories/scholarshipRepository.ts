@@ -456,69 +456,71 @@ export class ScholarshipRepository {
   }
 
   public update(id: string, updates: ScholarshipWriteInput, changedByUserId?: string): HydratedScholarshipRow | null {
-    const existing = this.getById(id);
-    if (!existing) return null;
+    return withTransaction(() => {
+      const existing = this.getById(id);
+      if (!existing) return null;
 
-    const now = new Date().toISOString();
-    const pick = <T>(camel: unknown, snake: unknown, fallback: T): T =>
-      (camel !== undefined ? camel : snake !== undefined ? snake : fallback) as T;
+      const now = new Date().toISOString();
+      const pick = <T>(camel: unknown, snake: unknown, fallback: T): T =>
+        (camel !== undefined ? camel : snake !== undefined ? snake : fallback) as T;
 
-    const name = updates.name !== undefined ? String(updates.name) : existing.name;
-    const name_km = pick(updates.nameKm, updates.name_km, existing.name_km ?? null);
-    const provider = updates.provider !== undefined ? String(updates.provider) : existing.provider;
-    const provider_km = pick(updates.providerKm, updates.provider_km, existing.provider_km ?? null);
-    const country = updates.country !== undefined ? String(updates.country) : existing.country;
-    const country_km = pick(updates.countryKm, updates.country_km, existing.country_km ?? null);
-    const region = updates.region !== undefined ? String(updates.region) : existing.region;
-    const funding_type = pick(updates.fundingType, updates.funding_type, existing.funding_type);
-    const funding_details = pick(updates.fundingDetails, updates.funding_details, existing.funding_details ?? null);
-    const funding_details_km = pick(updates.fundingDetailsKm, updates.funding_details_km, existing.funding_details_km ?? null);
-    const eligibility_summary = pick(updates.eligibilitySummary, updates.eligibility_summary, existing.eligibility_summary ?? null);
-    const eligibility_summary_km = pick(updates.eligibilitySummaryKm, updates.eligibility_summary_km, existing.eligibility_summary_km ?? null);
-    const overview = updates.overview !== undefined ? (updates.overview as string | null) : (existing.overview ?? null);
-    const overview_km = pick(updates.overviewKm, updates.overview_km, existing.overview_km ?? null);
-    const deadline = updates.deadline !== undefined ? String(updates.deadline) : existing.deadline;
-    const application_link = pick(updates.applicationLink, updates.application_link, existing.application_link);
-    const official_source_url = pick(updates.officialSourceUrl, updates.official_source_url, existing.official_source_url);
-    const is_verified = updates.isVerified !== undefined ? (updates.isVerified ? 1 : 0) : (updates.is_verified !== undefined ? (updates.is_verified ? 1 : 0) : existing.is_verified);
-    const verification_tier = pick(updates.verificationTier, updates.verification_tier, existing.verification_tier);
-    const monthly_allowance_text = pick(updates.monthlyAllowance, updates.monthly_allowance_text, existing.monthly_allowance_text ?? null);
-    const accommodation_text = pick(updates.accommodation, updates.accommodation_text, existing.accommodation_text ?? null);
-    const insurance_text = pick(updates.insurance, updates.insurance_text, existing.insurance_text ?? null);
-    const flight_support_text = pick(updates.flightSupport, updates.flight_support_text, existing.flight_support_text ?? null);
-    const verified_at = pick(updates.verifiedAt, updates.verified_at, existing.verified_at ?? null);
-    const verified_by = pick(updates.verifiedBy, updates.verified_by, existing.verified_by ?? null);
-    const estimated_value_usd = pick(updates.totalEstimatedValueUSD, updates.estimated_value_usd, existing.estimated_value_usd ?? null);
+      const name = updates.name !== undefined ? String(updates.name) : existing.name;
+      const name_km = pick(updates.nameKm, updates.name_km, existing.name_km ?? null);
+      const provider = updates.provider !== undefined ? String(updates.provider) : existing.provider;
+      const provider_km = pick(updates.providerKm, updates.provider_km, existing.provider_km ?? null);
+      const country = updates.country !== undefined ? String(updates.country) : existing.country;
+      const country_km = pick(updates.countryKm, updates.country_km, existing.country_km ?? null);
+      const region = updates.region !== undefined ? String(updates.region) : existing.region;
+      const funding_type = pick(updates.fundingType, updates.funding_type, existing.funding_type);
+      const funding_details = pick(updates.fundingDetails, updates.funding_details, existing.funding_details ?? null);
+      const funding_details_km = pick(updates.fundingDetailsKm, updates.funding_details_km, existing.funding_details_km ?? null);
+      const eligibility_summary = pick(updates.eligibilitySummary, updates.eligibility_summary, existing.eligibility_summary ?? null);
+      const eligibility_summary_km = pick(updates.eligibilitySummaryKm, updates.eligibility_summary_km, existing.eligibility_summary_km ?? null);
+      const overview = updates.overview !== undefined ? (updates.overview as string | null) : (existing.overview ?? null);
+      const overview_km = pick(updates.overviewKm, updates.overview_km, existing.overview_km ?? null);
+      const deadline = updates.deadline !== undefined ? String(updates.deadline) : existing.deadline;
+      const application_link = pick(updates.applicationLink, updates.application_link, existing.application_link);
+      const official_source_url = pick(updates.officialSourceUrl, updates.official_source_url, existing.official_source_url);
+      const is_verified = updates.isVerified !== undefined ? (updates.isVerified ? 1 : 0) : (updates.is_verified !== undefined ? (updates.is_verified ? 1 : 0) : existing.is_verified);
+      const verification_tier = pick(updates.verificationTier, updates.verification_tier, existing.verification_tier);
+      const monthly_allowance_text = pick(updates.monthlyAllowance, updates.monthly_allowance_text, existing.monthly_allowance_text ?? null);
+      const accommodation_text = pick(updates.accommodation, updates.accommodation_text, existing.accommodation_text ?? null);
+      const insurance_text = pick(updates.insurance, updates.insurance_text, existing.insurance_text ?? null);
+      const flight_support_text = pick(updates.flightSupport, updates.flight_support_text, existing.flight_support_text ?? null);
+      const verified_at = pick(updates.verifiedAt, updates.verified_at, existing.verified_at ?? null);
+      const verified_by = pick(updates.verifiedBy, updates.verified_by, existing.verified_by ?? null);
+      const estimated_value_usd = pick(updates.totalEstimatedValueUSD, updates.estimated_value_usd, existing.estimated_value_usd ?? null);
 
-    this.db.prepare(`
-      UPDATE scholarships SET
-        name = ?, name_km = ?, provider = ?, provider_km = ?, country = ?, country_km = ?, region = ?,
-        funding_type = ?, funding_details = ?, funding_details_km = ?,
-        eligibility_summary = ?, eligibility_summary_km = ?, overview = ?, overview_km = ?,
-        deadline = ?, application_link = ?, official_source_url = ?, is_verified = ?, verification_tier = ?,
-        monthly_allowance_text = ?, accommodation_text = ?, insurance_text = ?, flight_support_text = ?,
-        verified_at = ?, verified_by = ?, estimated_value_usd = ?, updated_at = ?
-      WHERE id = ? AND is_deleted = 0
-    `).run(
-      name, name_km, provider, provider_km, country, country_km, region,
-      funding_type, funding_details, funding_details_km,
-      eligibility_summary, eligibility_summary_km, overview, overview_km,
-      deadline, application_link, official_source_url, is_verified, verification_tier,
-      monthly_allowance_text, accommodation_text, insurance_text, flight_support_text,
-      verified_at, verified_by, estimated_value_usd, now, id
-    );
+      this.db.prepare(`
+        UPDATE scholarships SET
+          name = ?, name_km = ?, provider = ?, provider_km = ?, country = ?, country_km = ?, region = ?,
+          funding_type = ?, funding_details = ?, funding_details_km = ?,
+          eligibility_summary = ?, eligibility_summary_km = ?, overview = ?, overview_km = ?,
+          deadline = ?, application_link = ?, official_source_url = ?, is_verified = ?, verification_tier = ?,
+          monthly_allowance_text = ?, accommodation_text = ?, insurance_text = ?, flight_support_text = ?,
+          verified_at = ?, verified_by = ?, estimated_value_usd = ?, updated_at = ?
+        WHERE id = ? AND is_deleted = 0
+      `).run(
+        name, name_km, provider, provider_km, country, country_km, region,
+        funding_type, funding_details, funding_details_km,
+        eligibility_summary, eligibility_summary_km, overview, overview_km,
+        deadline, application_link, official_source_url, is_verified, verification_tier,
+        monthly_allowance_text, accommodation_text, insurance_text, flight_support_text,
+        verified_at, verified_by, estimated_value_usd, now, id
+      );
 
-    this.recordChangeHistory({
-      entity_type: 'scholarship',
-      entity_id: id,
-      changed_by_user_id: changedByUserId || null,
-      action: 'UPDATE',
-      previous_state: JSON.stringify(existing),
-      new_state: JSON.stringify(updates),
-      change_summary: `Updated scholarship fields (${Object.keys(updates).join(', ')})`
+      this.recordChangeHistory({
+        entity_type: 'scholarship',
+        entity_id: id,
+        changed_by_user_id: changedByUserId || null,
+        action: 'UPDATE',
+        previous_state: JSON.stringify(existing),
+        new_state: JSON.stringify(updates),
+        change_summary: `Updated scholarship fields (${Object.keys(updates).join(', ')})`
+      });
+
+      return this.getById(id);
     });
-
-    return this.getById(id);
   }
 
   public delete(id: string, changedByUserId?: string): boolean {

@@ -7,6 +7,8 @@ import {
   AuthenticatedRequest,
 } from '../middleware/authMiddleware';
 import { rateLimiter } from '../middleware/rateLimiter';
+import { validate } from '../middleware/validationMiddleware';
+import { ScholarshipExtractSchema } from '../validators/apiSchemas';
 import { asyncHandler, HttpError, safeErrorMessage } from '../utils/httpErrors';
 
 const router = Router();
@@ -119,7 +121,14 @@ function handleReportResolve(req: AuthenticatedRequest, res: Response, mode: 'pu
     const apply = typeof body.applyCorrectionToScholarship === 'boolean'
       ? body.applyCorrectionToScholarship
       : Boolean(body.applyCorrection);
-    const report = scholarshipService.resolveErrorReport(req.params.id, resolvedStatus, notes, apply, req.user!.email);
+    const report = scholarshipService.resolveErrorReport(
+      req.params.id,
+      resolvedStatus,
+      notes,
+      apply,
+      req.user!.email,
+      req.user!.userId
+    );
     if (!report) {
       res.status(404).json({ success: false, error: 'Report not found' });
       return;
@@ -270,14 +279,14 @@ router.post('/admin/check-updates', authenticateToken, requireRole('admin'), (re
   handleCheckUpdates(req, res, false);
 });
 router.post('/:id/check-updates', authenticateToken, requireRole('admin'), (req: AuthenticatedRequest, res) => handleCheckUpdates(req, res, true));
-router.post('/ai-extract', authenticateToken, requireRole('admin'), aiLimiter, asyncHandler(async (req: AuthenticatedRequest, res) => {
+router.post('/ai-extract', authenticateToken, requireRole('admin'), aiLimiter, validate(ScholarshipExtractSchema, 'body'), asyncHandler(async (req: AuthenticatedRequest, res) => {
   markDeprecated(res);
   await handleAiExtract(req, res, 'extractedData');
 }));
-router.post('/extract', authenticateToken, requireRole('admin'), aiLimiter, asyncHandler(async (req: AuthenticatedRequest, res) => {
+router.post('/extract', authenticateToken, requireRole('admin'), aiLimiter, validate(ScholarshipExtractSchema, 'body'), asyncHandler(async (req: AuthenticatedRequest, res) => {
   await handleAiExtract(req, res, 'data');
 }));
-router.post('/admin/extract', authenticateToken, requireRole('admin'), aiLimiter, asyncHandler(async (req: AuthenticatedRequest, res) => {
+router.post('/admin/extract', authenticateToken, requireRole('admin'), aiLimiter, validate(ScholarshipExtractSchema, 'body'), asyncHandler(async (req: AuthenticatedRequest, res) => {
   markDeprecated(res);
   await handleAiExtract(req, res, 'data');
 }));

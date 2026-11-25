@@ -839,7 +839,9 @@ const exportPayload = {
       };
     });
 
-    const totalScore = gapAnalysis.reduce((acc: number, g: any) => acc + g.readiness_pct, 0) / gapAnalysis.length;
+    const totalScore = gapAnalysis.length > 0
+      ? gapAnalysis.reduce((acc: number, g: { readiness_pct: number }) => acc + g.readiness_pct, 0) / gapAnalysis.length
+      : 0;
 
     return {
       student_id: studentId,

@@ -35,6 +35,17 @@ export function rateLimiter(
           clientMap.delete(k);
         }
       }
+      if (clientMap.size >= MAX_TRACKED_CLIENTS) {
+        for (const [k, entry] of clientMap.entries()) {
+          if (clientMap.size < MAX_TRACKED_CLIENTS) break;
+          const entryElapsed = Math.max(0, now - entry.windowStart);
+          const entryPrevWeight = Math.max(0, 1 - entryElapsed / windowMs);
+          const entryEffective = entry.previousCount * entryPrevWeight + entry.currentCount;
+          if (entryEffective < maxRequests) {
+            clientMap.delete(k);
+          }
+        }
+      }
       while (clientMap.size >= MAX_TRACKED_CLIENTS) {
         const oldestKey = clientMap.keys().next().value;
         if (oldestKey === undefined) break;

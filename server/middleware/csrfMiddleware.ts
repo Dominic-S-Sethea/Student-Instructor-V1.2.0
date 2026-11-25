@@ -9,8 +9,9 @@ const CSRF_COOKIE_NAME = 'cdes_csrf_secret';
 const fallbackSigningKey = crypto.randomBytes(32).toString('hex');
 
 function getCsrfSigningKey(): string {
-  const jwtSecret = process.env.JWT_SECRET;
-  return jwtSecret && jwtSecret.trim() !== '' ? jwtSecret : fallbackSigningKey;
+  const jwtSecret = process.env.JWT_SECRET?.trim();
+  const baseKey = jwtSecret && jwtSecret.length > 0 ? jwtSecret : fallbackSigningKey;
+  return crypto.createHmac('sha256', baseKey).update('cdes-csrf-v1').digest('hex');
 }
 
 function getCsrfCookieOptions(maxAgeMs: number): CookieOptions {

@@ -265,7 +265,8 @@ export class ScholarshipService {
     status: string,
     adminNotes?: string,
     applyCorrection: boolean = false,
-    resolverLabel: string = 'CDES Editorial Admin'
+    resolverLabel: string = 'CDES Editorial Admin',
+    changedByUserId?: string
   ): FormattedErrorReport | null {
     const resolved = withTransaction(() => {
       const updatedReport = this.repo.resolveErrorReport(id, status, resolverLabel, adminNotes);
@@ -293,7 +294,7 @@ export class ScholarshipService {
           this.repo.update(
             updatedReport.scholarship_id,
             { [mappedField]: updatedReport.suggested_correction.trim() },
-            resolverLabel
+            changedByUserId
           );
         }
       }

@@ -12,7 +12,7 @@ export interface AuthenticatedRequest extends Request {
   user?: AuthTokenPayload;
 }
 
-function extractJwt(req: Request): string | null {
+export function extractJwt(req: Request): string | null {
   const cookies = parseCookies(req.headers.cookie);
   if (cookies['cdes_jwt']) {
     return cookies['cdes_jwt'];
@@ -36,6 +36,8 @@ function resolveActiveUser(token: string): AuthTokenPayload | null {
     userId: user.id,
     email: user.email,
     role: user.role,
+    jti: payload.jti,
+    exp: payload.exp,
     studentProfileId: profile?.id ?? null,
   };
 }
@@ -62,10 +64,10 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
     }
     req.user = resolved;
     next();
-  } catch (err: unknown) {
+  } catch {
     res.status(401).json({
       success: false,
-      error: err instanceof Error ? err.message : 'Invalid or expired authentication token.',
+      error: 'Invalid or expired authentication token.',
     });
   }
 }

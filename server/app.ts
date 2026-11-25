@@ -6,6 +6,7 @@ import { requestLogger } from './middleware/requestLogger';
 import { traceMiddleware } from './middleware/tracingMiddleware';
 import { rateLimiter } from './middleware/rateLimiter';
 import { httpMetricsMiddleware } from './middleware/httpMetricsMiddleware';
+import { securityHeadersMiddleware } from './middleware/securityHeadersMiddleware';
 import { optionalAuth } from './middleware/authMiddleware';
 import { generateCsrfToken, validateCsrfToken } from './middleware/csrfMiddleware';
 import { resolvePublicDistDir } from './db/schemaAssets';
@@ -45,12 +46,21 @@ export interface CreateAppOptions {
   disableRateLimit?: boolean;
 }
 
+function parseAllowedOrigins(rawOrigin: string): string[] {
+  const parsed = rawOrigin
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0 && entry !== '*');
+  return parsed.length > 0 ? parsed : ['http://localhost:5173'];
+}
+
 /**
  * Constructs the Express application cleanly without opening SQLite on import or binding a port.
  * Suitable for both production/development servers and ephemeral HTTP integration tests.
  */
 export function createApp(options: CreateAppOptions = {}): Express {
   const app = express();
+  app.disable('x-powered-by');
   const trustProxyRaw = (process.env.TRUST_PROXY || '').trim();
   if (trustProxyRaw === 'true') {
     app.set('trust proxy', true);
@@ -62,20 +72,29 @@ export function createApp(options: CreateAppOptions = {}): Express {
   if (options.disableRateLimit) {
     app.set('disableRateLimit', true);
   }
-  const allowedOrigin = options.frontendOrigin || process.env.FRONTEND_ORIGIN || 'http://localhost:5173';
+  const allowedOrigins = parseAllowedOrigins(
+    options.frontendOrigin || process.env.FRONTEND_ORIGIN || 'http://localhost:5173'
+  );
   const nodeEnv = process.env.NODE_ENV || 'development';
   const serveStatic =
     options.serveStatic !== undefined
       ? options.serveStatic
       : nodeEnv === 'production' || nodeEnv === 'staging';
 
+  app.use(securityHeadersMiddleware);
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: true }));
   app.use(
     cors({
-      origin: allowedOrigin,
+      origin: (origin, callback) => {
+        if (!origin) {
+          callback(null, true);
+          return;
+        }
+        callback(null, allowedOrigins.includes(origin));
+      },
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-CSRF-Token-Id'],
       exposedHeaders: ['X-CSRF-Token'],
     })

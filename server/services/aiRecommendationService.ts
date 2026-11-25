@@ -1,14 +1,21 @@
+import crypto from 'node:crypto';
 import { getDatabase } from '../db/connection';
 import { AIRecommendation, RecommendationType, RecommendationStatus } from '../types/aiTypes';
 import { studentAIMemoryService } from './studentAIMemoryService';
+import { PrivacyService } from './privacyService';
+
+const privacyService = new PrivacyService();
 
 export class AIRecommendationService {
   /**
    * Generates or retrieves personalized recommendations across Learning, Career, and Scholarship.
    */
   public getOrGenerateRecommendations(studentId: string): AIRecommendation[] {
+    if (!privacyService.canUseAIMemory(studentId)) {
+      return this.generateFreshRecommendations(studentId);
+    }
     const db = getDatabase();
-    
+
     // Check if recommendations already exist
     const existing = db.prepare(`
       SELECT * FROM ai_recommendation_events
@@ -26,10 +33,12 @@ export class AIRecommendationService {
   }
 
   /**
-   * Synthesizes fresh personalized recommendations using multi-source student intelligence
+   * Synthesizes fresh personalized recommendations using multi-source student intelligence.
+   * Persists to ai_recommendation_events only when AI memory consent is granted.
    */
   public generateFreshRecommendations(studentId: string): AIRecommendation[] {
     const db = getDatabase();
+    const canPersist = privacyService.canUseAIMemory(studentId);
     const memory = studentAIMemoryService.getMemory(studentId);
     const now = new Date().toISOString();
 
@@ -43,7 +52,7 @@ export class AIRecommendationService {
         recommendation_type: 'learning',
         title: 'Virtual STEM Lab: Snell\'s Law & Refraction Simulator',
         description: 'Conduct interactive ray-tracing experiments in the CDES Virtual Lab. Adjust incident angles and refractive indices in real-time to master wave optics before Bac II.',
-        match_reason: 'Detected conceptual hesitation in optics & wave mechanics during recent learning activities.',
+        match_reason: 'Detected conceptual focus on optics & wave mechanics in study context.',
         target_entity_id: 'exp-optics-01',
         priority_score: 94.5,
         status: 'given',
@@ -56,7 +65,7 @@ export class AIRecommendationService {
         recommendation_type: 'learning',
         title: 'AI & Machine Learning Foundations: Binary Logic & Vectors',
         description: 'Complete hands-on Python matrix math and gradient descent modules to build a competitive edge for university entrance examinations.',
-        match_reason: 'Matches your strong demonstrated mastery in mathematics and interest in computer science.',
+        match_reason: 'Recommended foundational STEM pathway for Cambodian high school and university students.',
         target_entity_id: 'path-ai-engineer',
         priority_score: 92.0,
         status: 'given',
@@ -73,7 +82,7 @@ export class AIRecommendationService {
         recommendation_type: 'career',
         title: 'Embedded Robotics & AI Systems Engineering Pathway',
         description: 'Explore dual-track preparation bridging Institute of Technology of Cambodia (ITC Tronc Commun / GTI) and Cambodia Academy of Digital Technology (CADT).',
-        match_reason: 'High alignment with your robotics interest, high persistence index (80/100), and top 5% math aptitude.',
+        match_reason: 'Aligned with declared robotics/AI interest and engineering preparation.',
         target_entity_id: 'career-ai-robotics',
         priority_score: 96.0,
         status: 'given',
@@ -85,8 +94,8 @@ export class AIRecommendationService {
         student_id: studentId,
         recommendation_type: 'career',
         title: 'Full-Stack Cloud & Software Architecture Pathway',
-        description: 'High domestic starting salary range ($800 - $1,800/month) with rapid promotion velocity across regional tech unicorns and fintech platforms in Phnom Penh.',
-        match_reason: 'Synthesized from digital economy demand and your verified software engineering exploration.',
+        description: 'Explore software engineering and cloud career benchmarks across Cambodia’s digital economy.',
+        match_reason: 'General high-demand STEM career pathway in Cambodia.',
         target_entity_id: 'career-cloud-architect',
         priority_score: 89.0,
         status: 'given',
@@ -100,8 +109,8 @@ export class AIRecommendationService {
       student_id: studentId,
       recommendation_type: 'scholarship',
       title: 'MPTC Digital Skill 100% Undergraduate Scholarship',
-      description: 'Fully funded 4-year tuition fee waiver with monthly living stipends for STEM Bac II students studying Computer Science or Telecom at CADT or ITC.',
-      match_reason: 'You meet all eligibility criteria: Grade 12 Cambodian national, Science track, predicted Grade A/B Bac II, and strong tech portfolio.',
+      description: 'Review eligibility criteria for tuition coverage on Computer Science and Telecom programs at CADT or ITC (verify current cycle terms on official portal).',
+      match_reason: 'Relevant domestic STEM scholarship track for Cambodian Grade 12 candidates.',
       target_entity_id: 'sch-mptc-full',
       priority_score: 98.0,
       status: 'given',
@@ -113,9 +122,9 @@ export class AIRecommendationService {
     newRecs.push({
       student_id: studentId,
       recommendation_type: 'scholarship',
-      title: 'Paragon IU President Excellence Full Scholarship Exam',
-      description: '100% full-tuition award based on the National Scholarship Aptitude Exam testing Mathematics, Logic, and English proficiency.',
-      match_reason: 'Your persistence and problem-solving metrics indicate high probability of qualifying in the top percentile.',
+      title: 'Paragon IU President Excellence Scholarship Exam',
+      description: 'Merit-based scholarship aptitude exam covering Mathematics, Logic, and English proficiency.',
+      match_reason: 'Merit scholarship opportunity open to Cambodian high school graduates.',
       target_entity_id: 'sch-paragon-pres',
       priority_score: 91.0,
       status: 'given',
@@ -123,30 +132,33 @@ export class AIRecommendationService {
       action_link: '/scholarships'
     });
 
-    // Save to database
-    const insertStmt = db.prepare(`
-      INSERT INTO ai_recommendation_events (
-        id, student_id, recommendation_type, title, description, match_reason,
-        target_entity_id, priority_score, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+    const insertStmt = canPersist
+      ? db.prepare(`
+          INSERT INTO ai_recommendation_events (
+            id, student_id, recommendation_type, title, description, match_reason,
+            target_entity_id, priority_score, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+      : null;
 
     const result: AIRecommendation[] = [];
-    newRecs.forEach((r, idx) => {
-      const recId = `rec-${Date.now()}-${idx}`;
-      insertStmt.run(
-        recId,
-        r.student_id,
-        r.recommendation_type,
-        r.title,
-        r.description,
-        r.match_reason,
-        r.target_entity_id || null,
-        r.priority_score,
-        r.status,
-        now,
-        now
-      );
+    newRecs.forEach((r) => {
+      const recId = `rec-${crypto.randomUUID()}`;
+      if (insertStmt) {
+        insertStmt.run(
+          recId,
+          r.student_id,
+          r.recommendation_type,
+          r.title,
+          r.description,
+          r.match_reason,
+          r.target_entity_id || null,
+          r.priority_score,
+          r.status,
+          now,
+          now
+        );
+      }
       result.push({
         ...r,
         id: recId,

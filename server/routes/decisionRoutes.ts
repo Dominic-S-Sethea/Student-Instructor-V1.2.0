@@ -3,13 +3,16 @@ import { AnalyticsRepository } from '../repositories/analyticsRepository';
 import { PrivacyService } from '../services/privacyService';
 import { hermesMemoryService } from '../services/hermesMemoryService';
 import { optionalAuth, AuthenticatedRequest } from '../middleware/authMiddleware';
+import { rateLimiter } from '../middleware/rateLimiter';
+
+const decisionLimiter = rateLimiter(60_000, 30, 'Too many major-fit evaluations. Please wait a minute.');
 
 export function createDecisionRouter(): Router {
   const router = Router();
   const analyticsRepo = new AnalyticsRepository();
   const privacyService = new PrivacyService();
 
-  router.post('/evaluate', optionalAuth, (req: AuthenticatedRequest, res: Response): void => {
+  router.post('/evaluate', optionalAuth, decisionLimiter, (req: AuthenticatedRequest, res: Response): void => {
     const body = (req.body || {}) as {
       interests?: string[];
       mathAbility?: string;

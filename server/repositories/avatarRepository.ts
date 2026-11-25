@@ -43,8 +43,6 @@ export class AvatarRepository {
               clothing_outfit = COALESCE(?, clothing_outfit),
               accessory = COALESCE(?, accessory),
               expression = COALESCE(?, expression),
-              level = COALESCE(?, level),
-              merit_points = COALESCE(?, merit_points),
               updated_at = ?
           WHERE student_id = ?
         `)
@@ -58,8 +56,6 @@ export class AvatarRepository {
           profile.clothing_outfit ?? null,
           profile.accessory ?? null,
           profile.expression ?? null,
-          profile.level ?? null,
-          profile.merit_points ?? null,
           now,
           profile.student_id
         );
@@ -69,7 +65,7 @@ export class AvatarRepository {
           INSERT INTO avatar_profiles (
             student_id, avatar_name, gender_presentation, skin_tone, hair_style, hair_color,
             eye_color, clothing_outfit, accessory, expression, level, merit_points, updated_at, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 150, ?, ?)
         `)
         .run(
           profile.student_id,
@@ -82,8 +78,6 @@ export class AvatarRepository {
           profile.clothing_outfit || 'cdes_uniform',
           profile.accessory || 'glasses_round',
           profile.expression || 'smiling',
-          profile.level || 1,
-          profile.merit_points || 150,
           now,
           now
         );
@@ -121,6 +115,13 @@ export class AvatarRepository {
   getItemById(itemId: string): AvatarItem | null {
     const row = this.db.prepare('SELECT * FROM avatar_items WHERE id = ?').get(itemId) as unknown as AvatarItem | undefined;
     return row || null;
+  }
+
+  hasInventoryItem(studentId: string, itemId: string): boolean {
+    const row = this.db
+      .prepare('SELECT 1 FROM student_inventory WHERE student_id = ? AND item_id = ? AND quantity > 0 LIMIT 1')
+      .get(studentId, itemId);
+    return Boolean(row);
   }
 
   getStudentInventory(studentId: string): (StudentInventoryItem & { item: AvatarItem })[] {
@@ -166,14 +167,14 @@ export class AvatarRepository {
     const now = new Date().toISOString();
     const existing = this.db
       .prepare('SELECT * FROM student_inventory WHERE student_id = ? AND item_id = ?')
-      .get(studentId, itemId) as any;
+      .get(studentId, itemId) as { id: string } | undefined;
 
     if (existing) {
       this.db
         .prepare('UPDATE student_inventory SET quantity = quantity + 1 WHERE id = ?')
         .run(existing.id);
     } else {
-      const id = `inv-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const id = `inv-${crypto.randomUUID()}`;
       this.db
         .prepare(`
           INSERT INTO student_inventory (id, student_id, item_id, quantity, acquired_at, is_equipped)
@@ -219,7 +220,6 @@ export class AvatarRepository {
             background_theme = COALESCE(?, background_theme),
             wall_color = COALESCE(?, wall_color),
             floor_style = COALESCE(?, floor_style),
-            study_streak_days = COALESCE(?, study_streak_days),
             updated_at = ?
         WHERE student_id = ?
       `)
@@ -228,7 +228,6 @@ export class AvatarRepository {
         roomData.background_theme ?? null,
         roomData.wall_color ?? null,
         roomData.floor_style ?? null,
-        roomData.study_streak_days ?? null,
         now,
         studentId
       );

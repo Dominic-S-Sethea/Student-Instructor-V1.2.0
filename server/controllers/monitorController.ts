@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { getDatabase, getDbMetrics, verifyDatabaseHealth } from '../db/connection';
 import { authenticateToken, requireRole, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { httpMetricsStore } from '../middleware/httpMetricsMiddleware';
+import { safeErrorMessage } from '../utils/httpErrors';
 
 const router = Router();
 
@@ -77,7 +78,7 @@ router.get('/', authenticateToken, requireRole('admin'), (_req: AuthenticatedReq
   } catch (err: unknown) {
     res.status(500).json({
       success: false,
-      error: err instanceof Error ? err.message : 'Failed to collect metrics.',
+      error: safeErrorMessage(err, 'Failed to collect metrics.', 500),
     });
   }
 });
@@ -88,7 +89,7 @@ router.get('/sqlite', authenticateToken, requireRole('admin'), (_req: Authentica
     res.json(getDbMetrics().toJSON());
   } catch (err: unknown) {
     res.status(500).json({
-      error: err instanceof Error ? err.message : 'Failed to read SQLite metrics',
+      error: safeErrorMessage(err, 'Failed to read SQLite metrics.', 500),
     });
   }
 });

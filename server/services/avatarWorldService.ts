@@ -2,7 +2,7 @@ import { AvatarRepository } from '../repositories/avatarRepository';
 import { AnalyticsRepository } from '../repositories/analyticsRepository';
 import { IntelligenceRepository } from '../repositories/intelligenceRepository';
 import { PrivacyService } from './privacyService';
-import { NotFoundError } from '../utils/httpErrors';
+import { HttpError, NotFoundError } from '../utils/httpErrors';
 import {
   AvatarProfile,
   VirtualRoom,
@@ -92,12 +92,13 @@ export class AvatarWorldService {
   }
 
   /**
-   * Update student avatar appearance and metadata
+   * Update student avatar appearance and metadata (never caller-supplied level/merit_points)
    */
   updateAvatar(studentId: string, updateData: Partial<AvatarProfile>): AvatarProfile {
     const isNew = !this.avatarRepo.getAvatarProfile(studentId);
+    const { level: _lvl, merit_points: _mp, student_id: _sid, ...safeAppearance } = updateData;
     const updated = this.avatarRepo.upsertAvatarProfile({
-      ...updateData,
+      ...safeAppearance,
       student_id: studentId,
     });
 
@@ -119,10 +120,11 @@ export class AvatarWorldService {
   }
 
   /**
-   * Customize personal room background, wall color, and theme
+   * Customize personal room background, wall color, and theme (never caller-supplied study_streak_days)
    */
   customizeRoom(studentId: string, roomData: Partial<VirtualRoom>): VirtualRoom {
-    const updated = this.avatarRepo.updateVirtualRoom(studentId, roomData);
+    const { study_streak_days: _streak, student_id: _sid, id: _rid, ...safeRoom } = roomData;
+    const updated = this.avatarRepo.updateVirtualRoom(studentId, safeRoom);
 
     if (this.privacyService.canCollectAnalytics(studentId)) {
       this.analyticsRepo.logActivityEvent({
@@ -141,7 +143,7 @@ export class AvatarWorldService {
   }
 
   /**
-   * Place an item from inventory into the room
+   * Place an item from inventory into the room (verifies ownership for locked items)
    */
   placeItemInRoom(
     studentId: string,
@@ -156,6 +158,11 @@ export class AvatarWorldService {
     const item = this.avatarRepo.getItemById(payload.item_id);
     if (!item) {
       throw new NotFoundError('Avatar item not found.');
+    }
+    const unlockType = String(item.unlock_condition_type || 'default').toLowerCase();
+    const isStarterFree = unlockType === 'default' || unlockType === 'free';
+    if (!isStarterFree && !this.avatarRepo.hasInventoryItem(studentId, payload.item_id)) {
+      throw new HttpError(403, 'Item is not unlocked in your inventory.');
     }
     const room = this.avatarRepo.getVirtualRoom(studentId);
     if (!room) {

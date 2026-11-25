@@ -11,10 +11,43 @@ import {
   EducationHistoryRecord,
 } from '../repositories/userRepository';
 
+const WEAK_SECRET_PATTERNS = [
+  /^changeme/i,
+  /^replace[-_]?me/i,
+  /^your[-_]?secret/i,
+  /^dev[-_]?secret/i,
+  /^secret$/i,
+  /^password$/i,
+  /^123456/,
+];
+
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('cdes-timing-defense-dummy-secret', 10);
+const MAX_REVOKED_TOKENS = 10_000;
+const revokedTokenIds = new Map<string, number>();
+
+function pruneRevokedTokens(nowMs: number): void {
+  for (const [jti, expMs] of revokedTokenIds.entries()) {
+    if (expMs <= nowMs) {
+      revokedTokenIds.delete(jti);
+    }
+  }
+  while (revokedTokenIds.size >= MAX_REVOKED_TOKENS) {
+    const oldest = revokedTokenIds.keys().next().value;
+    if (oldest === undefined) break;
+    revokedTokenIds.delete(oldest);
+  }
+}
+
 export function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET;
-  if (!secret || secret.trim() === '') {
+  const secret = process.env.JWT_SECRET?.trim() || '';
+  if (!secret) {
     throw new Error('JWT_SECRET environment variable is not set');
+  }
+  const env = process.env.NODE_ENV || 'development';
+  if (env === 'production' || env === 'staging') {
+    if (secret.length < 32 || WEAK_SECRET_PATTERNS.some((pattern) => pattern.test(secret))) {
+      throw new Error('JWT_SECRET is too weak for production/staging (minimum 32 non-placeholder characters required).');
+    }
   }
   return secret;
 }
@@ -27,6 +60,8 @@ export interface AuthTokenPayload {
   userId: string;
   email: string;
   role: 'student' | 'admin' | 'organization' | 'mentor';
+  jti?: string;
+  exp?: number;
   studentProfileId?: string | null;
 }
 
@@ -128,12 +163,9 @@ export class AuthService {
 
   public login(params: { email: string; password: string }): LoginResult {
     const user = this.userRepo.findByEmail(params.email);
-    if (!user || user.is_deleted) {
-      throw new Error('Invalid email or password.');
-    }
-
-    const isMatch = bcrypt.compareSync(params.password, user.password_hash);
-    if (!isMatch) {
+    const hashToCheck = user && !user.is_deleted ? user.password_hash : DUMMY_PASSWORD_HASH;
+    const isMatch = bcrypt.compareSync(params.password, hashToCheck);
+    if (!user || user.is_deleted || !isMatch) {
       throw new Error('Invalid email or password.');
     }
 
@@ -164,13 +196,50 @@ export class AuthService {
       userId: user.id,
       email: user.email,
       role: user.role,
+      jti: crypto.randomUUID(),
     };
-    return jwt.sign(payload, getJwtSecret(), { expiresIn: getSessionTtlSeconds() });
+    return jwt.sign(payload, getJwtSecret(), {
+      algorithm: 'HS256',
+      expiresIn: getSessionTtlSeconds(),
+    });
+  }
+
+  public revokeToken(token: string | null | undefined): void {
+    if (!token) return;
+    try {
+      const decoded = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] }) as AuthTokenPayload;
+      if (decoded.jti) {
+        const nowMs = Date.now();
+        pruneRevokedTokens(nowMs);
+        const expMs = typeof decoded.exp === 'number' ? decoded.exp * 1000 : nowMs + getSessionTtlSeconds() * 1000;
+        revokedTokenIds.set(decoded.jti, expMs);
+      }
+    } catch {
+      // Ignore already-invalid/expired tokens during logout
+    }
   }
 
   public verifyToken(token: string): AuthTokenPayload {
     try {
-      return jwt.verify(token, getJwtSecret()) as AuthTokenPayload;
+      const decoded = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] }) as Partial<AuthTokenPayload>;
+      if (
+        !decoded ||
+        typeof decoded.userId !== 'string' ||
+        typeof decoded.email !== 'string' ||
+        !['student', 'admin', 'organization', 'mentor'].includes(String(decoded.role))
+      ) {
+        throw new Error('Malformed token payload.');
+      }
+      if (decoded.jti) {
+        const expMs = revokedTokenIds.get(decoded.jti);
+        if (expMs !== undefined) {
+          if (expMs > Date.now()) {
+            throw new Error('Authentication token has been revoked.');
+          }
+          revokedTokenIds.delete(decoded.jti);
+        }
+      }
+      return decoded as AuthTokenPayload;
     } catch {
       throw new Error('Invalid or expired authentication token.');
     }

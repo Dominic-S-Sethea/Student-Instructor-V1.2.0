@@ -1,3 +1,4 @@
+import { withTransaction } from '../db/connection';
 import { HermesMemoryRepository } from '../repositories/hermesMemoryRepository';
 import { PrivacyService } from './privacyService';
 import {
@@ -5,6 +6,7 @@ import {
   expandAliases,
   extractAutoEntitiesAndKeywords,
   normalizeTokens,
+  sanitizeMemoryDocText,
   sanitizeMemoryText,
 } from './hermesMemoryHelpers';
 import type {
@@ -21,6 +23,8 @@ import type {
 
 const DEFAULT_USER_LIMIT = 3000;
 const DEFAULT_MEMORY_LIMIT = 10000;
+const MAX_ACTIVE_FACTS_PER_USER = 200;
+const MAX_FEEDBACK_NOTE_LEN = 300;
 
 export class HermesMemoryService {
   private repo: HermesMemoryRepository;
@@ -122,7 +126,7 @@ export class HermesMemoryService {
     }
 
     const limit = docType === 'USER' ? DEFAULT_USER_LIMIT : DEFAULT_MEMORY_LIMIT;
-    const sanitized = sanitizeMemoryText(content);
+    const sanitized = sanitizeMemoryDocText(content);
     const consolidated = consolidateTextToLimit(sanitized, limit);
     const truncated = consolidated.length < sanitized.length;
     const doc = this.repo.upsertDoc(userId, docType, consolidated, limit, {
@@ -151,62 +155,61 @@ export class HermesMemoryService {
       return { enabled: true, fact: null, deduplicated: false };
     }
 
-    const existing = this.repo.listFacts(userId, false);
-    const match = existing.find(
-      (f) => f.factText.toLowerCase() === cleanedText.toLowerCase()
-    );
+    return withTransaction(() => {
+      const match = this.repo.findActiveFactByNormalizedText(userId, cleanedText);
+      if (match) {
+        const nextTrust = Math.min(1, Number((match.trustScore + 0.08).toFixed(2)));
+        const updated = this.repo.updateFact(userId, match.id, {
+          trustScore: nextTrust,
+          confirmations: match.confirmations + 1,
+        });
+        this.repo.insertHistory({
+          factId: match.id,
+          userId,
+          action: 'confirm',
+          beforeText: match.factText,
+          afterText: match.factText,
+          beforeTrust: match.trustScore,
+          afterTrust: nextTrust,
+          note: 'Reinforced duplicate fact observation',
+        });
+        return { enabled: true, fact: updated, deduplicated: true };
+      }
 
-    if (match) {
-      const nextTrust = Math.min(1, Number((match.trustScore + 0.08).toFixed(2)));
-      const updated = this.repo.updateFact(userId, match.id, {
-        trustScore: nextTrust,
-        confirmations: match.confirmations + 1,
-      });
-      this.repo.insertHistory({
-        factId: match.id,
+      const category: HermesFactCategory = input.category || 'preference';
+      const source: HermesFactSource = input.source || 'explicit_user';
+      const { entities, keywords } = extractAutoEntitiesAndKeywords(
+        cleanedText,
+        input.entities,
+        input.keywords
+      );
+      const initialTrust = source === 'explicit_user' ? 0.9 : 0.72;
+
+      const created = this.repo.insertFact({
         userId,
-        action: 'confirm',
-        beforeText: match.factText,
-        afterText: match.factText,
-        beforeTrust: match.trustScore,
-        afterTrust: nextTrust,
-        note: 'Reinforced duplicate fact observation',
+        category,
+        factText: cleanedText,
+        entities,
+        keywords,
+        trustScore: initialTrust,
+        confirmations: 1,
+        source,
       });
-      return { enabled: true, fact: updated, deduplicated: true };
-    }
 
-    const category: HermesFactCategory = input.category || 'preference';
-    const source: HermesFactSource = input.source || 'explicit_user';
-    const { entities, keywords } = extractAutoEntitiesAndKeywords(
-      cleanedText,
-      input.entities,
-      input.keywords
-    );
-    const initialTrust = source === 'explicit_user' ? 0.9 : 0.72;
+      this.repo.insertHistory({
+        factId: created.id,
+        userId,
+        action: 'add',
+        beforeText: null,
+        afterText: created.factText,
+        beforeTrust: null,
+        afterTrust: created.trustScore,
+        note: `Source: ${source}`,
+      });
 
-    const created = this.repo.insertFact({
-      userId,
-      category,
-      factText: cleanedText,
-      entities,
-      keywords,
-      trustScore: initialTrust,
-      confirmations: 1,
-      source,
+      this.repo.enforceActiveFactCap(userId, MAX_ACTIVE_FACTS_PER_USER);
+      return { enabled: true, fact: created, deduplicated: false };
     });
-
-    this.repo.insertHistory({
-      factId: created.id,
-      userId,
-      action: 'add',
-      beforeText: null,
-      afterText: created.factText,
-      beforeTrust: null,
-      afterTrust: created.trustScore,
-      note: `Source: ${source}`,
-    });
-
-    return { enabled: true, fact: created, deduplicated: false };
   }
 
   public searchFacts(
@@ -284,100 +287,98 @@ export class HermesMemoryService {
       return { enabled: false, reason: check.reason, fact: null, history: [] };
     }
 
-    const existing = this.repo.getFactById(userId, factId);
-    if (!existing) {
-      return { enabled: true, fact: null, history: [] };
-    }
+    const safeNote = typeof note === 'string' && note.trim()
+      ? sanitizeMemoryText(note).slice(0, MAX_FEEDBACK_NOTE_LEN)
+      : undefined;
 
-    let next: HermesMemoryFact | null = existing;
-    if (action === 'confirm') {
-      const nextTrust = Math.min(1, Number((existing.trustScore + 0.1).toFixed(2)));
-      next = this.repo.updateFact(userId, factId, {
-        trustScore: nextTrust,
-        confirmations: existing.confirmations + 1,
-        status: 'active',
-      });
-      this.repo.insertHistory({
-        factId,
-        userId,
-        action: 'confirm',
-        beforeText: existing.factText,
-        afterText: existing.factText,
-        beforeTrust: existing.trustScore,
-        afterTrust: nextTrust,
-        note: note || 'Confirmed',
-      });
-    } else if (action === 'correct') {
-      const sanitizedNext = sanitizeMemoryText(updatedText || existing.factText).slice(0, 400);
-      const { entities, keywords } = extractAutoEntitiesAndKeywords(sanitizedNext);
-      const nextTrust = Math.max(0.5, existing.trustScore);
-      next = this.repo.updateFact(userId, factId, {
-        previousFactText: existing.factText,
-        factText: sanitizedNext,
-        entities,
-        keywords,
-        trustScore: nextTrust,
-        status: 'active',
-      });
-      this.repo.insertHistory({
-        factId,
-        userId,
-        action: 'correct',
-        beforeText: existing.factText,
-        afterText: sanitizedNext,
-        beforeTrust: existing.trustScore,
-        afterTrust: nextTrust,
-        note: note || 'Corrected by student or advisor',
-      });
-    } else if (action === 'end') {
-      const nextTrust = Math.max(0.1, Number((existing.trustScore - 0.35).toFixed(2)));
-      next = this.repo.updateFact(userId, factId, {
-        status: 'ended',
-        trustScore: nextTrust,
-      });
-      this.repo.insertHistory({
-        factId,
-        userId,
-        action: 'end',
-        beforeText: existing.factText,
-        afterText: existing.factText,
-        beforeTrust: existing.trustScore,
-        afterTrust: nextTrust,
-        note: note || 'Marked as no longer active',
-      });
-    } else if (action === 'revert') {
-      const restoredText = existing.previousFactText || existing.factText;
-      const { entities, keywords } = extractAutoEntitiesAndKeywords(restoredText);
-      const nextTrust = 0.75;
-      next = this.repo.updateFact(userId, factId, {
-        factText: restoredText,
-        previousFactText: existing.factText,
-        entities,
-        keywords,
-        status: existing.status === 'ended' ? 'active' : existing.status,
-        trustScore: nextTrust,
-      });
-      this.repo.insertHistory({
-        factId,
-        userId,
-        action: 'revert',
-        beforeText: existing.factText,
-        afterText: restoredText,
-        beforeTrust: existing.trustScore,
-        afterTrust: nextTrust,
-        note: note || 'Reverted to previous fact',
-      });
-    }
+    return withTransaction(() => {
+      const existing = this.repo.getFactById(userId, factId);
+      if (!existing) {
+        return { enabled: true, fact: null, history: [] };
+      }
 
-    return {
-      enabled: true,
-      fact: next,
-      history: this.repo.getFactHistory(userId, factId),
-    };
+      let next: HermesMemoryFact | null = existing;
+      if (action === 'confirm') {
+        const nextTrust = Math.min(1, Number((existing.trustScore + 0.1).toFixed(2)));
+        next = this.repo.updateFact(userId, factId, {
+          trustScore: nextTrust,
+          confirmations: existing.confirmations + 1,
+          status: 'active',
+        });
+        this.repo.insertHistory({
+          factId, userId, action: 'confirm',
+          beforeText: existing.factText, afterText: existing.factText,
+          beforeTrust: existing.trustScore, afterTrust: nextTrust,
+          note: safeNote || 'Confirmed',
+        });
+      } else if (action === 'correct') {
+        const sanitizedNext = sanitizeMemoryText(updatedText || existing.factText).slice(0, 400);
+        const { entities, keywords } = extractAutoEntitiesAndKeywords(sanitizedNext);
+        const nextTrust = Math.max(0.5, existing.trustScore);
+        next = this.repo.updateFact(userId, factId, {
+          previousFactText: existing.factText,
+          factText: sanitizedNext,
+          entities,
+          keywords,
+          trustScore: nextTrust,
+          status: 'active',
+        });
+        this.repo.insertHistory({
+          factId, userId, action: 'correct',
+          beforeText: existing.factText, afterText: sanitizedNext,
+          beforeTrust: existing.trustScore, afterTrust: nextTrust,
+          note: safeNote || 'Corrected by student or advisor',
+        });
+      } else if (action === 'end') {
+        const nextTrust = Math.max(0.1, Number((existing.trustScore - 0.35).toFixed(2)));
+        next = this.repo.updateFact(userId, factId, { status: 'ended', trustScore: nextTrust });
+        this.repo.insertHistory({
+          factId, userId, action: 'end',
+          beforeText: existing.factText, afterText: existing.factText,
+          beforeTrust: existing.trustScore, afterTrust: nextTrust,
+          note: safeNote || 'Marked as no longer active',
+        });
+      } else if (action === 'revert') {
+        const restoredText = existing.previousFactText || existing.factText;
+        const { entities, keywords } = extractAutoEntitiesAndKeywords(restoredText);
+        const nextTrust = 0.75;
+        next = this.repo.updateFact(userId, factId, {
+          factText: restoredText,
+          previousFactText: existing.factText,
+          entities,
+          keywords,
+          status: existing.status === 'ended' ? 'active' : existing.status,
+          trustScore: nextTrust,
+        });
+        this.repo.insertHistory({
+          factId, userId, action: 'revert',
+          beforeText: existing.factText, afterText: restoredText,
+          beforeTrust: existing.trustScore, afterTrust: nextTrust,
+          note: safeNote || 'Reverted to previous fact',
+        });
+      }
+
+      return {
+        enabled: true,
+        fact: next,
+        history: this.repo.getFactHistory(userId, factId),
+      };
+    });
   }
 
   public getFactHistory(userId: string, factId: string): HermesFactHistoryEntry[] {
     return this.assertMemoryAllowed(userId).allowed ? this.repo.getFactHistory(userId, factId) : [];
+  }
+
+  public getFactHistoryWithStatus(
+    userId: string,
+    factId: string
+  ): { enabled: boolean; reason?: string; history: HermesFactHistoryEntry[] } {
+    const check = this.assertMemoryAllowed(userId);
+    if (!check.allowed) {
+      return { enabled: false, reason: check.reason, history: [] };
+    }
+    return { enabled: true, history: this.repo.getFactHistory(userId, factId) };
   }
 
   public clearAllMemory(userId: string): { cleared: boolean } {

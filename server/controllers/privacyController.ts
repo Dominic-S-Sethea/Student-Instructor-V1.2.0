@@ -61,7 +61,7 @@ router.post('/consent', authenticateToken, (req: AuthenticatedRequest, res: Resp
   } catch (err: unknown) {
     res.status(400).json({
       success: false,
-      error: err instanceof Error ? err.message : 'Failed to update consent.',
+      error: safeErrorMessage(err, 'Failed to update consent.', 400),
     });
   }
 });
@@ -88,7 +88,7 @@ router.post('/parent-verify', authenticateToken, (req: AuthenticatedRequest, res
   } catch (err: unknown) {
     res.status(400).json({
       success: false,
-      error: err instanceof Error ? err.message : 'Failed to record guardian verification request.',
+      error: safeErrorMessage(err, 'Failed to record guardian verification request.', 400),
     });
   }
 });

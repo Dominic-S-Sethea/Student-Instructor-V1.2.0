@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDatabaseReadiness, verifyDatabaseHealth } from '../db/connection';
+import { safeErrorMessage } from '../utils/httpErrors';
 
 const router = Router();
 
@@ -27,7 +28,7 @@ router.get('/', (_req: Request, res: Response): void => {
         integrity: readiness.integrity,
       },
       aiEnabled,
-      error: dbHealth?.error || readiness.lastError || 'Database is not ready.',
+      error: safeErrorMessage(dbHealth?.error || readiness.lastError, 'Database is not ready.', 503),
       timestamp: new Date().toISOString(),
     });
     return;

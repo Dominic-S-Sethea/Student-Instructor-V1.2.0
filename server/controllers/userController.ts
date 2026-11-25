@@ -1,6 +1,8 @@
 import { Router, Response } from 'express';
 import { UserService } from '../services/userService';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
+import { validate } from '../middleware/validationMiddleware';
+import { UserEducationCreateSchema, UserProfileUpdateSchema } from '../validators/apiSchemas';
 import { safeErrorMessage } from '../utils/httpErrors';
 
 const router = Router();
@@ -20,9 +22,9 @@ router.get('/profile', authenticateToken, (req: AuthenticatedRequest, res: Respo
 });
 
 /** PUT /api/users/profile — update authenticated user's own profile (never caller-supplied user_id). */
-router.put('/profile', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+router.put('/profile', authenticateToken, validate(UserProfileUpdateSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   try {
-    const body = (req.body || {}) as Record<string, unknown>;
+    const body = req.body as Record<string, unknown>;
     const updated = userService.updateProfile(req.user!.userId, {
       name: typeof body.name === 'string' ? body.name : undefined,
       date_of_birth: body.date_of_birth === null ? null : typeof body.date_of_birth === 'string' ? body.date_of_birth : undefined,
@@ -46,20 +48,15 @@ router.put('/profile', authenticateToken, (req: AuthenticatedRequest, res: Respo
   } catch (err: unknown) {
     res.status(400).json({
       success: false,
-      error: err instanceof Error ? err.message : 'Failed to update profile.',
+      error: safeErrorMessage(err, 'Failed to update profile.', 400),
     });
   }
 });
 
 /** POST /api/users/education — add an education history milestone for authenticated user. */
-router.post('/education', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+router.post('/education', authenticateToken, validate(UserEducationCreateSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   try {
-    const { institution, degree, start_date, end_date, achievements } = req.body || {};
-    if (!institution || !degree) {
-      res.status(400).json({ success: false, error: 'Institution and degree are required.' });
-      return;
-    }
-
+    const { institution, degree, start_date, end_date, achievements } = req.body;
     const record = userService.addEducation(req.user!.userId, {
       institution: String(institution),
       degree: String(degree),
@@ -72,7 +69,7 @@ router.post('/education', authenticateToken, (req: AuthenticatedRequest, res: Re
   } catch (err: unknown) {
     res.status(400).json({
       success: false,
-      error: err instanceof Error ? err.message : 'Failed to add education record.',
+      error: safeErrorMessage(err, 'Failed to add education record.', 400),
     });
   }
 });

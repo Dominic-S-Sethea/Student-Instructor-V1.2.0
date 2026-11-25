@@ -11,6 +11,15 @@ import {
 } from '../middleware/authMiddleware';
 import { rateLimiter } from '../middleware/rateLimiter';
 import { HttpError, safeErrorMessage } from '../utils/httpErrors';
+import {
+  ALLOWED_POST_TYPES,
+  ALLOWED_SESSION_TYPES,
+  moderateCommunityPostInput,
+  normalizeReportItemType,
+  normalizeReportReason,
+  sanitizeAuthorDisplayName,
+  sanitizeCommunityTags,
+} from '../services/communityModerationHelper';
 
 const router = Router();
 const analyticsRepo = new AnalyticsRepository();
@@ -49,7 +58,15 @@ router.get('/communities/:slug', (req: Request, res: Response) =>
   handle(res, () => {
     const community = communityRepository.getCommunityBySlug(req.params.slug) as Record<string, unknown> | undefined;
     if (!community) return res.status(404).json({ success: false, error: 'Community not found' });
-    const members = communityRepository.getCommunityMembers(String(community.id));
+    const rawMembers = communityRepository.getCommunityMembers(String(community.id)) as Array<Record<string, unknown>>;
+    const members = rawMembers.map((m) => ({
+      id: m.id,
+      community_id: m.community_id,
+      role: m.role,
+      reputation_points: m.reputation_points,
+      is_active: m.is_active,
+      joined_at: m.joined_at,
+    }));
     return res.json({ success: true, data: { ...community, members } });
   })
 );
@@ -68,8 +85,7 @@ router.post('/communities/:id/join', authenticateToken, (req: AuthenticatedReque
       return res.status(404).json({ success: false, error: 'Community not found' });
     }
     const actingUserId = req.user!.userId;
-    const role = typeof req.body?.role === 'string' ? req.body.role : undefined;
-    const result = communityRepository.joinCommunity(req.params.id, actingUserId, role);
+    const result = communityRepository.joinCommunity(req.params.id, actingUserId, 'member');
     logConsentedActivity(actingUserId, 'COMMUNITY_JOIN', { communityId: req.params.id });
     return res.json({ success: true, result });
   })
@@ -94,39 +110,40 @@ router.post('/posts', authenticateToken, communityWriteLimiter, (req: Authentica
     const actingUserId = req.user!.userId;
     const body = (req.body || {}) as Record<string, unknown>;
     const communityId = typeof body.community_id === 'string' ? body.community_id.trim() : '';
-    const title = typeof body.title === 'string' ? body.title.trim() : '';
-    const content = typeof body.content === 'string' ? body.content : '';
+    const title = typeof body.title === 'string' ? body.title.trim().slice(0, 200) : '';
+    const content = typeof body.content === 'string' ? body.content.slice(0, 5000) : '';
     if (!communityId || !title || !content.trim()) {
       return res.status(400).json({ success: false, error: 'community_id, title, and content are required.' });
     }
     if (!communityRepository.getCommunityById(communityId)) {
       return res.status(404).json({ success: false, error: 'Community not found.' });
     }
-    const filterResult = safetyModerationService.evaluateContent(content, actingUserId);
-    if (filterResult.action === 'blocked') {
-      return res.status(400).json({
-        success: false,
-        error: filterResult.warningNotice || 'Content violates CDES safety and academic policy.',
-        blocked: true,
-      });
+    const moderated = moderateCommunityPostInput(
+      actingUserId,
+      title,
+      content,
+      sanitizeAuthorDisplayName(body.author_name, req.user!.email),
+      sanitizeCommunityTags(body.tags)
+    );
+    if (moderated.blocked) {
+      return res.status(400).json({ success: false, error: moderated.error, blocked: true });
     }
+    const rawPostType = typeof body.post_type === 'string' ? body.post_type.trim() : 'discussion';
+    const postType = ALLOWED_POST_TYPES.has(rawPostType) ? rawPostType : 'discussion';
+
     const post = communityRepository.createPost({
       community_id: communityId,
       author_id: actingUserId,
-      author_name: typeof body.author_name === 'string' ? body.author_name : req.user!.email.split('@')[0],
+      author_name: moderated.authorName,
       author_role: req.user!.role,
       author_avatar: typeof body.author_avatar === 'string' ? body.author_avatar : undefined,
-      post_type: typeof body.post_type === 'string' ? body.post_type : 'discussion',
-      title,
-      content: filterResult.sanitizedContent,
-      tags: Array.isArray(body.tags) ? (body.tags as string[]) : undefined,
+      post_type: postType,
+      title: moderated.title,
+      content: moderated.content,
+      tags: moderated.tags,
     }) as Record<string, unknown> | undefined;
-    logConsentedActivity(actingUserId, 'COMMUNITY_POST_CREATE', {
-      postId: post?.id,
-      communityId,
-      postType: body.post_type,
-    });
-    return res.json({ success: true, data: post, notice: filterResult.warningNotice });
+    logConsentedActivity(actingUserId, 'COMMUNITY_POST_CREATE', { postId: post?.id, communityId, postType });
+    return res.json({ success: true, data: post, notice: moderated.notice });
   })
 );
 
@@ -143,15 +160,17 @@ router.post('/posts/:id/comments', authenticateToken, communityWriteLimiter, (re
   handle(res, () => {
     const actingUserId = req.user!.userId;
     const body = (req.body || {}) as Record<string, unknown>;
-    const content = typeof body.content === 'string' ? body.content : '';
+    const content = typeof body.content === 'string' ? body.content.slice(0, 3000) : '';
     if (!content.trim()) {
       return res.status(400).json({ success: false, error: 'content is required.' });
     }
     if (!communityRepository.getPostById(req.params.id)) {
       return res.status(404).json({ success: false, error: 'Post not found.' });
     }
+    const rawAuthorName = sanitizeAuthorDisplayName(body.author_name, req.user!.email);
     const filterResult = safetyModerationService.evaluateContent(content, actingUserId);
-    if (filterResult.action === 'blocked') {
+    const authorCheck = safetyModerationService.evaluateContent(rawAuthorName, actingUserId);
+    if (filterResult.action === 'blocked' || authorCheck.action === 'blocked') {
       return res.status(400).json({
         success: false,
         error: filterResult.warningNotice || 'Comment violates CDES safety guidelines.',
@@ -161,7 +180,7 @@ router.post('/posts/:id/comments', authenticateToken, communityWriteLimiter, (re
     const comment = communityRepository.createComment({
       post_id: req.params.id,
       author_id: actingUserId,
-      author_name: typeof body.author_name === 'string' ? body.author_name : req.user!.email.split('@')[0],
+      author_name: authorCheck.sanitizedContent,
       author_role: req.user!.role,
       author_avatar: typeof body.author_avatar === 'string' ? body.author_avatar : undefined,
       parent_comment_id: typeof body.parent_comment_id === 'string' ? body.parent_comment_id : undefined,
@@ -179,19 +198,13 @@ router.post('/comments/:id/upvote', authenticateToken, (req: AuthenticatedReques
 router.post('/posts/:postId/accept-answer/:commentId', authenticateToken, (req: AuthenticatedRequest, res: Response) =>
   handle(res, () => {
     const post = communityRepository.getPostById(req.params.postId) as { author_id?: string } | undefined;
-    if (!post) {
-      return res.status(404).json({ success: false, error: 'Post not found.' });
-    }
+    if (!post) return res.status(404).json({ success: false, error: 'Post not found.' });
     if (req.user!.role !== 'admin' && post.author_id !== req.user!.userId) {
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden: only the post author or an admin can accept an answer.',
-      });
+      return res.status(403).json({ success: false, error: 'Forbidden: only the post author or an admin can accept an answer.' });
     }
-    return res.json({
-      success: true,
-      data: communityRepository.markAcceptedAnswer(req.params.postId, req.params.commentId),
-    });
+    const accepted = communityRepository.markAcceptedAnswer(req.params.postId, req.params.commentId);
+    if (!accepted.success) return res.status(404).json({ success: false, error: 'Comment not found on this post.' });
+    return res.json({ success: true, data: accepted });
   })
 );
 
@@ -217,29 +230,24 @@ router.post('/mentors/book', authenticateToken, communityWriteLimiter, (req: Aut
     const scheduledDate = typeof body.scheduled_date === 'string' ? body.scheduled_date.trim() : '';
     const scheduledTime = typeof body.scheduled_time === 'string' ? body.scheduled_time.trim() : '';
     if (!mentorId || !topic || !scheduledDate || !scheduledTime) {
-      return res.status(400).json({
-        success: false,
-        error: 'mentor_id, topic, scheduled_date, and scheduled_time are required.',
-      });
+      return res.status(400).json({ success: false, error: 'mentor_id, topic, scheduled_date, and scheduled_time are required.' });
     }
     if (!communityRepository.getMentorById(mentorId)) {
       return res.status(404).json({ success: false, error: 'Mentor not found.' });
     }
+    const rawSessionType = typeof body.session_type === 'string' ? body.session_type.trim() : 'academic_guidance';
+    const sessionType = ALLOWED_SESSION_TYPES.has(rawSessionType) ? rawSessionType : 'academic_guidance';
     const session = communityRepository.bookMentorshipSession({
       mentor_id: mentorId,
       student_id: actingUserId,
       student_name: typeof body.student_name === 'string' ? body.student_name : req.user!.email.split('@')[0],
       topic,
-      session_type: typeof body.session_type === 'string' ? body.session_type : 'guidance',
+      session_type: sessionType,
       scheduled_date: scheduledDate,
       scheduled_time: scheduledTime,
       student_notes: typeof body.student_notes === 'string' ? body.student_notes : undefined,
     });
-    logConsentedActivity(actingUserId, 'MENTOR_SESSION_BOOK', {
-      mentorId,
-      topic,
-      sessionType: body.session_type,
-    });
+    logConsentedActivity(actingUserId, 'MENTOR_SESSION_BOOK', { mentorId, topic, sessionType });
     return res.json({ success: true, data: session });
   })
 );
@@ -358,25 +366,11 @@ router.post('/moderation/report', authenticateToken, communityWriteLimiter, (req
     if (!reportedItemId) {
       return res.status(400).json({ success: false, error: 'reported_item_id is required.' });
     }
-    const itemType =
-      body.reported_item_type === 'mentor' ||
-      body.reported_item_type === 'project' ||
-      body.reported_item_type === 'comment' ||
-      body.reported_item_type === 'message'
-        ? body.reported_item_type
-        : 'post';
-    const reportReason =
-      body.reason === 'harassment' ||
-      body.reason === 'spam' ||
-      body.reason === 'unsafe_contact_request' ||
-      body.reason === 'false_information'
-        ? body.reason
-        : 'inappropriate_content';
     const report = safetyModerationService.submitReport({
       reporter_id: actingUserId,
-      reported_item_type: itemType,
+      reported_item_type: normalizeReportItemType(body.reported_item_type),
       reported_item_id: reportedItemId,
-      reason: reportReason,
+      reason: normalizeReportReason(body.reason),
       description: typeof body.description === 'string' ? body.description : '',
     });
     logConsentedActivity(actingUserId, 'CONTENT_MODERATION_REPORT', {

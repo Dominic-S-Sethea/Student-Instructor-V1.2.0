@@ -496,11 +496,18 @@ export class LearningRepository {
 
     let meritPointsEarned = 0;
     let unlockedBadge: string | undefined;
+    const wasAlreadyCompleted = existing?.status === 'completed';
 
     if (existing) {
       const hintCount = params.action === 'hint_used' ? existing.hint_used_count + 1 : existing.hint_used_count;
       const status = params.action === 'completed' ? 'completed' : existing.status;
       const score = params.score !== undefined ? params.score : existing.score;
+      const serializedResponseData =
+        params.responseData !== undefined
+          ? JSON.stringify(params.responseData)
+          : typeof existing.response_data === 'string'
+            ? existing.response_data
+            : JSON.stringify(existing.response_data || {});
 
       this.db
         .prepare(`
@@ -510,7 +517,7 @@ export class LearningRepository {
               attempts = attempts + 1,
               hint_used_count = ?,
               response_data = ?,
-              completed_at = CASE WHEN ? = 'completed' THEN ? ELSE completed_at END,
+              completed_at = CASE WHEN ? = 'completed' AND completed_at IS NULL THEN ? ELSE completed_at END,
               updated_at = ?
           WHERE id = ?
         `)
@@ -518,7 +525,7 @@ export class LearningRepository {
           status,
           score,
           hintCount,
-          JSON.stringify(params.responseData || existing.response_data || {}),
+          serializedResponseData,
           params.action,
           now,
           now,
@@ -549,7 +556,7 @@ export class LearningRepository {
         );
     }
 
-    if (params.action === 'completed') {
+    if (params.action === 'completed' && !wasAlreadyCompleted) {
       meritPointsEarned = activity.reward_points || 25;
       this.avatarRepo.addMeritPoints(params.studentId, meritPointsEarned);
 

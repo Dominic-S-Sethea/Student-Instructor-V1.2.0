@@ -27,6 +27,19 @@ export function sanitizeMemoryText(raw: string): string {
   return sanitizedText;
 }
 
+/** Sanitizes multi-line USER.md/MEMORY.md docs while preserving newline boundaries for line-wise consolidation. */
+export function sanitizeMemoryDocText(raw: string): string {
+  const normalizedLines = raw
+    .replace(/\r\n?/g, '\n')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .split('\n')
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .filter((line) => line.length > 0);
+  const { sanitizedText } = aiSafetyService.sanitizeOutput(normalizedLines.join('\n'));
+  return sanitizedText;
+}
+
 export function normalizeTokens(text: string): string[] {
   return text
     .toLowerCase()
@@ -54,20 +67,20 @@ export function extractAutoEntitiesAndKeywords(
 ): { entities: string[]; keywords: string[] } {
   const lower = factText.toLowerCase();
   const entities = new Set<string>(
-    (explicitEntities || []).map((e) => e.trim()).filter(Boolean)
+    (explicitEntities || []).map((e) => e.trim().slice(0, 64)).filter(Boolean)
   );
   const keywords = new Set<string>(
-    (explicitKeywords || []).map((k) => k.trim().toLowerCase()).filter(Boolean)
+    (explicitKeywords || []).map((k) => k.trim().toLowerCase().slice(0, 64)).filter(Boolean)
   );
 
   for (const [canonical, aliases] of Object.entries(ENTITY_ALIASES)) {
     if (aliases.some((alias) => lower.includes(alias))) {
       entities.add(canonical);
-      for (const alias of aliases.slice(0, 4)) keywords.add(alias);
+      for (const alias of aliases.slice(0, 4)) keywords.add(alias.slice(0, 64));
     }
   }
   for (const token of normalizeTokens(factText).slice(0, 12)) {
-    keywords.add(token);
+    keywords.add(token.slice(0, 64));
   }
 
   return {

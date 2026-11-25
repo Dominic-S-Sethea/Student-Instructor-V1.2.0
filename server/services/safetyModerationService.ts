@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { getDatabase } from '../db/connection';
 
 export interface ContentFilterResult {
@@ -18,26 +19,33 @@ export interface ModerationReportInput {
 
 class SafetyModerationService {
   // Regex patterns to protect minors from unsafe contact sharing & harmful text
-  private phoneRegex = /(\+855|0)\s*\d{2,3}[\s-]?\d{3}[\s-]?\d{3,4}/gi;
+  private phoneRegex = /(\+?855|0)[\s-]?[1-9]\d[\s-]?\d{3}[\s-]?\d{3,4}/gi;
   private telegramDirectRegex = /(t\.me\/|telegram\.me\/|telegram:\s*@?)[a-zA-Z0-9_]{4,}/gi;
+  private emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/gi;
   private dangerousKeywords = [
     'hate', 'gambling', 'casino', 'betting', 'scam', 'cheat on exam',
     'leak exam paper', 'buy bacii paper', 'buy bac ii key', 'leak bac ii questions'
   ];
 
+  private redactContactPii(text: string): string {
+    return text
+      .replace(this.phoneRegex, '[Protected Phone Number - Please use CDES Official Sessions]')
+      .replace(this.telegramDirectRegex, '[Direct Contact Link Redacted for Minor Protection]')
+      .replace(this.emailRegex, '[Email Redacted]');
+  }
+
   /**
    * Evaluates text for child safety & academic integrity
    */
   public evaluateContent(text: string, userId: string = 'usr-anonymous'): ContentFilterResult {
-    const db = getDatabase();
-    let sanitized = text;
+    const sanitizedForLog = this.redactContactPii(text);
     let matchedRule: string | undefined;
 
     // 1. Check for illicit exam tampering / cheating claims (protecting academic integrity)
     for (const kw of this.dangerousKeywords) {
       if (text.toLowerCase().includes(kw)) {
         matchedRule = `PROHIBITED_ACADEMIC_VIOLATION: ${kw}`;
-        this.logViolation(userId, 'academic_dishonesty', matchedRule, text.substring(0, 100), 'blocked');
+        this.logViolation(userId, 'academic_dishonesty', matchedRule, sanitizedForLog.substring(0, 100), 'blocked');
         return {
           isSafe: false,
           action: 'blocked',
@@ -49,15 +57,13 @@ class SafetyModerationService {
     }
 
     // 2. Minor Protection: Flag and sanitize unverified phone numbers or direct personal messaging links
-    if (this.phoneRegex.test(text) || this.telegramDirectRegex.test(text)) {
+    const phoneSanitized = text.replace(this.phoneRegex, '[Protected Phone Number - Please use CDES Official Sessions]');
+    const sanitized = phoneSanitized.replace(this.telegramDirectRegex, '[Direct Contact Link Redacted for Minor Protection]');
+    if (sanitized !== text) {
       matchedRule = 'UNSAFE_DIRECT_CONTACT_MINOR_PROTECTION';
-      sanitized = text
-        .replace(this.phoneRegex, '[Protected Phone Number - Please use CDES Official Sessions]')
-        .replace(this.telegramDirectRegex, '[Direct Contact Link Redacted for Minor Protection]');
-
-      this.logViolation(userId, 'contact_leak', matchedRule, text.substring(0, 100), 'sanitized');
+      this.logViolation(userId, 'contact_leak', matchedRule, sanitizedForLog.substring(0, 100), 'sanitized');
       return {
-        isSafe: true, // Allow with redactions
+        isSafe: true,
         action: 'flagged',
         matchedRule,
         sanitizedContent: sanitized,
@@ -77,8 +83,9 @@ class SafetyModerationService {
    */
   public submitReport(input: ModerationReportInput): { id: string; status: string } {
     const db = getDatabase();
-    const id = `rep-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const id = `rep-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
+    const safeDesc = this.redactContactPii(input.description || '');
 
     db.prepare(`
       INSERT INTO moderation_reports (
@@ -91,25 +98,24 @@ class SafetyModerationService {
       input.reported_item_type,
       input.reported_item_id,
       input.reason,
-      input.description,
+      safeDesc,
       'pending',
       'Auto-assigned to CDES Safety Desk',
       now,
       null
     );
 
-    // Audit log
     db.prepare(`
       INSERT INTO community_safety_audits (
         id, entity_type, entity_id, checked_by, check_result, details, timestamp
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
-      `audit-${Date.now()}`,
+      `audit-${crypto.randomUUID()}`,
       input.reported_item_type,
       input.reported_item_id,
       'user_report_intake',
       'warning',
-      `Flagged for ${input.reason}: ${input.description.substring(0, 80)}`,
+      `Flagged for ${input.reason}: ${safeDesc.substring(0, 80)}`,
       now
     );
 
@@ -141,7 +147,7 @@ class SafetyModerationService {
   }
 
   /**
-   * Log safety violation in database
+   * Log safety violation in database (always PII-redacted)
    */
   private logViolation(
     userId: string,
@@ -152,16 +158,17 @@ class SafetyModerationService {
   ) {
     try {
       const db = getDatabase();
+      const safeSnippet = this.redactContactPii(snippet).substring(0, 120);
       db.prepare(`
         INSERT INTO content_filter_logs (
           id, user_id, content_type, matched_rule, raw_snippet, action_taken, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(
-        `log-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        `log-${crypto.randomUUID()}`,
         userId,
         contentType,
         rule,
-        snippet,
+        safeSnippet,
         action,
         new Date().toISOString()
       );

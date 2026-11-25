@@ -3,6 +3,7 @@ import { AuthService } from '../services/authService';
 import {
   authenticateToken,
   optionalAuth,
+  extractJwt,
   AuthenticatedRequest,
 } from '../middleware/authMiddleware';
 import {
@@ -13,11 +14,22 @@ import {
 import { rateLimiter } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validationMiddleware';
 import { RegisterSchema, LoginSchema } from '../validators/apiSchemas';
+import { safeErrorMessage } from '../utils/httpErrors';
 
 const router = Router();
 const authService = new AuthService();
 
 const authLimiter = rateLimiter(60000, 30, 'Too many authentication attempts. Please try again in a minute.');
+const loginAccountLimiter = rateLimiter(
+  60000,
+  12,
+  'Too many login attempts for this account. Please wait a minute before trying again.',
+  (req) => {
+    const ip = req.ip || req.socket.remoteAddress || '127.0.0.1';
+    const rawEmail = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    return `login:${ip}:${rawEmail || 'unknown'}`;
+  }
+);
 
 /** GET /api/auth/csrf — issue/read CSRF token for browser sessions. */
 router.get('/csrf', optionalAuth, (req: AuthenticatedRequest, res: Response): void => {
@@ -101,13 +113,13 @@ router.post('/register', authLimiter, validate(RegisterSchema, 'body'), (req: Re
   } catch (err: unknown) {
     res.status(400).json({
       success: false,
-      error: err instanceof Error ? err.message : 'Registration failed.',
+      error: safeErrorMessage(err, 'Registration failed.', 400),
     });
   }
 });
 
 /** POST /api/auth/login — verify credentials, set HttpOnly session cookie, rotate CSRF. */
-router.post('/login', authLimiter, validate(LoginSchema, 'body'), (req: Request, res: Response): void => {
+router.post('/login', authLimiter, loginAccountLimiter, validate(LoginSchema, 'body'), (req: Request, res: Response): void => {
   try {
     const { email, password } = req.body;
 
@@ -127,13 +139,14 @@ router.post('/login', authLimiter, validate(LoginSchema, 'body'), (req: Request,
   } catch (err: unknown) {
     res.status(401).json({
       success: false,
-      error: err instanceof Error ? err.message : 'Authentication failed.',
+      error: safeErrorMessage(err, 'Authentication failed.', 401),
     });
   }
 });
 
-/** POST /api/auth/logout — clear session and CSRF cookies. */
-router.post('/logout', optionalAuth, (_req: AuthenticatedRequest, res: Response): void => {
+/** POST /api/auth/logout — revoke active JWT and clear session/CSRF cookies. */
+router.post('/logout', optionalAuth, (req: AuthenticatedRequest, res: Response): void => {
+  authService.revokeToken(extractJwt(req));
   authService.clearAuthCookie(res);
   clearCsrfCookie(res);
   res.json({ success: true });
