@@ -4,7 +4,7 @@ import { UserService } from '../services/userService';
 import { ScholarshipService } from '../services/scholarshipService';
 import { UniversityService } from '../services/universityService';
 import { AnalyticsService } from '../services/analyticsService';
-import { getDatabase } from '../db/connection';
+import { closeDatabase, getDatabase } from '../db/connection';
 import { runMigrations } from '../db/migrate';
 
 // SEC-001: seed credentials come from environment (no in-code secrets).
@@ -232,7 +232,12 @@ async function runTests() {
   console.log('===================================================');
 }
 
-runTests().catch(err => {
-  console.error('Test suite failed:', err);
-  process.exit(1);
-});
+runTests()
+  .catch((err) => {
+    console.error('Test suite failed:', err);
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    closeDatabase();
+    rmSync(testDbDir, { recursive: true, force: true });
+  });

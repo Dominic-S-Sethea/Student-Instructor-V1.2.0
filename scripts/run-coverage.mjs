@@ -6,17 +6,20 @@ const coverageDir = path.join(process.cwd(), '.coverage-v8');
 fs.rmSync(coverageDir, { recursive: true, force: true });
 fs.mkdirSync(coverageDir, { recursive: true });
 
-const testFiles = [
-  'server/tests/backend.test.ts',
-  'server/tests/secretScan.test.ts',
-  'server/tests/startupAndMigrations.test.ts',
-  'server/tests/authOwnershipConsent.test.ts',
-  'server/tests/catalogAccuracyAndEditorial.test.ts',
-  'server/tests/guidanceAndPackaging.test.ts',
-].filter((file) => fs.existsSync(path.join(process.cwd(), file)));
+const testsDir = path.join(process.cwd(), 'server', 'tests');
+const testFiles = fs
+  .readdirSync(testsDir)
+  .filter((file) => file.endsWith('.test.ts'))
+  .sort()
+  .map((file) => path.join('server', 'tests', file));
+
+if (testFiles.length === 0) {
+  console.error('Coverage gate failed: no server/tests/*.test.ts files found.');
+  process.exit(1);
+}
 
 const tsxCli = path.join(process.cwd(), 'node_modules', 'tsx', 'dist', 'cli.mjs');
-const env = { ...process.env, NODE_V8_COVERAGE: coverageDir };
+const env = { ...process.env, GEMINI_API_KEY: '', NODE_V8_COVERAGE: coverageDir };
 
 for (const testFile of testFiles) {
   console.log(`\n[coverage] Running ${testFile} ...`);
@@ -54,7 +57,9 @@ for (const covFile of covFiles) {
 fs.rmSync(coverageDir, { recursive: true, force: true });
 
 const pct = totalFuncs > 0 ? ((coveredFuncs / totalFuncs) * 100).toFixed(1) : '0.0';
-console.log(`\n[coverage] Server modules executed: ${serverFilesCovered.size}, functions hit: ${coveredFuncs}/${totalFuncs} (${pct}%)`);
+console.log(
+  `\n[coverage] Suites run: ${testFiles.length}, Server modules executed: ${serverFilesCovered.size}, functions hit: ${coveredFuncs}/${totalFuncs} (${pct}%)`
+);
 
 if (serverFilesCovered.size === 0 || coveredFuncs === 0) {
   console.error('Coverage gate failed: zero server functions covered.');

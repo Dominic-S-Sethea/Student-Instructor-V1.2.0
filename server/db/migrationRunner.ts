@@ -83,10 +83,10 @@ function patchLegacyTables(db: TrackedDatabase): void {
 }
 
 function listNumberedMigrations(migrationsDir: string): Array<{ version: number; file: string; fullPath: string }> {
-  if (!fs.existsSync(migrationsDir)) {
-    return [];
+  if (!fs.existsSync(migrationsDir) || !fs.statSync(migrationsDir).isDirectory()) {
+    throw new Error(`Migrations directory not found: ${migrationsDir}`);
   }
-  return fs
+  const files = fs
     .readdirSync(migrationsDir)
     .filter((f) => f.endsWith('.sql') && /^\d+/.test(f))
     .map((file) => {
@@ -98,6 +98,11 @@ function listNumberedMigrations(migrationsDir: string): Array<{ version: number;
       };
     })
     .sort((a, b) => a.version - b.version);
+
+  if (files.length === 0) {
+    throw new Error(`No numbered SQL migration files found in: ${migrationsDir}`);
+  }
+  return files;
 }
 
 function getCurrentVersion(db: TrackedDatabase): number {
@@ -151,12 +156,105 @@ function shouldSeedDemoByDefault(): boolean {
   );
 }
 
+function applyBaseSchema(db: TrackedDatabase, schemaPath: string): void {
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    patchLegacyTables(db);
+    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+    db.exec(schemaSql);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_version (schema_version INTEGER DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version INTEGER PRIMARY KEY,
+        filename TEXT NOT NULL,
+        applied_at TEXT NOT NULL
+      );
+    `);
+    db.exec('COMMIT;');
+  } catch (err) {
+    try { db.exec('ROLLBACK;'); } catch { /* ignore */ }
+    throw err;
+  }
+}
+
+function applyPendingMigrations(db: TrackedDatabase, migrationsDir: string): string[] {
+  let currentVersion = getCurrentVersion(db);
+  const migrations = listNumberedMigrations(migrationsDir);
+  const appliedMigrations: string[] = [];
+
+  for (const mig of migrations) {
+    if (mig.version <= currentVersion) {
+      continue;
+    }
+    const sql = fs.readFileSync(mig.fullPath, 'utf8');
+    db.exec('BEGIN IMMEDIATE;');
+    try {
+      applySqlStatements(db, sql);
+      db.exec('DELETE FROM schema_version;');
+      db.prepare('INSERT INTO schema_version (schema_version) VALUES (?)').run(mig.version);
+      db.prepare('INSERT OR REPLACE INTO schema_migrations (version, filename, applied_at) VALUES (?, ?, ?)').run(
+        mig.version,
+        mig.file,
+        new Date().toISOString()
+      );
+      db.exec('COMMIT;');
+      currentVersion = mig.version;
+      appliedMigrations.push(mig.file);
+    } catch (err) {
+      try { db.exec('ROLLBACK;'); } catch { /* ignore */ }
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Migration ${mig.file} (v${mig.version}) failed and rolled back: ${msg}`);
+    }
+  }
+  return appliedMigrations;
+}
+
+function runSeedsIfEnabled(db: TrackedDatabase, options: MigrationRunOptions): void {
+  const doCatalog = options.seedCatalog !== undefined ? options.seedCatalog : true;
+  const doDemo = options.seedDemo !== undefined ? options.seedDemo : shouldSeedDemoByDefault();
+  if (!doCatalog && !doDemo) return;
+
+  db.exec('BEGIN IMMEDIATE;');
+  try {
+    if (doCatalog) seedCatalogData(db);
+    if (doDemo) seedDemoData(db, { strictPasswords: options.strictDemoPasswords });
+    db.exec('COMMIT;');
+  } catch (err) {
+    try { db.exec('ROLLBACK;'); } catch { /* ignore */ }
+    throw err;
+  }
+}
+
+function runPostMigrationChecks(db: TrackedDatabase): number {
+  const postIntegrity = db.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined;
+  if (postIntegrity?.integrity_check !== 'ok') {
+    throw new Error(`Post-migration integrity_check failed: ${postIntegrity?.integrity_check || 'unknown'}`);
+  }
+  const fkViolations = db.prepare('PRAGMA foreign_key_check').all();
+  if (fkViolations.length > 0) {
+    throw new Error(`Foreign key check failed with ${fkViolations.length} violation(s).`);
+  }
+  const journalRow = db.prepare('PRAGMA journal_mode').get() as { journal_mode?: string } | undefined;
+  const fkRow = db.prepare('PRAGMA foreign_keys').get() as { foreign_keys?: number } | undefined;
+  const finalVersion = Math.max(0, getCurrentVersion(db));
+
+  setDatabaseReadiness({
+    ready: true,
+    schemaVersion: finalVersion,
+    journalMode: journalRow?.journal_mode || 'wal',
+    foreignKeys: Number(fkRow?.foreign_keys || 0) === 1,
+    integrity: 'ok',
+    lastError: null,
+    checkedAt: new Date().toISOString(),
+  });
+  return finalVersion;
+}
+
 /** Execute base schema, ordered transactional SQL migrations, integrity/FK checks, and explicit seeding. */
 export function runOrderedMigrations(options: MigrationRunOptions = {}): MigrationRunResult {
   const db = getDatabase();
   const schemaPath = options.schemaPath ? path.resolve(options.schemaPath) : resolveSchemaPath();
   const migrationsDir = options.migrationsDir ? path.resolve(options.migrationsDir) : resolveMigrationsDir();
-  const appliedMigrations: string[] = [];
 
   try {
     const preCheck = db.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined;
@@ -164,88 +262,10 @@ export function runOrderedMigrations(options: MigrationRunOptions = {}): Migrati
       throw new Error(`Pre-migration integrity_check failed: ${preCheck?.integrity_check || 'unknown'}`);
     }
 
-    db.exec('BEGIN IMMEDIATE;');
-    try {
-      patchLegacyTables(db);
-      const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-      db.exec(schemaSql);
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS schema_version (schema_version INTEGER DEFAULT 0);
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-          version INTEGER PRIMARY KEY,
-          filename TEXT NOT NULL,
-          applied_at TEXT NOT NULL
-        );
-      `);
-      db.exec('COMMIT;');
-    } catch (err) {
-      try { db.exec('ROLLBACK;'); } catch { /* ignore */ }
-      throw err;
-    }
-
-    let currentVersion = getCurrentVersion(db);
-    const migrations = listNumberedMigrations(migrationsDir);
-    for (const mig of migrations) {
-      if (mig.version <= currentVersion) {
-        continue;
-      }
-      const sql = fs.readFileSync(mig.fullPath, 'utf8');
-      db.exec('BEGIN IMMEDIATE;');
-      try {
-        applySqlStatements(db, sql);
-        db.exec('DELETE FROM schema_version;');
-        db.prepare('INSERT INTO schema_version (schema_version) VALUES (?)').run(mig.version);
-        db.prepare('INSERT OR REPLACE INTO schema_migrations (version, filename, applied_at) VALUES (?, ?, ?)').run(
-          mig.version,
-          mig.file,
-          new Date().toISOString()
-        );
-        db.exec('COMMIT;');
-        currentVersion = mig.version;
-        appliedMigrations.push(mig.file);
-      } catch (err) {
-        try { db.exec('ROLLBACK;'); } catch { /* ignore */ }
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new Error(`Migration ${mig.file} (v${mig.version}) failed and rolled back: ${msg}`);
-      }
-    }
-
-    const doCatalog = options.seedCatalog !== undefined ? options.seedCatalog : true;
-    const doDemo = options.seedDemo !== undefined ? options.seedDemo : shouldSeedDemoByDefault();
-    if (doCatalog || doDemo) {
-      db.exec('BEGIN IMMEDIATE;');
-      try {
-        if (doCatalog) seedCatalogData(db);
-        if (doDemo) seedDemoData(db, { strictPasswords: options.strictDemoPasswords });
-        db.exec('COMMIT;');
-      } catch (err) {
-        try { db.exec('ROLLBACK;'); } catch { /* ignore */ }
-        throw err;
-      }
-    }
-
-    const postIntegrity = db.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined;
-    if (postIntegrity?.integrity_check !== 'ok') {
-      throw new Error(`Post-migration integrity_check failed: ${postIntegrity?.integrity_check || 'unknown'}`);
-    }
-    const fkViolations = db.prepare('PRAGMA foreign_key_check').all();
-    if (fkViolations.length > 0) {
-      throw new Error(`Foreign key check failed with ${fkViolations.length} violation(s).`);
-    }
-
-    const journalRow = db.prepare('PRAGMA journal_mode').get() as { journal_mode?: string } | undefined;
-    const fkRow = db.prepare('PRAGMA foreign_keys').get() as { foreign_keys?: number } | undefined;
-    const finalVersion = Math.max(0, getCurrentVersion(db));
-
-    setDatabaseReadiness({
-      ready: true,
-      schemaVersion: finalVersion,
-      journalMode: journalRow?.journal_mode || 'wal',
-      foreignKeys: Number(fkRow?.foreign_keys || 0) === 1,
-      integrity: 'ok',
-      lastError: null,
-      checkedAt: new Date().toISOString(),
-    });
+    applyBaseSchema(db, schemaPath);
+    const appliedMigrations = applyPendingMigrations(db, migrationsDir);
+    runSeedsIfEnabled(db, options);
+    const finalVersion = runPostMigrationChecks(db);
 
     return {
       success: true,

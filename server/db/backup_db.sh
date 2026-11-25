@@ -46,19 +46,30 @@ fi
 BACKUP_TIMESTAMP="$(date -u +'%Y%m%dT%H%M%SZ')"
 BACKUP_LABEL="cdes_platform_${BACKUP_TIMESTAMP}"
 BACKUP_PATH="${BACKUP_DIR}/${BACKUP_LABEL}.db"
+TMP_BACKUP_PATH="${BACKUP_PATH}.tmp.$$.db"
 
 if ${DRY_RUN}; then
-  log "INFO" "[DRY-RUN] Would run: sqlite3 '${DB_FILE}' '.backup ${BACKUP_PATH}'"
+  log "INFO" "[DRY-RUN] Would run online backup of ${DB_FILE} -> ${BACKUP_PATH}"
 else
-  sqlite3 "${DB_FILE}" ".backup '${BACKUP_PATH}'"
-  if ! sqlite3 "${BACKUP_PATH}" "PRAGMA integrity_check;" | grep -qx "ok"; then
+  trap 'rm -f "${TMP_BACKUP_PATH}"' ERR
+  TMP_SQL_ESCAPED="${TMP_BACKUP_PATH//\'/\'\'}"
+  sqlite3 "${DB_FILE}" <<SQL
+.timeout 5000
+PRAGMA wal_checkpoint(TRUNCATE);
+VACUUM INTO '${TMP_SQL_ESCAPED}';
+SQL
+  if ! sqlite3 "${TMP_BACKUP_PATH}" "PRAGMA busy_timeout = 5000; PRAGMA integrity_check;" | grep -qx "ok"; then
     log "ERROR" "Backup integrity_check failed!"
+    rm -f "${TMP_BACKUP_PATH}"
     exit 1
   fi
-  if [[ -n "$(sqlite3 "${BACKUP_PATH}" "PRAGMA foreign_keys = ON; PRAGMA foreign_key_check;")" ]]; then
+  if [[ -n "$(sqlite3 "${TMP_BACKUP_PATH}" "PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA foreign_key_check;")" ]]; then
     log "ERROR" "Backup foreign_key_check failed!"
+    rm -f "${TMP_BACKUP_PATH}"
     exit 1
   fi
+  mv -f "${TMP_BACKUP_PATH}" "${BACKUP_PATH}"
+  trap - ERR
   log "INFO" "Backup verified (integrity_check=ok, foreign_key_check=empty): ${BACKUP_PATH}"
 fi
 

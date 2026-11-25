@@ -58,20 +58,28 @@ function columnExists(db, table, col) {
 }
 
 function runRetention(db, table) {
-  if (dryRun) {
-    console.log(`[DRY-RUN] would archive+delete rows (deleted_at date <= ${cutoffDateStr}) from ${table}`);
-    return { dryRun: true };
-  }
   if (!columnExists(db, table, 'deleted_at')) {
     console.log(`[WARN] ${table}: no deleted_at column — skipping.`);
     return null;
   }
 
-  const archiveTable = `${table}_archive_${dateStr}`;
   const hasIsDeleted = columnExists(db, table, 'is_deleted');
   const deleteCondition = hasIsDeleted
     ? 'is_deleted = 1 AND deleted_at IS NOT NULL AND date(deleted_at) <= ?'
     : 'deleted_at IS NOT NULL AND date(deleted_at) <= ?';
+
+  if (dryRun) {
+    const countRow = db
+      .prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${deleteCondition}`)
+      .get(cutoffDateStr);
+    const matchingRows = Number(countRow?.count ?? 0);
+    console.log(
+      `[DRY-RUN] ${table}: matching_rows=${matchingRows} (deleted_at date <= ${cutoffDateStr})`
+    );
+    return { dryRun: true, table, matchingRows };
+  }
+
+  const archiveTable = `${table}_archive_${dateStr}`;
   let archived = 0;
   let removed = 0;
 
@@ -101,6 +109,7 @@ function main() {
   let db;
   try {
     db = new DatabaseSync(dbPath);
+    db.exec('PRAGMA busy_timeout = 5000;');
     db.exec('PRAGMA foreign_keys = ON;');
   } catch (err) {
     console.error(`FATAL: cannot open database ${dbPath}: ${err.message}`);

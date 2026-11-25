@@ -72,6 +72,18 @@ function getExplainDb(): DatabaseSync | null {
   }
 }
 
+export function closeExplainDb(): void {
+  if (explainDb) {
+    try {
+      explainDb.close();
+    } catch {
+      // ignore close errors
+    }
+    explainDb = null;
+  }
+  planCache.clear();
+}
+
 function explainPlanFor(sql: string): string[] {
   if (!planCache.has(sql)) {
     if (planCache.size >= MAX_TRACKED_QUERIES) {

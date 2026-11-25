@@ -10,6 +10,7 @@ function escapeSqlPath(p) {
 function verifyDatabaseFile(dbPath) {
   const db = new DatabaseSync(dbPath);
   try {
+    db.exec('PRAGMA busy_timeout = 5000;');
     db.exec('PRAGMA foreign_keys = ON;');
     const integrity = db.prepare('PRAGMA integrity_check').get();
     if (!integrity || integrity.integrity_check !== 'ok') {
@@ -20,10 +21,14 @@ function verifyDatabaseFile(dbPath) {
       throw new Error(`foreign_key_check failed with ${fkRows.length} violation(s).`);
     }
     const verRow = db.prepare('SELECT schema_version AS v FROM schema_version ORDER BY v DESC LIMIT 1').get();
+    const schemaVersion = verRow ? Number(verRow.v) : 0;
+    if (!Number.isFinite(schemaVersion) || schemaVersion <= 0) {
+      throw new Error(`schema_version invalid or uninitialized (${schemaVersion})`);
+    }
     return {
       integrity: 'ok',
       foreignKeyViolations: 0,
-      schemaVersion: verRow ? Number(verRow.v) : 0,
+      schemaVersion,
     };
   } finally {
     db.close();
@@ -33,45 +38,66 @@ function verifyDatabaseFile(dbPath) {
 export function backupDatabase(sourceDbPath, backupFilePath) {
   const src = path.resolve(sourceDbPath);
   const dest = path.resolve(backupFilePath);
+  if (src === dest) {
+    throw new Error('Source database and backup destination must be different paths.');
+  }
   if (!fs.existsSync(src)) {
     throw new Error(`Source database not found: ${src}`);
   }
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  if (fs.existsSync(dest)) {
-    fs.rmSync(dest, { force: true });
-  }
+  const tmpDest = `${dest}.tmp.${process.pid}.${Date.now()}.db`;
 
   const db = new DatabaseSync(src);
   try {
+    db.exec('PRAGMA busy_timeout = 5000;');
     db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
-    db.exec(`VACUUM INTO '${escapeSqlPath(dest)}';`);
+    db.exec(`VACUUM INTO '${escapeSqlPath(tmpDest)}';`);
+  } catch (err) {
+    fs.rmSync(tmpDest, { force: true });
+    throw err;
   } finally {
     db.close();
   }
 
-  const verification = verifyDatabaseFile(dest);
+  let verification;
+  try {
+    verification = verifyDatabaseFile(tmpDest);
+    fs.renameSync(tmpDest, dest);
+  } catch (err) {
+    fs.rmSync(tmpDest, { force: true });
+    throw err;
+  }
   return { source: src, backup: dest, ...verification };
 }
 
 export function restoreDatabase(backupFilePath, targetDbPath) {
   const src = path.resolve(backupFilePath);
   const target = path.resolve(targetDbPath);
+  if (src === target) {
+    throw new Error('Backup source and restore target must be different paths.');
+  }
   if (!fs.existsSync(src)) {
     throw new Error(`Backup file not found: ${src}`);
   }
   verifyDatabaseFile(src);
 
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  for (const suffix of ['', '-wal', '-shm']) {
-    const candidate = `${target}${suffix}`;
-    if (fs.existsSync(candidate)) {
-      fs.rmSync(candidate, { force: true });
+  const tmpTarget = `${target}.tmp.${process.pid}.${Date.now()}.db`;
+  try {
+    fs.copyFileSync(src, tmpTarget);
+    const verification = verifyDatabaseFile(tmpTarget);
+    for (const suffix of ['-wal', '-shm']) {
+      const candidate = `${target}${suffix}`;
+      if (fs.existsSync(candidate)) {
+        fs.rmSync(candidate, { force: true });
+      }
     }
+    fs.renameSync(tmpTarget, target);
+    return { backup: src, target, ...verification };
+  } catch (err) {
+    fs.rmSync(tmpTarget, { force: true });
+    throw err;
   }
-
-  fs.copyFileSync(src, target);
-  const verification = verifyDatabaseFile(target);
-  return { backup: src, target, ...verification };
 }
 
 if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, '/')}` || process.argv[1]?.endsWith('backupRestore.mjs')) {

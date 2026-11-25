@@ -1,6 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { TrackedDatabase, SQLiteMetrics, dbMetrics } from './metrics';
+import { TrackedDatabase, SQLiteMetrics, dbMetrics, closeExplainDb } from './metrics';
 
 export interface DatabaseReadinessState {
   ready: boolean;
@@ -173,6 +173,7 @@ export function closeDatabase(): void {
     databaseInstance = null;
     openedDbPath = null;
   }
+  closeExplainDb();
   dbMetrics.reset();
   resetDatabaseReadiness();
 }
