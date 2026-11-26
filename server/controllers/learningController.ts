@@ -172,7 +172,7 @@ router.post('/activities/:id/action', authenticateToken, validate(ActivityAction
     const studentId = req.user!.userId;
     const { action, responseData, score } = req.body as {
       action?: 'started' | 'completed' | 'hint_used';
-      responseData?: unknown;
+      responseData?: Record<string, unknown>;
       score?: number;
     };
     const result = learningService.recordActivityInteraction({
@@ -250,10 +250,14 @@ router.post('/analytics/event', authenticateToken, (req: AuthenticatedRequest, r
       return;
     }
     const { eventType, metadata } = (req.body || {}) as Record<string, unknown>;
+    const safeMetadata =
+      metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? (metadata as Record<string, unknown>)
+        : {};
     learningService.logLearningEvent(
       studentId,
       typeof eventType === 'string' ? eventType : 'GENERIC_LEARNING_EVENT',
-      metadata || {}
+      safeMetadata
     );
     res.json({ success: true, persisted: true, message: 'Learning event recorded' });
   } catch (err: unknown) {

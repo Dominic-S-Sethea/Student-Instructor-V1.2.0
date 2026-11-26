@@ -1,4 +1,4 @@
-// server/data/seed_staging.cjs
+// scripts/seed_staging.cjs
 // Seeds 10,000 student profiles + representative telemetry into a staging DB.
 // Staging-only. Does NOT change git, does NOT run migrations, does NOT touch production.
 const fs = require('fs');

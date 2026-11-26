@@ -463,17 +463,22 @@ export class DataPlatformService {
   // 6. CLOSED-LOOP AI IMPROVEMENT FLYWHEEL (Task 6)
   // ==========================================================
   public getImprovementFlywheelMetrics() {
+    interface ImprovementLoopRow {
+      action_taken?: string;
+      outcome_delta?: number | null;
+      [key: string]: unknown;
+    }
     const loops = this.db.prepare(`
       SELECT * FROM cdes_recommendation_improvement_loop
       ORDER BY action_at DESC
       LIMIT 20
-    `).all();
+    `).all() as unknown as ImprovementLoopRow[];
 
     const totalImpressions = loops.length;
-    const actionsTaken = loops.filter((l: any) => l.action_taken !== 'dismissed').length;
+    const actionsTaken = loops.filter((l) => l.action_taken !== 'dismissed').length;
     const avgConversionRate = totalImpressions > 0 ? (actionsTaken / totalImpressions) * 100 : 88.5;
     const avgOutcomeDelta = loops.length > 0
-      ? (loops.reduce((acc: number, l: any) => acc + Number(l.outcome_delta || 0), 0) as number) / loops.length
+      ? loops.reduce((acc, l) => acc + Number(l.outcome_delta || 0), 0) / loops.length
       : 18.2;
 
     return {
@@ -659,18 +664,18 @@ export class DataPlatformService {
       profile_health: dossier.profile_health,
     };
 
-const exportPayload = {
-  export_id: `cdes-export-${crypto.randomUUID()}`,
-  exported_at: new Date().toISOString(),
-  compliance: 'Article 14 Cambodian E-Commerce & MoEYS Education Data Protection Charter',
-  cryptographic_fingerprint: crypto.createHash('sha256').update(JSON.stringify(sanitizedDossier)).digest('hex'),
-  student_profile: sanitizedDossier.pillars.identity,
-  academic_goals: sanitizedDossier.pillars.goals,
-  learning_pattern: sanitizedDossier.pillars.learning_patterns,
-  verified_achievements: sanitizedDossier.pillars.achievements,
-  applied_projects: sanitizedDossier.pillars.projects,
-  governance_consent_history: governance,
-};
+    const exportPayload = {
+      export_id: `cdes-export-${crypto.randomUUID()}`,
+      exported_at: new Date().toISOString(),
+      compliance: 'Article 14 Cambodian E-Commerce & MoEYS Education Data Protection Charter',
+      cryptographic_fingerprint: crypto.createHash('sha256').update(JSON.stringify(sanitizedDossier)).digest('hex'),
+      student_profile: sanitizedDossier.pillars.identity,
+      academic_goals: sanitizedDossier.pillars.goals,
+      learning_pattern: sanitizedDossier.pillars.learning_patterns,
+      verified_achievements: sanitizedDossier.pillars.achievements,
+      applied_projects: sanitizedDossier.pillars.projects,
+      governance_consent_history: governance,
+    };
 
     return exportPayload;
   }
@@ -679,7 +684,13 @@ const exportPayload = {
   // 8 & 9. FUTURE MACHINE LEARNING & PREDICTION ENGINES (Tasks 8, 9)
   // ==========================================================
   public getMLModelsRegistry() {
-    const models = this.db.prepare('SELECT * FROM cdes_ml_models_registry ORDER BY accuracy_score DESC').all().map((m: any) => ({
+    interface MLModelRow {
+      parameters_json?: string | null;
+      [key: string]: unknown;
+    }
+    const models = (
+      this.db.prepare('SELECT * FROM cdes_ml_models_registry ORDER BY accuracy_score DESC').all() as unknown as MLModelRow[]
+    ).map((m) => ({
       ...m,
       parameters: safeJsonParse<Record<string, unknown>>(m.parameters_json, {}),
     }));
@@ -747,11 +758,22 @@ const exportPayload = {
    * ML Inference Engine: Two-Tower University & Major Matcher (Task 9.2)
    */
   public recommendUniversityMajor(studentId: string = 'usr-student-01', criteria?: { priority_stem?: boolean; budget_max_usd?: number }) {
-    const universities = this.db.prepare('SELECT * FROM cdes_universities_lake').all();
+    interface UniversityLakeRow {
+      id: string;
+      abbr: string;
+      name_en: string;
+      name_km: string;
+      campus_city: string;
+      avg_employment_rate: number;
+      bac_ii_min_grade: string;
+      tuition_usd_annual: number;
+      top_sectors_json?: string | null;
+    }
+    const universities = this.db.prepare('SELECT * FROM cdes_universities_lake').all() as unknown as UniversityLakeRow[];
     const student = this.getStudentIntelligenceDossier(studentId);
 
     // Compute semantic match score based on student interest vectors and university prestige
-    const recommendations = universities.map((u: any) => {
+    const recommendations = universities.map((u) => {
       let fitScore = 0.85;
       const sectors = safeJsonParse<string[]>(u.top_sectors_json, []);
 
@@ -815,7 +837,12 @@ const exportPayload = {
    * ML Inference Engine: Semantic Career Competency Gap Engine (Task 9.4)
    */
   public calculateCareerSkillGap(studentId: string = 'usr-student-01', careerId: string = 'car-lake-ai-systems') {
-    const career = this.db.prepare('SELECT * FROM cdes_careers_lake WHERE id = ?').get(careerId) as any || {
+    interface CareerLakeRow {
+      title_en: string;
+      median_salary_usd: number;
+      top_skills_json?: string | null;
+    }
+    const career = (this.db.prepare('SELECT * FROM cdes_careers_lake WHERE id = ?').get(careerId) as unknown as CareerLakeRow | undefined) || {
       title_en: 'AI Systems & Cloud Architect',
       median_salary_usd: 1850,
       top_skills_json: JSON.stringify(['Distributed Cloud Architecture', 'PyTorch / TensorFlow', 'Vector Databases & RAG', 'Kubernetes Orchestration', 'Khmer NLP Processing']),
@@ -826,7 +853,7 @@ const exportPayload = {
     // Compare against student demonstrated skills from projects
     const dossier = this.getStudentIntelligenceDossier(studentId);
     const demonstratedSkills: string[] = [];
-    dossier.pillars.projects.forEach((p: any) => {
+    dossier.pillars.projects.forEach((p: { skills_demonstrated?: string[] }) => {
       demonstratedSkills.push(...(p.skills_demonstrated || []));
     });
 

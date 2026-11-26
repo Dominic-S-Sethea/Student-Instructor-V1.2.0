@@ -70,7 +70,7 @@ export interface IngestionEventPayload {
   failureReason?: string;
   timeTaken?: number;
   // Generic metadata
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 // ==========================================

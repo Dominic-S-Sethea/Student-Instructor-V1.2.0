@@ -464,7 +464,7 @@ router.get('/categories', (_req: Request, res: Response): void => {
 });
 
 const feedbackVotesByUser = new Map<string, boolean>();
-const MAX_FEEDBACK_VOTE_KEYS = 10_000;
+const MAX_FEEDBACK_VOTE_KEYS = 1_000;
 
 /**
  * @route GET /api/knowledge/content

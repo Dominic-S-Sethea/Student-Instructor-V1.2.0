@@ -238,6 +238,28 @@ export class AvatarRepository {
   }
 
   getRoomObjects(roomId: string): (RoomObject & { item: AvatarItem })[] {
+    interface JoinedRoomObjectRow {
+      id: string;
+      room_id: string;
+      item_id: string;
+      position_x: number;
+      position_y: number;
+      layer: RoomObject['layer'];
+      rotation: number;
+      is_interactive: number;
+      placed_at: string;
+      itm_id: string;
+      itm_name: string;
+      itm_category: AvatarItem['category'];
+      itm_description: string;
+      itm_icon_key: string;
+      itm_default_slot: AvatarItem['default_slot'];
+      itm_educational_value: string;
+      itm_subject_tag: string;
+      itm_unlock_condition_type: AvatarItem['unlock_condition_type'];
+      itm_unlock_condition_val: string;
+      itm_created_at: string;
+    }
     const rows = this.db
       .prepare(`
         SELECT 
@@ -251,7 +273,7 @@ export class AvatarRepository {
         WHERE ro.room_id = ?
         ORDER BY ro.layer ASC, ro.placed_at ASC
       `)
-      .all(roomId) as any[];
+      .all(roomId) as unknown as JoinedRoomObjectRow[];
 
     return rows.map((r) => ({
       id: r.id,
@@ -323,6 +345,25 @@ export class AvatarRepository {
   }
 
   getStudentAchievements(studentId: string): (StudentAchievement & { achievement: Achievement })[] {
+    interface JoinedAchievementRow {
+      id: string;
+      student_id: string;
+      achievement_id: string;
+      unlocked_at: string;
+      is_displayed_on_wall: number;
+      wall_slot_index: number | null;
+      progress_percentage: number;
+      ach_id: string;
+      ach_code: string;
+      ach_title: string;
+      ach_title_km: string;
+      ach_description: string;
+      ach_category: Achievement['category'];
+      ach_badge_icon: string;
+      ach_item_reward_id: string | null;
+      ach_merit_points: number;
+      ach_created_at: string;
+    }
     const rows = this.db
       .prepare(`
         SELECT 
@@ -335,7 +376,7 @@ export class AvatarRepository {
         WHERE sa.student_id = ?
         ORDER BY sa.is_displayed_on_wall DESC, sa.unlocked_at DESC
       `)
-      .all(studentId) as any[];
+      .all(studentId) as unknown as JoinedAchievementRow[];
 
     return rows.map((r) => ({
       id: r.id,
@@ -353,7 +394,7 @@ export class AvatarRepository {
         description: r.ach_description,
         category: r.ach_category,
         badge_icon: r.ach_badge_icon,
-        item_reward_id: r.ach_item_reward_id,
+        item_reward_id: r.ach_item_reward_id ?? undefined,
         merit_points: r.ach_merit_points,
         created_at: r.ach_created_at,
       },

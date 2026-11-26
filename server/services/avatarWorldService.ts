@@ -8,6 +8,7 @@ import {
   VirtualRoom,
   RoomObject,
   AvatarItem,
+  Achievement,
   StudentAchievement,
   WorldLocation
 } from '../types/avatarTypes';
@@ -16,7 +17,7 @@ export interface WorldStateResponse {
   avatarProfile: AvatarProfile;
   room: VirtualRoom & {
     objects: (RoomObject & { item: AvatarItem })[];
-    wallAchievements: (StudentAchievement & { achievement: any })[];
+    wallAchievements: (StudentAchievement & { achievement: Achievement })[];
   };
   inventory: Array<{
     id: string;
@@ -28,7 +29,7 @@ export interface WorldStateResponse {
     item: AvatarItem;
   }>;
   availableItems: AvatarItem[];
-  achievements: (StudentAchievement & { achievement: any })[];
+  achievements: (StudentAchievement & { achievement: Achievement })[];
   locations: WorldLocation[];
   intelligenceSnippet: {
     gritPersistence: number;
@@ -68,7 +69,7 @@ export class AvatarWorldService {
 
     // Intelligence linkage
     const intelProfile = this.intelRepo.getProfile(studentId);
-    const prefs = (intelProfile?.learningPreferences as any) || {};
+    const primaryStyle = intelProfile?.learningPreferences?.primaryStyle || 'Interactive / Simulation';
 
     return {
       avatarProfile: profile,
@@ -84,7 +85,7 @@ export class AvatarWorldService {
       intelligenceSnippet: {
         gritPersistence: intelProfile?.persistenceScore || 85,
         curiosityBreadth: intelProfile?.interestPatterns?.length || 4,
-        primaryStyle: prefs.primaryStyle || 'Interactive / Simulation',
+        primaryStyle,
         meritPoints: profile.merit_points,
         streakDays: room.study_streak_days,
       },

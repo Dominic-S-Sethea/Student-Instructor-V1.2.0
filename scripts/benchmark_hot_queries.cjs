@@ -1,4 +1,4 @@
-// server/data/benchmark_hot_queries.cjs
+// scripts/benchmark_hot_queries.cjs
 // Benchmarks the 5 hot per-student queries against the staging DB.
 // All SQL mirrors the repository functions in server/repositories/.
 const path = require('node:path');

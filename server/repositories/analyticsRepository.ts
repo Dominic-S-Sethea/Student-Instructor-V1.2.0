@@ -21,7 +21,7 @@ export class AnalyticsRepository {
     session_id?: string | null;
     event_type: string;
     duration?: number;
-    metadata?: any;
+    metadata?: Record<string, unknown>;
     timestamp?: string;
   }): ActivityEventRecord {
     const id = `act-${crypto.randomUUID()}`;
@@ -68,7 +68,7 @@ export class AnalyticsRepository {
     time_spent?: number;
     difficulty?: string;
     performance?: string;
-    metadata?: any;
+    metadata?: Record<string, unknown>;
     timestamp?: string;
   }): LearningEventRecord {
     const id = `learn-${crypto.randomUUID()}`;
@@ -127,7 +127,7 @@ export class AnalyticsRepository {
     duration?: number;
     result?: string;
     score?: number;
-    metadata?: any;
+    metadata?: Record<string, unknown>;
     timestamp?: string;
   }): GameEventRecord {
     const id = `game-${crypto.randomUUID()}`;

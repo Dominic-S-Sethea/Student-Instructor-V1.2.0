@@ -1,55 +1,19 @@
 import { Router, Response } from 'express';
-import { getDatabase, getDbMetrics, verifyDatabaseHealth } from '../db/connection';
+import { getDbMetrics, verifyDatabaseHealth } from '../db/connection';
 import { authenticateToken, requireRole, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { httpMetricsStore } from '../middleware/httpMetricsMiddleware';
-import { safeErrorMessage } from '../utils/httpErrors';
+import { monitorRepository } from '../repositories/monitorRepository';
+import { sendRouteError } from '../utils/httpErrors';
 
 const router = Router();
 
 /** GET /api/metrics — admin-gated operational metrics backed by live SQLite & HTTP telemetry. */
 router.get('/', authenticateToken, requireRole('admin'), (_req: AuthenticatedRequest, res: Response) => {
   try {
-    const db = getDatabase();
     const health = verifyDatabaseHealth();
     const sqliteStats = getDbMetrics().toJSON();
     const httpStats = httpMetricsStore.getSnapshot();
-
-    const tablesCount = (
-      db
-        .prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-        .get() as { count: number }
-    ).count;
-
-    const ALLOWED_COUNT_TABLES = new Set([
-      'users',
-      'student_profiles',
-      'scholarships',
-      'universities',
-      'ai_conversations',
-    ]);
-
-    const countTable = (table: string): number => {
-      if (!ALLOWED_COUNT_TABLES.has(table)) {
-        throw new Error(`Disallowed table count request: ${table}`);
-      }
-      try {
-        return (db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c;
-      } catch {
-        return 0;
-      }
-    };
-
-    const pendingSubmissions = ((): number => {
-      try {
-        return (
-          db
-            .prepare("SELECT COUNT(*) AS c FROM organization_submissions WHERE status = 'Pending Admin Review'")
-            .get() as { c: number }
-        ).c;
-      } catch {
-        return 0;
-      }
-    })();
+    const counts = monitorRepository.getOperationalCounts();
 
     res.json({
       success: true,
@@ -61,14 +25,16 @@ router.get('/', authenticateToken, requireRole('admin'), (_req: AuthenticatedReq
         foreignKeys: health.foreignKeys,
         integrity: health.integrity,
         schemaVersion: health.schemaVersion,
-        tablesCount,
+        tablesCount: counts.tablesCount,
+        dbSizeBytes: counts.dbSizeBytes,
+        walSizeBytes: counts.walSizeBytes,
         counts: {
-          users: countTable('users'),
-          studentProfiles: countTable('student_profiles'),
-          scholarships: countTable('scholarships'),
-          universities: countTable('universities'),
-          pendingSubmissions,
-          aiConversations: countTable('ai_conversations'),
+          users: counts.users,
+          studentProfiles: counts.studentProfiles,
+          scholarships: counts.scholarships,
+          universities: counts.universities,
+          pendingSubmissions: counts.pendingSubmissions,
+          aiConversations: counts.aiConversations,
         },
         sqlite: sqliteStats,
       },
@@ -76,10 +42,7 @@ router.get('/', authenticateToken, requireRole('admin'), (_req: AuthenticatedReq
       timestamp: new Date().toISOString(),
     });
   } catch (err: unknown) {
-    res.status(500).json({
-      success: false,
-      error: safeErrorMessage(err, 'Failed to collect metrics.', 500),
-    });
+    sendRouteError(res, err, 'Failed to collect metrics.');
   }
 });
 
@@ -88,9 +51,7 @@ router.get('/sqlite', authenticateToken, requireRole('admin'), (_req: Authentica
   try {
     res.json(getDbMetrics().toJSON());
   } catch (err: unknown) {
-    res.status(500).json({
-      error: safeErrorMessage(err, 'Failed to read SQLite metrics.', 500),
-    });
+    sendRouteError(res, err, 'Failed to read SQLite metrics.');
   }
 });
 

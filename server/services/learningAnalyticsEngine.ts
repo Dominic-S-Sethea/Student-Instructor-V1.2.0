@@ -3,6 +3,9 @@ import { IntelligenceRepository } from '../repositories/intelligenceRepository';
 import { PrivacyService } from './privacyService';
 import { safeJsonParse } from '../utils/safeJson';
 import {
+  ActivityEventRecord,
+  LearningEventRecord,
+  GameEventRecord,
   StudentIntelligenceProfile,
   EngagementMetrics,
   LearningProgressionMetrics,
@@ -94,7 +97,11 @@ export class LearningAnalyticsEngine {
     };
   }
 
-  private computeEngagementMetrics(activityEvents: any[], learningEvents: any[], gameEvents: any[]): EngagementMetrics {
+  private computeEngagementMetrics(
+    activityEvents: ActivityEventRecord[],
+    learningEvents: LearningEventRecord[],
+    gameEvents: GameEventRecord[]
+  ): EngagementMetrics {
     let totalSeconds = 0;
     const activeDatesSet = new Set<string>();
     const dailyMap: Record<string, { activeMinutes: number; eventCount: number }> = {};
@@ -147,7 +154,7 @@ export class LearningAnalyticsEngine {
     };
   }
 
-  private computeLearningProgressionMetrics(learningEvents: any[]): LearningProgressionMetrics {
+  private computeLearningProgressionMetrics(learningEvents: LearningEventRecord[]): LearningProgressionMetrics {
     const scores = learningEvents
       .filter((e) => e.score !== null && e.score !== undefined)
       .map((e) => Number(e.score));
@@ -183,7 +190,7 @@ export class LearningAnalyticsEngine {
     });
 
     const completedLessonsCount = learningEvents.filter(
-      (e) => e.action === 'lesson_completed' || e.action === 'experiment_completed' || (e.score && e.score >= 70)
+      (e) => e.action === 'lesson_completed' || e.action === 'experiment_completed' || (e.score !== null && e.score >= 70)
     ).length;
 
     let masteryLevel: 'Novice' | 'Developing' | 'Proficient' | 'Advanced' | 'Master' = 'Novice';
@@ -209,7 +216,11 @@ export class LearningAnalyticsEngine {
     };
   }
 
-  private computeBehavioralMetrics(activityEvents: any[], learningEvents: any[], gameEvents: any[]): BehavioralMetrics {
+  private computeBehavioralMetrics(
+    activityEvents: ActivityEventRecord[],
+    learningEvents: LearningEventRecord[],
+    gameEvents: GameEventRecord[]
+  ): BehavioralMetrics {
     const failedGameLevels = gameEvents.filter((g) => g.success === 0 || g.result === 'FAILED');
     const retriedAndWon = gameEvents.filter((g) => g.attempt > 1 && (g.success === 1 || g.result === 'SUCCESS'));
 
@@ -261,7 +272,7 @@ export class LearningAnalyticsEngine {
     };
   }
 
-  private evaluateSubjectProficiency(learningEvents: any[]): {
+  private evaluateSubjectProficiency(learningEvents: LearningEventRecord[]): {
     strengths: SubjectAssessment[];
     weaknesses: SubjectAssessment[];
   } {
@@ -316,7 +327,11 @@ export class LearningAnalyticsEngine {
     };
   }
 
-  private inferLearningPreferences(activityEvents: any[], learningEvents: any[], gameEvents: any[]): LearningPreferences {
+  private inferLearningPreferences(
+    activityEvents: ActivityEventRecord[],
+    learningEvents: LearningEventRecord[],
+    gameEvents: GameEventRecord[]
+  ): LearningPreferences {
     let visualCount = 0;
     let textCount = 0;
     let interactiveCount = 0;
@@ -365,7 +380,10 @@ export class LearningAnalyticsEngine {
     };
   }
 
-  private extractInterestPatterns(activityEvents: any[], learningEvents: any[]): string[] {
+  private extractInterestPatterns(
+    activityEvents: ActivityEventRecord[],
+    learningEvents: LearningEventRecord[]
+  ): string[] {
     const patterns = new Set<string>();
 
     activityEvents.forEach((e) => {

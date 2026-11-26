@@ -36,13 +36,51 @@ const PatchNotesModal = lazy(() => import('./components/PatchNotesModal').then((
 const AnalyticsTelemetryDrawer = lazy(() => import('./components/AnalyticsTelemetryDrawer').then((m) => ({ default: m.AnalyticsTelemetryDrawer })));
 const ROICalculatorModal = lazy(() => import('./components/ROICalculatorModal').then((m) => ({ default: m.ROICalculatorModal })));
 
+const VALID_TABS: ReadonlySet<TabView> = new Set<TabView>([
+  'dashboard',
+  'avatar-world',
+  'decision-engine',
+  'university-intelligence',
+  'scholarships',
+  'advisor',
+  'ai-advisor',
+  'alumni',
+  'meetups',
+  'mentors',
+  'opportunities',
+  'profile',
+  'stem-discovery',
+  'events',
+  'community',
+  'research-lab',
+  'platform-architecture',
+  'data-strategy',
+  'become-mentor',
+]);
+
+function readTabFromHash(isAdmin: boolean): TabView {
+  if (typeof window === 'undefined') return 'dashboard';
+  const raw = window.location.hash.replace(/^#\/?/, '').split('?')[0].trim() as TabView;
+  if (!raw || !VALID_TABS.has(raw)) return 'dashboard';
+  if (!isAdmin && ADMIN_ONLY_TABS.includes(raw)) return 'dashboard';
+  return raw;
+}
+
+function writeTabHash(tab: TabView): void {
+  if (typeof window === 'undefined') return;
+  const targetHash = `#${tab}`;
+  if (window.location.hash !== targetHash) {
+    window.history.pushState(null, '', targetHash);
+  }
+}
+
 function AppContent() {
   const { user, authenticated, profile: authProfile } = useAuth();
   const isAdmin = user?.role === 'admin';
   const sessionKey = authenticated && user?.id ? user.id : 'guest';
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabView>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabView>(() => readTabFromHash(isAdmin));
   const [studentProfile, setStudentProfile] = useState<StudentProfile>(() =>
     buildSessionStudentProfile(authenticated, user, authProfile)
   );
@@ -93,13 +131,27 @@ function AppContent() {
   }, [loadLiveUniversities]);
 
   useEffect(() => {
+    const syncFromHash = (): void => {
+      const next = readTabFromHash(isAdmin);
+      setActiveTab((current) => (next !== current ? next : current));
+    };
+    window.addEventListener('hashchange', syncFromHash);
+    window.addEventListener('popstate', syncFromHash);
+    return () => {
+      window.removeEventListener('hashchange', syncFromHash);
+      window.removeEventListener('popstate', syncFromHash);
+    };
+  }, [isAdmin]);
+
+  useEffect(() => {
     if (!isAdmin && ADMIN_ONLY_TABS.includes(activeTab)) {
       setActiveTab('dashboard');
+      writeTabHash('dashboard');
     }
   }, [isAdmin, activeTab]);
 
   const handleNavigateTab = useCallback((tab: TabView) => {
-    let destination: TabView = (tab as string) === 'messages' ? 'mentors' : tab;
+    let destination: TabView = VALID_TABS.has(tab) ? tab : 'dashboard';
     if (ADMIN_ONLY_TABS.includes(destination) && !isAdmin) {
       destination = 'dashboard';
     }
@@ -109,6 +161,7 @@ function AppContent() {
       }
       return destination;
     });
+    writeTabHash(destination);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [isAdmin]);
 
@@ -119,6 +172,7 @@ function AppContent() {
         const candidate = nextHistory.pop()!;
         if (isAdmin || !ADMIN_ONLY_TABS.includes(candidate)) {
           setActiveTab(candidate);
+          writeTabHash(candidate);
           window.scrollTo({ top: 0, behavior: 'smooth' });
           return nextHistory;
         }

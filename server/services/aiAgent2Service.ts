@@ -438,7 +438,7 @@ Your interaction has been safely processed within the sandboxed CDES learning en
     sourcesRetrieved: Array<{ title: string; category: string; source: string; score: number }>;
     memoryAnchorsApplied: string[];
     suggestedFollowUps: string[];
-    actionRecommended?: { type: string; title: string; payload: Record<string, any> };
+    actionRecommended?: { type: string; title: string; payload: Record<string, unknown> };
     safetyAudit: SafetyAuditResult;
   }> {
     // Step A: Safety Interceptor
@@ -467,7 +467,7 @@ Your interaction has been safely processed within the sandboxed CDES learning en
       `Preferred Style: ${memory.learningPatterns.preferredExplanationStyle}`
     ];
     let suggestedFollowUps: string[] = [];
-    let actionRecommended: { type: string; title: string; payload: Record<string, any> } | undefined = undefined;
+    let actionRecommended: { type: string; title: string; payload: Record<string, unknown> } | undefined = undefined;
 
     switch (agentKey) {
       case 'education_advisor':
@@ -1076,8 +1076,22 @@ This is precisely a quadratic parabola $y = Ax - Bx^2$ where $B > 0$. Maximizing
    * 8. Knowledge Ingestion, Verification & RAG Pipeline (Task 8)
    */
   public getKnowledgePipeline(): KnowledgePipelineItem[] {
+    interface KnowledgePipelineRow {
+      id: string;
+      document_title: string;
+      curriculum_domain: KnowledgePipelineItem['curriculumDomain'];
+      source_agency: KnowledgePipelineItem['sourceAgency'];
+      verification_status: KnowledgePipelineItem['verificationStatus'];
+      embedding_model: string;
+      chunk_count: number;
+      confidence_score: number;
+      last_verified_at: string;
+      ingested_at: string;
+    }
     const db = getDatabase();
-    const rows = db.prepare('SELECT * FROM knowledge_pipeline_documents ORDER BY ingested_at DESC').all() as any[];
+    const rows = db
+      .prepare('SELECT * FROM knowledge_pipeline_documents ORDER BY ingested_at DESC')
+      .all() as unknown as KnowledgePipelineRow[];
 
     if (rows && rows.length > 0) {
       return rows.map(r => ({
@@ -1216,13 +1230,23 @@ This is precisely a quadratic parabola $y = Ax - Bx^2$ where $B > 0$. Maximizing
   }
 
   public getClosedLoopMetrics(studentId?: string): ClosedLoopAnalyticsMetric {
+    interface ClosedLoopEventRow {
+      id: string;
+      timestamp: string;
+      agent_key: AgentKey;
+      event_stage: string;
+    }
     const db = getDatabase();
-    let rows: any[] = [];
+    let rows: ClosedLoopEventRow[] = [];
     try {
       if (studentId) {
-        rows = db.prepare('SELECT * FROM ai_interaction_analytics_events WHERE student_id = ? ORDER BY timestamp DESC LIMIT 100').all(studentId) as any[];
+        rows = db
+          .prepare('SELECT id, timestamp, agent_key, event_stage FROM ai_interaction_analytics_events WHERE student_id = ? ORDER BY timestamp DESC LIMIT 100')
+          .all(studentId) as unknown as ClosedLoopEventRow[];
       } else {
-        rows = db.prepare('SELECT * FROM ai_interaction_analytics_events ORDER BY timestamp DESC LIMIT 100').all() as any[];
+        rows = db
+          .prepare('SELECT id, timestamp, agent_key, event_stage FROM ai_interaction_analytics_events ORDER BY timestamp DESC LIMIT 100')
+          .all() as unknown as ClosedLoopEventRow[];
       }
     } catch {
       // ignore

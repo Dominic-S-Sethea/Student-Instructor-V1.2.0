@@ -44,6 +44,24 @@ export interface RetentionForecast {
   urgency: 'low' | 'moderate' | 'high' | 'critical';
 }
 
+interface StudentMasteryStateRow {
+  id: string;
+  student_id: string;
+  concept_id: string;
+  concept_name: string;
+  subject: string;
+  prior_mastery_p_l0: number;
+  transition_prob_p_t: number;
+  guess_prob_p_g: number;
+  slip_prob_p_s: number;
+  current_mastery_prob: number;
+  mastery_status: 'emerging' | 'developing' | 'mastered' | 'retained';
+  total_opportunities: number;
+  correct_streak: number;
+  last_practiced_at: string;
+  updated_at: string;
+}
+
 export class LearningScienceEngine {
   private get db() {
     return getDatabase();
@@ -72,7 +90,7 @@ export class LearningScienceEngine {
     const existing = this.db.prepare(`
       SELECT * FROM student_mastery_states
       WHERE student_id = ? AND concept_id = ?
-    `).get(studentId, conceptId) as any;
+    `).get(studentId, conceptId) as unknown as StudentMasteryStateRow | undefined;
 
     const pL_prev = existing ? existing.current_mastery_prob : this.defaultBKT.priorL0;
     const pT = existing ? existing.transition_prob_p_t : this.defaultBKT.transitionT;
@@ -169,7 +187,9 @@ export class LearningScienceEngine {
       SELECT current_mastery_prob, correct_streak, mastery_status
       FROM student_mastery_states
       WHERE student_id = ? ${subject ? 'AND subject = ?' : ''}
-    `).all(...(subject ? [studentId, subject] : [studentId])) as any[];
+    `).all(...(subject ? [studentId, subject] : [studentId])) as unknown as Array<
+      Pick<StudentMasteryStateRow, 'current_mastery_prob' | 'correct_streak' | 'mastery_status'>
+    >;
 
     const avgMastery = masteryRows.length > 0
       ? masteryRows.reduce((sum, r) => sum + r.current_mastery_prob, 0) / masteryRows.length
@@ -288,7 +308,7 @@ export class LearningScienceEngine {
       SELECT * FROM student_mastery_states
       WHERE student_id = ?
       ORDER BY current_mastery_prob DESC
-    `).all(studentId) as any[];
+    `).all(studentId) as unknown as StudentMasteryStateRow[];
 
     const totalConcepts = states.length;
     const masteredCount = states.filter(s => s.mastery_status === 'mastered' || s.mastery_status === 'retained').length;

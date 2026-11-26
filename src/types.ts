@@ -26,7 +26,6 @@ export type TabView =
   | 'research-lab'
   | 'platform-architecture'
   | 'data-strategy'
-  | 'messages'
   | 'become-mentor';
 
 export interface TelemetryEvent {

@@ -86,7 +86,7 @@ export class LearningService {
     studentId: string;
     experimentId: string;
     actionName: string;
-    parameters?: any;
+    parameters?: Record<string, unknown>;
     observationNotes?: string;
   }) {
     return this.learningRepo.startOrUpdateLabExperiment(params);
@@ -95,8 +95,8 @@ export class LearningService {
   completeLabExperiment(params: {
     studentId: string;
     experimentId: string;
-    parametersUsed: any;
-    outcomeData: any;
+    parametersUsed: Record<string, unknown>;
+    outcomeData: Record<string, unknown>;
     score: number;
     observationNotes?: string;
   }) {
@@ -123,7 +123,7 @@ export class LearningService {
     studentId: string;
     activityId: string;
     action: 'started' | 'hint_used' | 'completed';
-    responseData?: any;
+    responseData?: Record<string, unknown>;
     score?: number;
   }) {
     return this.learningRepo.recordActivityAction(params);
@@ -160,7 +160,7 @@ export class LearningService {
   }
 
   // 6. Generic Analytics Event Logger
-  logLearningEvent(studentId: string, eventType: string, metadata: any = {}) {
+  logLearningEvent(studentId: string, eventType: string, metadata: Record<string, unknown> = {}) {
     this.analyticsRepo.logActivityEvent({
       user_id: studentId,
       student_id: studentId,

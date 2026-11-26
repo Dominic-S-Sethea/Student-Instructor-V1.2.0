@@ -1,4 +1,9 @@
-import { ScholarshipRow, ScholarshipRequirementsRow, ScholarshipFundingRow } from '../repositories/scholarshipRepository';
+import type {
+  ScholarshipRow,
+  ScholarshipRequirementsRow,
+  ScholarshipFundingRow,
+} from '../types/scholarshipTypes';
+export { parseUsdMonthlyStipend } from '../utils/scholarshipParsing';
 
 export type BenefitKnowledgeState = 'included' | 'excluded' | 'unknown';
 export type DeadlineStatus = 'open' | 'closing_soon' | 'expired' | 'rolling' | 'unknown';
@@ -153,28 +158,6 @@ function computeQualityScore(
   if (insuranceKnown) score += 5;
   if (row.is_verified === 1) score += 15;
   return Math.min(score, 100);
-}
-
-/** Parses single explicit USD monthly stipend text without corrupting ranges or non-USD currencies. */
-export function parseUsdMonthlyStipend(text?: string | null): number | null {
-  if (!text) return null;
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  if (/^(?:none|no stipend|\$\s*0(?:\.0+)?(?:\s*usd)?(?:\s*\/\s*(?:mo|month))?)$/i.test(trimmed)) {
-    return 0;
-  }
-  if (/(?:\d\s*(?:-|–|—|\bto\b)\s*\$?\s*\d)/i.test(trimmed)) {
-    return null;
-  }
-  if (/\b(?:AUD|CAD|SGD|EUR|GBP|JPY|KRW)\b|[£€¥₩]/i.test(trimmed)) {
-    return null;
-  }
-  const usdMatch = trimmed.match(/^\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:USD)?\s*\/\s*(?:mo|month)\b/i);
-  if (usdMatch) {
-    const parsed = Number(usdMatch[1].replace(/,/g, ''));
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
 }
 
 /** Formats a raw scholarship SQLite record without inventing missing funding, insurance, or verification facts. */

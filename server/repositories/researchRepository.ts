@@ -38,6 +38,56 @@ export interface DetailedResearchExperiment extends ResearchExperiment {
   };
 }
 
+interface ResearchExperimentV2Row {
+  id: string;
+  title: string;
+  slug: string;
+  hypothesis: string;
+  domain: string;
+  research_question: string;
+  primary_metric: string;
+  secondary_metrics?: string | null;
+  start_date: string;
+  end_date: string | null;
+  status: DetailedResearchExperiment['status'];
+  target_sample_size: number;
+  current_sample_size: number;
+  power_analysis?: string | null;
+  created_at: string;
+}
+
+interface ExperimentGroupRow {
+  id: string;
+  experiment_id: string;
+  group_name: string;
+  group_type: 'control' | 'experimental';
+  intervention_type: 'traditional' | 'interactive' | 'ai_assisted' | 'game_based';
+  pedagogy_parameters?: string | null;
+  target_allocation_ratio: number;
+  participant_count: number;
+}
+
+interface ResearchResultV2Row {
+  experiment_id: string;
+  sample_size: number;
+  group_metrics?: string | null;
+  comparative_analysis?: string | null;
+  p_value?: number | null;
+  effect_size_cohens_d?: number | null;
+  is_statistically_significant: number;
+  key_findings?: string | null;
+  pedagogical_recommendation: string;
+  target_curriculum_revision?: string;
+}
+
+interface ExperimentParticipantRow {
+  id: string;
+  student_id: string;
+  experiment_id: string;
+  group_name: string;
+  assigned_at: string;
+}
+
 export class ResearchRepository {
   private get db() {
     return getDatabase();
@@ -54,31 +104,29 @@ export class ResearchRepository {
         SELECT * FROM research_experiments
         ORDER BY created_at DESC
         LIMIT 200
-      `).all() as Array<Record<string, unknown>>;
+      `).all() as unknown as ResearchExperimentV2Row[];
 
       if (expRows.length > 0) {
-        const expIds = expRows.map((e) => String(e.id));
+        const expIds = expRows.map((e) => e.id);
         const placeholders = expIds.map(() => '?').join(', ');
         const allGroups = this.db
           .prepare(`SELECT * FROM experiment_groups WHERE experiment_id IN (${placeholders})`)
-          .all(...expIds) as Array<Record<string, unknown>>;
+          .all(...expIds) as unknown as ExperimentGroupRow[];
         const allResults = this.db
           .prepare(`SELECT * FROM research_results_v2 WHERE experiment_id IN (${placeholders})`)
-          .all(...expIds) as Array<Record<string, unknown>>;
+          .all(...expIds) as unknown as ResearchResultV2Row[];
 
-        const groupsByExp = new Map<string, Array<Record<string, unknown>>>();
+        const groupsByExp = new Map<string, ExperimentGroupRow[]>();
         for (const g of allGroups) {
-          const expId = String(g.experiment_id);
-          const list = groupsByExp.get(expId) || [];
+          const list = groupsByExp.get(g.experiment_id) || [];
           list.push(g);
-          groupsByExp.set(expId, list);
+          groupsByExp.set(g.experiment_id, list);
         }
-        const resultsByExp = new Map(allResults.map((r) => [String(r.experiment_id), r]));
+        const resultsByExp = new Map<string, ResearchResultV2Row>(allResults.map((r) => [r.experiment_id, r]));
 
         for (const e of expRows) {
-          const eid = String(e.id);
-          seenIds.add(eid);
-          merged.push(this.mapDetailedExperiment(e, groupsByExp.get(eid), resultsByExp.get(eid) ?? null));
+          seenIds.add(e.id);
+          merged.push(this.mapDetailedExperiment(e, groupsByExp.get(e.id), resultsByExp.get(e.id) ?? null));
         }
       }
     } catch {
@@ -170,7 +218,7 @@ export class ResearchRepository {
     try {
       const exp = this.db.prepare(`
         SELECT * FROM research_experiments WHERE id = ? OR slug = ?
-      `).get(id, id) as any;
+      `).get(id, id) as unknown as ResearchExperimentV2Row | undefined;
 
       if (exp) {
         return this.mapDetailedExperiment(exp);
@@ -180,6 +228,18 @@ export class ResearchRepository {
     }
 
     // Fallback
+    interface LegacyExperimentRow {
+      id: string;
+      name: string;
+      hypothesis: string;
+      start_date: string;
+      end_date: string | null;
+      status: DetailedResearchExperiment['status'];
+      description?: string;
+      metrics?: string | null;
+      created_at: string;
+      participant_count?: number;
+    }
     const exp = this.db.prepare(`
       SELECT e.*,
              COUNT(DISTINCT ep.student_id) as participant_count
@@ -187,7 +247,7 @@ export class ResearchRepository {
       LEFT JOIN experiment_participants ep ON e.id = ep.experiment_id
       WHERE e.id = ?
       GROUP BY e.id
-    `).get(id) as any;
+    `).get(id) as unknown as LegacyExperimentRow | undefined;
 
     if (!exp) return null;
 
@@ -211,26 +271,30 @@ export class ResearchRepository {
       endDate: exp.end_date,
       status: exp.status,
       description: exp.description,
-      targetMetrics: safeJsonParse(exp.metrics, []),
+      targetMetrics: safeJsonParse<string[]>(exp.metrics, []),
       createdAt: exp.created_at,
       participantCount: exp.participant_count || 0,
       groupCounts,
     };
   }
 
-  private mapDetailedExperiment(e: any, preloadedGroups?: any[], preloadedResult?: any): DetailedResearchExperiment {
+  private mapDetailedExperiment(
+    e: ResearchExperimentV2Row,
+    preloadedGroups?: ExperimentGroupRow[],
+    preloadedResult?: ResearchResultV2Row | null
+  ): DetailedResearchExperiment {
     const groups =
       preloadedGroups ??
       (this.db.prepare(`
         SELECT * FROM experiment_groups WHERE experiment_id = ?
-      `).all(e.id) as any[]);
+      `).all(e.id) as unknown as ExperimentGroupRow[]);
 
     const result =
       preloadedResult !== undefined
         ? preloadedResult
         : (this.db.prepare(`
             SELECT * FROM research_results_v2 WHERE experiment_id = ?
-          `).get(e.id) as any);
+          `).get(e.id) as unknown as ResearchResultV2Row | undefined);
 
     const groupCounts: Record<string, number> = {};
     groups.forEach((g) => {
@@ -242,25 +306,25 @@ export class ResearchRepository {
       groupName: g.group_name,
       groupType: g.group_type,
       interventionType: g.intervention_type,
-      pedagogyParameters: safeJsonParse(g.pedagogy_parameters, {}),
+      pedagogyParameters: safeJsonParse<Record<string, unknown>>(g.pedagogy_parameters, {}),
       targetAllocationRatio: g.target_allocation_ratio,
       participantCount: g.participant_count,
     }));
 
     let mappedResult = undefined;
     if (result) {
-      const comp = safeJsonParse<Record<string, any>>(result.comparative_analysis, {});
+      const comp = safeJsonParse<Record<string, unknown>>(result.comparative_analysis, {});
       mappedResult = {
         sampleSize: result.sample_size,
-        groupMetrics: safeJsonParse(result.group_metrics, {}),
+        groupMetrics: safeJsonParse<Record<string, unknown>>(result.group_metrics, {}),
         comparativeAnalysis: {
-          pValue: result.p_value ?? comp.p_value ?? 0.005,
-          tStat: comp.t_stat ?? 3.5,
-          effectSizeCohensD: result.effect_size_cohens_d ?? comp.effect_size_cohens_d ?? 0.65,
-          confidenceInterval95: comp.confidence_interval_95 || '95% CI [0.35, 0.95]',
+          pValue: result.p_value ?? (typeof comp.p_value === 'number' ? comp.p_value : 0.005),
+          tStat: typeof comp.t_stat === 'number' ? comp.t_stat : 3.5,
+          effectSizeCohensD: result.effect_size_cohens_d ?? (typeof comp.effect_size_cohens_d === 'number' ? comp.effect_size_cohens_d : 0.65),
+          confidenceInterval95: typeof comp.confidence_interval_95 === 'string' ? comp.confidence_interval_95 : '95% CI [0.35, 0.95]',
           isStatisticallySignificant: result.is_statistically_significant === 1,
         },
-        keyFindings: safeJsonParse(result.key_findings, []),
+        keyFindings: safeJsonParse<string[]>(result.key_findings, []),
         pedagogicalRecommendation: result.pedagogical_recommendation,
         targetCurriculumRevision: result.target_curriculum_revision,
       };
@@ -274,15 +338,18 @@ export class ResearchRepository {
       domain: e.domain,
       researchQuestion: e.research_question,
       primaryMetric: e.primary_metric,
-      secondaryMetrics: safeJsonParse(e.secondary_metrics, []),
+      secondaryMetrics: safeJsonParse<string[]>(e.secondary_metrics, []),
       startDate: e.start_date,
       endDate: e.end_date,
       status: e.status,
       description: e.research_question,
-      targetMetrics: safeJsonParse(e.secondary_metrics, ['normalized_learning_gain', 'retention']),
+      targetMetrics: safeJsonParse<string[]>(e.secondary_metrics, ['normalized_learning_gain', 'retention']),
       targetSampleSize: e.target_sample_size,
       currentSampleSize: e.current_sample_size,
-      powerAnalysis: safeJsonParse(e.power_analysis, { alpha: 0.05, power: 0.80, target_effect_size: 0.5 }),
+      powerAnalysis: safeJsonParse<{ alpha: number; power: number; target_effect_size: number }>(
+        e.power_analysis,
+        { alpha: 0.05, power: 0.80, target_effect_size: 0.5 }
+      ),
       createdAt: e.created_at,
       participantCount: e.current_sample_size || 0,
       groupCounts,
@@ -351,7 +418,7 @@ export class ResearchRepository {
   public getParticipant(studentId: string, experimentId: string): ExperimentParticipant | null {
     const row = this.db.prepare(`
       SELECT * FROM experiment_participants WHERE student_id = ? AND experiment_id = ?
-    `).get(studentId, experimentId) as any;
+    `).get(studentId, experimentId) as unknown as ExperimentParticipantRow | undefined;
 
     if (!row) return null;
     return {
@@ -366,7 +433,7 @@ export class ResearchRepository {
   public getParticipants(experimentId: string): ExperimentParticipant[] {
     const rows = this.db.prepare(`
       SELECT * FROM experiment_participants WHERE experiment_id = ?
-    `).all(experimentId) as any[];
+    `).all(experimentId) as unknown as ExperimentParticipantRow[];
 
     return rows.map(r => ({
       id: r.id,
@@ -387,7 +454,7 @@ export class ResearchRepository {
     experimentId?: string;
     teachingMethod?: string;
     metricValue?: number;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   }): { success: boolean; id: string } {
     const id = `telem-${crypto.randomUUID().slice(0, 8)}`;
     const anonId = event.anonymizedId || this.privacyRepo.generateAnonymizedId(event.studentId);
@@ -402,7 +469,7 @@ export class ResearchRepository {
       `).run(
         id, event.eventName, event.studentId, anonId,
         event.experimentId || null, event.teachingMethod || null,
-        event.metricValue ?? null, JSON.stringify(event.metadata || {}), now
+        event.metricValue ?? null, JSON.stringify(event.metadata || {}), now,
       );
     } catch (err) {
       console.warn('Telemetry event insert failed:', err);
@@ -423,13 +490,13 @@ export class ResearchRepository {
         SELECT * FROM research_telemetry_events
         ORDER BY timestamp DESC
         LIMIT 10
-      `).all() as any[];
+      `).all() as unknown as Array<Record<string, unknown> & { metadata?: string | null }>;
 
       return {
         counts,
         recent: recent.map(r => ({
           ...r,
-          metadata: safeJsonParse(r.metadata, {}),
+          metadata: safeJsonParse<Record<string, unknown>>(r.metadata, {}),
         })),
       };
     } catch {

@@ -6,6 +6,22 @@ import { PrivacyService } from './privacyService';
 
 const privacyService = new PrivacyService();
 
+interface RecommendationRow {
+  id: string;
+  student_id: string;
+  recommendation_type: string;
+  title: string;
+  description: string;
+  match_reason: string;
+  target_entity_id?: string | null;
+  priority_score: number;
+  status: string;
+  feedback_rating?: number | null;
+  feedback_comments?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export class AIRecommendationService {
   /**
    * Generates or retrieves personalized recommendations across Learning, Career, and Scholarship.
@@ -22,10 +38,10 @@ export class AIRecommendationService {
       WHERE student_id = ? AND status != 'dismissed'
       ORDER BY priority_score DESC, created_at DESC
       LIMIT 10
-    `).all(studentId) as any[];
+    `).all(studentId) as unknown as RecommendationRow[];
 
     if (existing && existing.length >= 3) {
-      return existing.map(this.formatRecommendationRow);
+      return existing.map((row) => this.formatRecommendationRow(row));
     }
 
     // Generate tailored recommendations from student memory & profile
@@ -184,7 +200,7 @@ export class AIRecommendationService {
     const db = getDatabase();
     const now = new Date().toISOString();
 
-    const rec = db.prepare('SELECT * FROM ai_recommendation_events WHERE id = ?').get(recommendationId) as any;
+    const rec = db.prepare('SELECT * FROM ai_recommendation_events WHERE id = ?').get(recommendationId) as unknown as RecommendationRow | undefined;
     if (!rec) {
       return { success: false, recommendation: null };
     }
@@ -199,8 +215,8 @@ export class AIRecommendationService {
     }
 
     const newStatus = action;
-    const feedbackRating = rating !== undefined ? rating : rec.feedback_rating;
-    const feedbackComments = comments !== undefined ? comments : rec.feedback_comments;
+    const feedbackRating = rating !== undefined ? rating : (rec.feedback_rating ?? null);
+    const feedbackComments = comments !== undefined ? comments : (rec.feedback_comments ?? null);
 
     // Adjust priority score dynamically based on positive/negative feedback
     let adjustedPriority = rec.priority_score;
@@ -215,11 +231,11 @@ export class AIRecommendationService {
       WHERE id = ?
     `).run(newStatus, feedbackRating, feedbackComments, adjustedPriority, now, recommendationId);
 
-    const updated = db.prepare('SELECT * FROM ai_recommendation_events WHERE id = ?').get(recommendationId) as any;
+    const updated = db.prepare('SELECT * FROM ai_recommendation_events WHERE id = ?').get(recommendationId) as unknown as RecommendationRow;
     return { success: true, recommendation: this.formatRecommendationRow(updated) };
   }
 
-  private formatRecommendationRow(r: any): AIRecommendation {
+  private formatRecommendationRow(r: RecommendationRow): AIRecommendation {
     let actionLabel = 'Explore';
     let actionLink = '/dashboard';
 
@@ -241,11 +257,11 @@ export class AIRecommendationService {
       title: r.title,
       description: r.description,
       match_reason: r.match_reason,
-      target_entity_id: r.target_entity_id,
+      target_entity_id: r.target_entity_id ?? undefined,
       priority_score: r.priority_score,
       status: r.status as RecommendationStatus,
-      feedback_rating: r.feedback_rating,
-      feedback_comments: r.feedback_comments,
+      feedback_rating: r.feedback_rating ?? undefined,
+      feedback_comments: r.feedback_comments ?? undefined,
       created_at: r.created_at,
       updated_at: r.updated_at,
       action_label: actionLabel,

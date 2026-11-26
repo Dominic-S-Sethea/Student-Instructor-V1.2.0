@@ -1,7 +1,7 @@
 import { TrackedDatabase } from './metrics';
 import { initialScholarships } from '../../shared/data/scholarshipData';
 import { topCambodianUniversities } from '../../shared/data/universityIntelligenceData';
-import { parseUsdMonthlyStipend } from '../services/scholarshipFormatter';
+import { parseUsdMonthlyStipend } from '../utils/scholarshipParsing';
 import {
   initialSubjects,
   initialCategories,

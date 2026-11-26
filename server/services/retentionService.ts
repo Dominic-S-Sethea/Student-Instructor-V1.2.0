@@ -198,15 +198,28 @@ export async function cleanupInactiveUsers(): Promise<Record<string, number>> {
   return { inactive_users_marked: Number(result.changes) };
 }
 
+export async function cleanupRevokedTokens(): Promise<Record<string, number>> {
+  if (!tableExists('revoked_jwt_tokens')) {
+    return { expired_revoked_tokens_purged: 0 };
+  }
+  const db = getDatabase();
+  const result = db
+    .prepare("DELETE FROM revoked_jwt_tokens WHERE expires_at <= datetime('now')")
+    .run();
+  return { expired_revoked_tokens_purged: Number(result.changes) };
+}
+
 export async function runRetentionCleanup(): Promise<{
   analytics: Record<string, number>;
   feature_store: Record<string, number>;
   hermes: Record<string, number>;
   users: Record<string, number>;
+  tokens: Record<string, number>;
 }> {
   const analytics = await cleanupAnalyticsEvents();
   const feature_store = await cleanupFeatureStore();
   const hermes = await cleanupHermesMemory();
   const users = await cleanupInactiveUsers();
-  return { analytics, feature_store, hermes, users };
+  const tokens = await cleanupRevokedTokens();
+  return { analytics, feature_store, hermes, users, tokens };
 }
