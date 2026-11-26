@@ -882,7 +882,7 @@ export const TopUniversityDirectory: React.FC = () => {
                     </div>
 
                     {/* Flagship Fellowship Container */}
-                    <div className="mt-3 p-3 rounded-2xl border transition-all bg-slate-50/80 dark:bg-slate-800/70 border-slate-200/80 dark:border-slate-700">
+                    <div className="mt-3 p-3 rounded-2xl border transition-all bg-slate-50/45 dark:bg-slate-800/45 border-slate-200/80 dark:border-slate-700/80">
                       <div className="text-[11px] font-extrabold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
                         Flagship Aid Program
                       </div>
