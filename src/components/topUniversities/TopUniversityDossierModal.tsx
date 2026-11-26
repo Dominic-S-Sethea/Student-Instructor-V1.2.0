@@ -13,6 +13,8 @@ export const TopUniversityDossierModal: React.FC<TopUniversityDossierModalProps>
 
   if (!program) return null;
 
+  const officialCrestPath = `${import.meta.env.BASE_URL}crests/${program.id}.png`;
+
   return (
     <div
       className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6"
@@ -30,9 +32,10 @@ export const TopUniversityDossierModal: React.FC<TopUniversityDossierModalProps>
           {/* Subtle Watermark of Official Crest in Modal Header */}
           <div className="absolute right-12 -bottom-6 w-36 h-36 opacity-25 pointer-events-none select-none flex items-center justify-center">
             <img
-              src={`/crests/${program.id}.png`}
+              src={officialCrestPath}
               alt=""
               loading="lazy"
+              decoding="async"
               referrerPolicy="no-referrer"
               className="w-full h-full object-contain filter brightness-110 drop-shadow-md"
               onError={(e) => {
@@ -64,9 +67,10 @@ export const TopUniversityDossierModal: React.FC<TopUniversityDossierModalProps>
           <div className="flex items-center gap-4 relative z-10">
             <div className="w-14 h-14 rounded-2xl bg-white/95 p-1.5 shadow-md flex items-center justify-center shrink-0 border border-white">
               <img
-                src={`/crests/${program.id}.png`}
+                src={officialCrestPath}
                 alt={`${program.universityName} Crest`}
                 loading="lazy"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-contain"
                 onError={(e) => {
