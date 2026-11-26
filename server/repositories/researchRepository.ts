@@ -53,29 +53,32 @@ export class ResearchRepository {
       const expRows = this.db.prepare(`
         SELECT * FROM research_experiments
         ORDER BY created_at DESC
-      `).all() as any[];
+        LIMIT 200
+      `).all() as Array<Record<string, unknown>>;
 
       if (expRows.length > 0) {
         const expIds = expRows.map((e) => String(e.id));
         const placeholders = expIds.map(() => '?').join(', ');
         const allGroups = this.db
           .prepare(`SELECT * FROM experiment_groups WHERE experiment_id IN (${placeholders})`)
-          .all(...expIds) as any[];
+          .all(...expIds) as Array<Record<string, unknown>>;
         const allResults = this.db
           .prepare(`SELECT * FROM research_results_v2 WHERE experiment_id IN (${placeholders})`)
-          .all(...expIds) as any[];
+          .all(...expIds) as Array<Record<string, unknown>>;
 
-        const groupsByExp = new Map<string, any[]>();
+        const groupsByExp = new Map<string, Array<Record<string, unknown>>>();
         for (const g of allGroups) {
-          const list = groupsByExp.get(g.experiment_id) || [];
+          const expId = String(g.experiment_id);
+          const list = groupsByExp.get(expId) || [];
           list.push(g);
-          groupsByExp.set(g.experiment_id, list);
+          groupsByExp.set(expId, list);
         }
-        const resultsByExp = new Map(allResults.map((r) => [r.experiment_id, r]));
+        const resultsByExp = new Map(allResults.map((r) => [String(r.experiment_id), r]));
 
         for (const e of expRows) {
-          seenIds.add(String(e.id));
-          merged.push(this.mapDetailedExperiment(e, groupsByExp.get(e.id), resultsByExp.get(e.id) ?? null));
+          const eid = String(e.id);
+          seenIds.add(eid);
+          merged.push(this.mapDetailedExperiment(e, groupsByExp.get(eid), resultsByExp.get(eid) ?? null));
         }
       }
     } catch {
@@ -90,7 +93,8 @@ export class ResearchRepository {
       LEFT JOIN experiment_participants ep ON e.id = ep.experiment_id
       GROUP BY e.id
       ORDER BY e.created_at DESC
-    `).all() as any[];
+      LIMIT 200
+    `).all() as Array<Record<string, unknown>>;
 
     if (experiments.length > 0) {
       const legIds = experiments.map((exp) => String(exp.id));
@@ -108,19 +112,20 @@ export class ResearchRepository {
       }
 
       for (const exp of experiments) {
-        if (seenIds.has(String(exp.id))) continue;
+        const expId = String(exp.id);
+        if (seenIds.has(expId)) continue;
         merged.push({
-          id: exp.id,
-          name: exp.name,
-          hypothesis: exp.hypothesis,
-          startDate: exp.start_date,
-          endDate: exp.end_date,
-          status: exp.status,
-          description: exp.description,
-          targetMetrics: safeJsonParse(exp.metrics, []),
-          createdAt: exp.created_at,
-          participantCount: exp.participant_count || 0,
-          groupCounts: legGroupsMap.get(exp.id) || {},
+          id: expId,
+          name: String(exp.name || ''),
+          hypothesis: String(exp.hypothesis || ''),
+          startDate: String(exp.start_date || ''),
+          endDate: typeof exp.end_date === 'string' ? exp.end_date : null,
+          status: (String(exp.status || 'draft') as DetailedResearchExperiment['status']),
+          description: typeof exp.description === 'string' ? exp.description : undefined,
+          targetMetrics: safeJsonParse(typeof exp.metrics === 'string' ? exp.metrics : null, []),
+          createdAt: String(exp.created_at || ''),
+          participantCount: Number(exp.participant_count) || 0,
+          groupCounts: legGroupsMap.get(expId) || {},
         });
       }
     }

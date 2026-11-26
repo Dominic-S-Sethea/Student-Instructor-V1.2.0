@@ -107,33 +107,33 @@ export class DataPlatformService {
   // 2. EDUCATION KNOWLEDGE DATABASE (Task 2)
   // ==========================================================
   public getEducationKnowledgeHub() {
-    const universities = this.db.prepare('SELECT * FROM cdes_universities_lake ORDER BY established_year ASC').all().map((u: any) => ({
+    const universities = (this.db.prepare('SELECT * FROM cdes_universities_lake ORDER BY established_year ASC LIMIT 200').all() as Array<Record<string, unknown>>).map((u) => ({
       ...u,
-      top_sectors: safeJsonParse<string[]>(u.top_sectors_json, []),
+      top_sectors: safeJsonParse<string[]>(typeof u.top_sectors_json === 'string' ? u.top_sectors_json : null, []),
     }));
 
-    const scholarships = this.db.prepare('SELECT * FROM cdes_scholarships_lake ORDER BY deadline ASC').all().map((s: any) => ({
+    const scholarships = (this.db.prepare('SELECT * FROM cdes_scholarships_lake ORDER BY deadline ASC LIMIT 200').all() as Array<Record<string, unknown>>).map((s) => ({
       ...s,
-      priority_fields: safeJsonParse<string[]>(s.priority_fields_json, []),
+      priority_fields: safeJsonParse<string[]>(typeof s.priority_fields_json === 'string' ? s.priority_fields_json : null, []),
     }));
 
-    const careers = this.db.prepare('SELECT * FROM cdes_careers_lake ORDER BY demand_index DESC').all().map((c: any) => ({
+    const careers = (this.db.prepare('SELECT * FROM cdes_careers_lake ORDER BY demand_index DESC LIMIT 200').all() as Array<Record<string, unknown>>).map((c) => ({
       ...c,
-      top_skills: safeJsonParse<string[]>(c.top_skills_json, []),
+      top_skills: safeJsonParse<string[]>(typeof c.top_skills_json === 'string' ? c.top_skills_json : null, []),
     }));
 
-    const industries = this.db.prepare('SELECT * FROM cdes_industries_lake ORDER BY gdp_contribution_pct DESC').all().map((i: any) => ({
+    const industries = (this.db.prepare('SELECT * FROM cdes_industries_lake ORDER BY gdp_contribution_pct DESC LIMIT 200').all() as Array<Record<string, unknown>>).map((i) => ({
       ...i,
-      top_employers: safeJsonParse<string[]>(i.top_employers_json, []),
+      top_employers: safeJsonParse<string[]>(typeof i.top_employers_json === 'string' ? i.top_employers_json : null, []),
     }));
 
-    const psychometrics = this.db.prepare('SELECT * FROM cdes_psychometrics_lake ORDER BY instrument_code ASC').all();
+    const psychometrics = this.db.prepare('SELECT * FROM cdes_psychometrics_lake ORDER BY instrument_code ASC LIMIT 200').all();
 
-    const learningScience = this.db.prepare('SELECT * FROM cdes_learning_science_lake ORDER BY framework_name ASC').all().map((l: any) => ({
+    const learningScience = (this.db.prepare('SELECT * FROM cdes_learning_science_lake ORDER BY framework_name ASC LIMIT 200').all() as Array<Record<string, unknown>>).map((l) => ({
       ...l,
-      action_verbs: safeJsonParse<string[]>(l.action_verbs_json, []),
-      scaffolding_techniques: safeJsonParse<string[]>(l.scaffolding_techniques_json, []),
-      misconception_countermeasures: safeJsonParse<string[]>(l.misconception_countermeasures_json, []),
+      action_verbs: safeJsonParse<string[]>(typeof l.action_verbs_json === 'string' ? l.action_verbs_json : null, []),
+      scaffolding_techniques: safeJsonParse<string[]>(typeof l.scaffolding_techniques_json === 'string' ? l.scaffolding_techniques_json : null, []),
+      misconception_countermeasures: safeJsonParse<string[]>(typeof l.misconception_countermeasures_json === 'string' ? l.misconception_countermeasures_json : null, []),
     }));
 
     return {
@@ -149,15 +149,16 @@ export class DataPlatformService {
 
   public searchKnowledgeLake(query: string, domain?: string) {
     const q = query.toLowerCase().trim();
-    const results: any[] = [];
+    const results: Array<Record<string, unknown>> = [];
 
     if (!domain || domain === 'universities' || domain === 'all') {
       const univs = this.db.prepare(`
         SELECT id, abbr, name_en, name_km, campus_city, institution_type, tuition_usd_annual, top_sectors_json
         FROM cdes_universities_lake
         WHERE lower(name_en) LIKE ? OR lower(name_km) LIKE ? OR lower(abbr) LIKE ? OR lower(top_sectors_json) LIKE ?
-      `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
-      results.push(...univs.map((u: any) => ({ ...u, entity_type: 'university', top_sectors: safeJsonParse<string[]>(u.top_sectors_json, []) })));
+        LIMIT 100
+      `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`) as Array<Record<string, unknown>>;
+      results.push(...univs.map((u) => ({ ...u, entity_type: 'university', top_sectors: safeJsonParse<string[]>(typeof u.top_sectors_json === 'string' ? u.top_sectors_json : null, []) })));
     }
 
     if (!domain || domain === 'scholarships' || domain === 'all') {
@@ -165,8 +166,9 @@ export class DataPlatformService {
         SELECT id, code, title, provider, scholarship_type, coverage_percentage, priority_fields_json, deadline
         FROM cdes_scholarships_lake
         WHERE lower(title) LIKE ? OR lower(provider) LIKE ? OR lower(priority_fields_json) LIKE ?
-      `).all(`%${q}%`, `%${q}%`, `%${q}%`);
-      results.push(...schs.map((s: any) => ({ ...s, entity_type: 'scholarship', priority_fields: safeJsonParse<string[]>(s.priority_fields_json, []) })));
+        LIMIT 100
+      `).all(`%${q}%`, `%${q}%`, `%${q}%`) as Array<Record<string, unknown>>;
+      results.push(...schs.map((s) => ({ ...s, entity_type: 'scholarship', priority_fields: safeJsonParse<string[]>(typeof s.priority_fields_json === 'string' ? s.priority_fields_json : null, []) })));
     }
 
     if (!domain || domain === 'careers' || domain === 'all') {
@@ -174,8 +176,9 @@ export class DataPlatformService {
         SELECT id, soc_code, title_en, title_km, industry_domain, median_salary_usd, demand_index, top_skills_json
         FROM cdes_careers_lake
         WHERE lower(title_en) LIKE ? OR lower(title_km) LIKE ? OR lower(industry_domain) LIKE ? OR lower(top_skills_json) LIKE ?
-      `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
-      results.push(...cars.map((c: any) => ({ ...c, entity_type: 'career', top_skills: safeJsonParse<string[]>(c.top_skills_json, []) })));
+        LIMIT 100
+      `).all(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`) as Array<Record<string, unknown>>;
+      results.push(...cars.map((c) => ({ ...c, entity_type: 'career', top_skills: safeJsonParse<string[]>(typeof c.top_skills_json === 'string' ? c.top_skills_json : null, []) })));
     }
 
     return {

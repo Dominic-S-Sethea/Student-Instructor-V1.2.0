@@ -190,11 +190,32 @@ export const NotificationDispatchSchema = z.object({
 // User Profile, Education, and Legacy AI Input Bounds
 // ============================================================================
 
+export function isValidPlausibleBirthDate(dob: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) return false;
+  const [yStr, mStr, dStr] = dob.split('-');
+  const year = Number(yStr);
+  const month = Number(mStr);
+  const day = Number(dStr);
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  if (
+    Number.isNaN(dt.getTime()) ||
+    dt.getUTCFullYear() !== year ||
+    dt.getUTCMonth() + 1 !== month ||
+    dt.getUTCDate() !== day
+  ) {
+    return false;
+  }
+  const todayUtc = new Date();
+  const minYear = 1920;
+  return year >= minYear && dt.getTime() <= todayUtc.getTime();
+}
+
 export const UserProfileUpdateSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   date_of_birth: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'date_of_birth must be YYYY-MM-DD')
+    .refine(isValidPlausibleBirthDate, 'date_of_birth must be a real calendar date between 1920-01-01 and today')
     .nullable()
     .optional(),
   education_level: z.string().trim().max(100).optional(),

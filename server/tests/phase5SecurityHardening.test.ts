@@ -87,6 +87,7 @@ async function run(): Promise<void> {
       planId: planA.id,
       milestoneId: planA.milestones[0].id,
     });
+    assert.strictEqual(idorToggle.status, 404, 'Student B must receive 404 toggling Student A milestone');
     assert.strictEqual(idorToggle.json.success, false, 'Student B must not toggle Student A milestone');
 
     // 5. Community hardening: forced member role, stripped user_ids, cross-post accept-answer, mentor default session_type, title moderation

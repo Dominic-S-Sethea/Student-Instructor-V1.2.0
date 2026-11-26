@@ -103,6 +103,15 @@ export class ScholarshipService {
     return this.formatScholarship(raw);
   }
 
+  public getScholarshipsByIds(ids: string[]): Map<string, FormattedScholarship> {
+    const rows = this.repo.getByIds(ids);
+    const map = new Map<string, FormattedScholarship>();
+    for (const row of rows) {
+      map.set(row.id, this.formatScholarship(row));
+    }
+    return map;
+  }
+
   public getStats(): ScholarshipStats {
     const allRows = this.repo.getAll({});
     const totalCount = allRows.length;
@@ -294,11 +303,9 @@ export class ScholarshipService {
         const fieldKey = updatedReport.reported_field.trim().toLowerCase().replace(/\s+/g, '');
         const mappedField = CORRECTABLE_SCHOLARSHIP_FIELDS[fieldKey] ?? CORRECTABLE_SCHOLARSHIP_FIELDS[updatedReport.reported_field.trim().toLowerCase()];
         if (mappedField) {
-          this.repo.update(
-            updatedReport.scholarship_id,
-            { [mappedField]: updatedReport.suggested_correction.trim() },
-            changedByUserId
-          );
+          const patch = { [mappedField]: updatedReport.suggested_correction.trim() };
+          assertSafeScholarshipUrls(patch);
+          this.repo.update(updatedReport.scholarship_id, patch, changedByUserId);
         }
       }
 

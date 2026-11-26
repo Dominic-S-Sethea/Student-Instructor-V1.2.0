@@ -8,6 +8,12 @@ interface RateLimitRecord {
 
 const MAX_TRACKED_CLIENTS = 10_000;
 
+export function userOrIpKey(req: Request): string {
+  const userId = (req as { user?: { userId?: string } }).user?.userId;
+  if (userId) return `user:${userId}`;
+  return `ip:${req.ip || req.socket.remoteAddress || '127.0.0.1'}`;
+}
+
 /**
  * Creates an isolated in-memory sliding-window counter rate limiter with bounded client tracking.
  */
@@ -25,7 +31,7 @@ export function rateLimiter(
       return;
     }
 
-    const key = keyGenerator ? keyGenerator(req) : (req.ip || req.socket.remoteAddress || '127.0.0.1');
+    const key = keyGenerator ? keyGenerator(req) : userOrIpKey(req);
     const now = Date.now();
 
     if (clientMap.size >= MAX_TRACKED_CLIENTS && !clientMap.has(key)) {
@@ -61,6 +67,8 @@ export function rateLimiter(
         previousCount: 0,
       };
       clientMap.set(key, record);
+      res.set('X-RateLimit-Limit', String(maxRequests));
+      res.set('X-RateLimit-Remaining', String(Math.max(0, maxRequests - 1)));
       next();
       return;
     }
@@ -83,6 +91,8 @@ export function rateLimiter(
 
     if (effectiveCount >= maxRequests) {
       const retryAfterSec = Math.max(1, Math.ceil((record.windowStart + windowMs - now) / 1000));
+      res.set('X-RateLimit-Limit', String(maxRequests));
+      res.set('X-RateLimit-Remaining', '0');
       res.set('Retry-After', String(retryAfterSec));
       res.status(429).json({
         success: false,
@@ -93,6 +103,9 @@ export function rateLimiter(
     }
 
     record.currentCount += 1;
+    const remaining = Math.max(0, Math.floor(maxRequests - (effectiveCount + 1)));
+    res.set('X-RateLimit-Limit', String(maxRequests));
+    res.set('X-RateLimit-Remaining', String(remaining));
     // Refresh LRU order on active key
     clientMap.delete(key);
     clientMap.set(key, record);

@@ -183,10 +183,10 @@ export class ScholarshipRepository {
       params.push(queryStr, queryStr, queryStr, queryStr, queryStr, queryStr, queryStr);
     }
 
-    sql += ' AND is_deleted = 0 ORDER BY deadline ASC LIMIT 500';
+    sql += ' AND is_deleted = 0 ORDER BY deadline ASC';
     const rows = this.db.prepare(sql).all(...params) as unknown as ScholarshipRow[];
 
-    // In-memory post-filter for JSON array fields (degree & field & studentCategory)
+    // In-memory post-filter for JSON array fields (degree & field & studentCategory) BEFORE slicing to 500
     const filtered = rows.filter(row => {
       if (filters.degree && filters.degree !== 'all' && filters.degree !== 'All') {
         try {
@@ -223,13 +223,17 @@ export class ScholarshipRepository {
         }
       }
       return true;
-    });
+    }).slice(0, 500);
 
-    if (filtered.length === 0) {
+    return this.hydrateRows(filtered);
+  }
+
+  private hydrateRows(rows: ScholarshipRow[]): HydratedScholarshipRow[] {
+    if (rows.length === 0) {
       return [];
     }
 
-    const ids = filtered.map((r) => r.id);
+    const ids = rows.map((r) => r.id);
     const placeholders = ids.map(() => '?').join(', ');
 
     const reqRows = this.db
@@ -243,23 +247,40 @@ export class ScholarshipRepository {
     const fundMap = new Map(fundRows.map((f) => [f.scholarship_id, f]));
 
     const changeRows = this.db
-      .prepare(`SELECT * FROM change_history WHERE entity_id IN (${placeholders}) ORDER BY created_at DESC`)
+      .prepare(
+        `SELECT id, entity_type, entity_id, changed_by_user_id, action, previous_state, new_state, change_summary, created_at
+         FROM (
+           SELECT *, ROW_NUMBER() OVER (PARTITION BY entity_id ORDER BY created_at DESC) AS rn
+           FROM change_history
+           WHERE entity_id IN (${placeholders})
+         )
+         WHERE rn <= 10
+         ORDER BY created_at DESC`
+      )
       .all(...ids) as unknown as ChangeHistoryRow[];
     const changeMap = new Map<string, FormattedChangeHistoryItem[]>();
     for (const c of changeRows) {
       const list = changeMap.get(c.entity_id) || [];
-      if (list.length < 10) {
-        list.push(this.formatChangeItem(c));
-        changeMap.set(c.entity_id, list);
-      }
+      list.push(this.formatChangeItem(c));
+      changeMap.set(c.entity_id, list);
     }
 
-    return filtered.map((row) => ({
+    return rows.map((row) => ({
       ...row,
       requirements: reqMap.get(row.id) || null,
       funding: fundMap.get(row.id) || null,
       changeHistory: changeMap.get(row.id) || [],
     }));
+  }
+
+  public getByIds(ids: string[]): HydratedScholarshipRow[] {
+    const unique = Array.from(new Set(ids.filter((id) => typeof id === 'string' && id.trim().length > 0))).slice(0, 250);
+    if (unique.length === 0) return [];
+    const placeholders = unique.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(`SELECT * FROM scholarships WHERE id IN (${placeholders}) AND is_deleted = 0`)
+      .all(...unique) as unknown as ScholarshipRow[];
+    return this.hydrateRows(rows);
   }
 
   private formatChangeItem(r: ChangeHistoryRow): FormattedChangeHistoryItem {

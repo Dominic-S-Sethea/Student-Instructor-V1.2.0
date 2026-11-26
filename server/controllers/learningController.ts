@@ -7,7 +7,15 @@ import {
   resolveAuthorizedStudentId,
   AuthenticatedRequest,
 } from '../middleware/authMiddleware';
+import { validate } from '../middleware/validationMiddleware';
+import {
+  ActivityActionSchema,
+  LabActionSchema,
+  LabCompleteSchema,
+  PathAdvanceSchema,
+} from '../validators/domainSchemas';
 import { HttpError, safeErrorMessage } from '../utils/httpErrors';
+import { parseOptionalQueryString } from '../utils/queryParams';
 
 function sendLearningError(res: Response, err: unknown, fallback: string): void {
   const status = err instanceof HttpError ? err.status : 500;
@@ -31,13 +39,12 @@ router.get('/subjects', (_req: Request, res: Response) => {
 // 2. DIGITAL LIBRARY CONTENT (Public catalog; logs history only if authenticated & consented)
 router.get('/content', (req: Request, res: Response) => {
   try {
-    const { subject_id, category_id, content_type, difficulty, search } = req.query;
     const contents = learningService.getContentCatalog({
-      subject_id: subject_id as string | undefined,
-      category_id: category_id as string | undefined,
-      content_type: content_type as string | undefined,
-      difficulty: difficulty as string | undefined,
-      search: search as string | undefined,
+      subject_id: parseOptionalQueryString(req.query.subject_id, 'subject_id', 80),
+      category_id: parseOptionalQueryString(req.query.category_id, 'category_id', 80),
+      content_type: parseOptionalQueryString(req.query.content_type, 'content_type', 60),
+      difficulty: parseOptionalQueryString(req.query.difficulty, 'difficulty', 40),
+      search: parseOptionalQueryString(req.query.search, 'search', 200),
     });
     res.json({ success: true, count: contents.length, data: contents });
   } catch (err: unknown) {
@@ -68,10 +75,10 @@ router.get('/experiments', authenticateToken, (req: AuthenticatedRequest, res: R
     const studentId = resolveAuthorizedStudentId(
       req,
       res,
-      typeof req.query.studentId === 'string' ? req.query.studentId : undefined
+      parseOptionalQueryString(req.query.studentId, 'studentId', 120)
     );
     if (!studentId) return;
-    const subjectId = typeof req.query.subject_id === 'string' ? req.query.subject_id : undefined;
+    const subjectId = parseOptionalQueryString(req.query.subject_id, 'subject_id', 80);
     const experiments = learningService.getLaboratoryCatalog(studentId, subjectId);
     res.json({ success: true, count: experiments.length, data: experiments });
   } catch (err: unknown) {
@@ -84,7 +91,7 @@ router.get('/experiments/:id', authenticateToken, (req: AuthenticatedRequest, re
     const studentId = resolveAuthorizedStudentId(
       req,
       res,
-      typeof req.query.studentId === 'string' ? req.query.studentId : undefined
+      parseOptionalQueryString(req.query.studentId, 'studentId', 120)
     );
     if (!studentId) return;
     const data = learningService.getExperimentDetail(req.params.id, studentId);
@@ -98,16 +105,20 @@ router.get('/experiments/:id', authenticateToken, (req: AuthenticatedRequest, re
   }
 });
 
-router.post('/experiments/:id/action', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
+router.post('/experiments/:id/action', authenticateToken, validate(LabActionSchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const studentId = req.user!.userId;
-    const { actionName, parameters, observationNotes } = (req.body || {}) as Record<string, unknown>;
+    const { actionName, parameters, observationNotes } = req.body as {
+      actionName?: string;
+      parameters?: Record<string, unknown>;
+      observationNotes?: string;
+    };
     const result = learningService.recordLabAction({
       studentId,
       experimentId: req.params.id,
-      actionName: typeof actionName === 'string' ? actionName : 'parameter_adjusted',
+      actionName: actionName || 'parameter_adjusted',
       parameters,
-      observationNotes: typeof observationNotes === 'string' ? observationNotes : undefined,
+      observationNotes,
     });
     res.json({ success: true, data: result });
   } catch (err: unknown) {
@@ -115,21 +126,22 @@ router.post('/experiments/:id/action', authenticateToken, (req: AuthenticatedReq
   }
 });
 
-router.post('/experiments/:id/complete', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
+router.post('/experiments/:id/complete', authenticateToken, validate(LabCompleteSchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const studentId = req.user!.userId;
-    const { parametersUsed, outcomeData, score, observationNotes } = (req.body || {}) as Record<string, unknown>;
-    if (score !== undefined && (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 100)) {
-      res.status(400).json({ success: false, error: 'score must be a finite number between 0 and 100.' });
-      return;
-    }
+    const { parametersUsed, outcomeData, score, observationNotes } = req.body as {
+      parametersUsed?: Record<string, unknown>;
+      outcomeData?: Record<string, unknown>;
+      score?: number;
+      observationNotes?: string;
+    };
     const finalResult = learningService.completeLabExperiment({
       studentId,
       experimentId: req.params.id,
       parametersUsed: parametersUsed || {},
       outcomeData: outcomeData || {},
       score: typeof score === 'number' ? score : 90,
-      observationNotes: typeof observationNotes === 'string' ? observationNotes : undefined,
+      observationNotes,
     });
     res.json({ success: true, message: 'Experiment submitted and verified.', data: finalResult });
   } catch (err: unknown) {
@@ -143,11 +155,11 @@ router.get('/activities', authenticateToken, (req: AuthenticatedRequest, res: Re
     const studentId = resolveAuthorizedStudentId(
       req,
       res,
-      typeof req.query.studentId === 'string' ? req.query.studentId : undefined
+      parseOptionalQueryString(req.query.studentId, 'studentId', 120)
     );
     if (!studentId) return;
-    const subjectId = typeof req.query.subject_id === 'string' ? req.query.subject_id : undefined;
-    const type = typeof req.query.type === 'string' ? req.query.type : undefined;
+    const subjectId = parseOptionalQueryString(req.query.subject_id, 'subject_id', 80);
+    const type = parseOptionalQueryString(req.query.type, 'type', 60);
     const activities = learningService.getActivitiesCatalog(studentId, subjectId, type);
     res.json({ success: true, count: activities.length, data: activities });
   } catch (err: unknown) {
@@ -155,22 +167,20 @@ router.get('/activities', authenticateToken, (req: AuthenticatedRequest, res: Re
   }
 });
 
-router.post('/activities/:id/action', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
+router.post('/activities/:id/action', authenticateToken, validate(ActivityActionSchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const studentId = req.user!.userId;
-    const { action, responseData, score } = (req.body || {}) as Record<string, unknown>;
-    if (score !== undefined && (typeof score !== 'number' || !Number.isFinite(score) || score < 0 || score > 100)) {
-      res.status(400).json({ success: false, error: 'score must be a finite number between 0 and 100.' });
-      return;
-    }
-    const actType: 'started' | 'completed' | 'hint_used' =
-      action === 'completed' || action === 'hint_used' ? action : 'started';
+    const { action, responseData, score } = req.body as {
+      action?: 'started' | 'completed' | 'hint_used';
+      responseData?: unknown;
+      score?: number;
+    };
     const result = learningService.recordActivityInteraction({
       studentId,
       activityId: req.params.id,
-      action: actType,
+      action: action ?? 'started',
       responseData,
-      score: typeof score === 'number' ? score : undefined,
+      score,
     });
     res.json({ success: true, data: result });
   } catch (err: unknown) {
@@ -184,7 +194,7 @@ router.get('/paths', authenticateToken, (req: AuthenticatedRequest, res: Respons
     const studentId = resolveAuthorizedStudentId(
       req,
       res,
-      typeof req.query.studentId === 'string' ? req.query.studentId : undefined
+      parseOptionalQueryString(req.query.studentId, 'studentId', 120)
     );
     if (!studentId) return;
     const roadmaps = learningService.getLearningRoadmaps(studentId);
@@ -204,16 +214,11 @@ router.post('/paths/:id/enroll', authenticateToken, (req: AuthenticatedRequest, 
   }
 });
 
-router.post('/paths/:id/advance', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
+router.post('/paths/:id/advance', authenticateToken, validate(PathAdvanceSchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const studentId = req.user!.userId;
-    const { stepOrder } = (req.body || {}) as Record<string, unknown>;
-    const resolvedStep = stepOrder === undefined ? 1 : Number(stepOrder);
-    if (!Number.isInteger(resolvedStep) || resolvedStep < 1) {
-      res.status(400).json({ success: false, error: 'stepOrder must be a positive integer >= 1.' });
-      return;
-    }
-    const path = learningService.advanceRoadmap(studentId, req.params.id, resolvedStep);
+    const { stepOrder } = req.body as { stepOrder?: number };
+    const path = learningService.advanceRoadmap(studentId, req.params.id, stepOrder ?? 1);
     res.json({ success: true, message: 'Roadmap step advanced', data: path });
   } catch (err: unknown) {
     sendLearningError(res, err, 'Failed to advance path');

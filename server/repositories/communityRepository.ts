@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { getDatabase, withTransaction } from '../db/connection';
 import { PrivacyService } from '../services/privacyService';
 import { safeJsonParse } from '../utils/safeJson';
+import { ConflictError, NotFoundError } from '../utils/httpErrors';
 
 const privacyService = new PrivacyService();
 
@@ -143,10 +144,30 @@ export class CommunityRepository {
     return this.getPostById(id);
   }
 
-  public upvotePost(postId: string) {
+  public upvotePost(postId: string, userId?: string) {
     const db = getDatabase();
-    db.prepare('UPDATE community_posts SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(postId);
-    return db.prepare('SELECT upvotes_count FROM community_posts WHERE id = ?').get(postId);
+    return withTransaction(() => {
+      const existing = db.prepare('SELECT id, upvotes_count FROM community_posts WHERE id = ?').get(postId) as
+        | { id: string; upvotes_count: number }
+        | undefined;
+      if (!existing) throw new NotFoundError('Post not found.');
+      if (userId) {
+        const vote = db
+          .prepare(
+            `INSERT OR IGNORE INTO community_votes (id, entity_type, entity_id, user_id, created_at)
+             VALUES (?, 'post', ?, ?, ?)`
+          )
+          .run(`cv-${crypto.randomUUID()}`, postId, userId, new Date().toISOString());
+        if (Number(vote.changes) === 0) {
+          return { upvotes_count: existing.upvotes_count, alreadyVoted: true };
+        }
+      }
+      db.prepare('UPDATE community_posts SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(postId);
+      const updated = db.prepare('SELECT upvotes_count FROM community_posts WHERE id = ?').get(postId) as {
+        upvotes_count: number;
+      };
+      return { upvotes_count: updated.upvotes_count, alreadyVoted: false };
+    });
   }
 
   // ==========================================
@@ -198,10 +219,30 @@ export class CommunityRepository {
     return db.prepare('SELECT * FROM community_comments WHERE id = ?').get(id);
   }
 
-  public upvoteComment(commentId: string) {
+  public upvoteComment(commentId: string, userId?: string) {
     const db = getDatabase();
-    db.prepare('UPDATE community_comments SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(commentId);
-    return db.prepare('SELECT upvotes_count FROM community_comments WHERE id = ?').get(commentId);
+    return withTransaction(() => {
+      const existing = db.prepare('SELECT id, upvotes_count FROM community_comments WHERE id = ?').get(commentId) as
+        | { id: string; upvotes_count: number }
+        | undefined;
+      if (!existing) throw new NotFoundError('Comment not found.');
+      if (userId) {
+        const vote = db
+          .prepare(
+            `INSERT OR IGNORE INTO community_votes (id, entity_type, entity_id, user_id, created_at)
+             VALUES (?, 'comment', ?, ?, ?)`
+          )
+          .run(`cv-${crypto.randomUUID()}`, commentId, userId, new Date().toISOString());
+        if (Number(vote.changes) === 0) {
+          return { upvotes_count: existing.upvotes_count, alreadyVoted: true };
+        }
+      }
+      db.prepare('UPDATE community_comments SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(commentId);
+      const updated = db.prepare('SELECT upvotes_count FROM community_comments WHERE id = ?').get(commentId) as {
+        upvotes_count: number;
+      };
+      return { upvotes_count: updated.upvotes_count, alreadyVoted: false };
+    });
   }
 
   public markAcceptedAnswer(postId: string, commentId: string) {
@@ -252,26 +293,34 @@ export class CommunityRepository {
     const now = new Date().toISOString();
 
     return withTransaction(() => {
-      db.prepare(`
-        INSERT INTO mentorship_sessions (
-          id, mentor_id, student_id, student_name, topic, session_type,
-          scheduled_date, scheduled_time, duration_minutes, meeting_link,
-          status, student_notes, safety_logged, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 30, 'https://meet.cdes.edu.kh/session-' || ?, 'confirmed', ?, 1, ?, ?)
-      `).run(
-        id,
-        data.mentor_id,
-        data.student_id,
-        data.student_name,
-        data.topic,
-        data.session_type,
-        data.scheduled_date,
-        data.scheduled_time,
-        id,
-        data.student_notes || null,
-        now,
-        now
-      );
+      try {
+        db.prepare(`
+          INSERT INTO mentorship_sessions (
+            id, mentor_id, student_id, student_name, topic, session_type,
+            scheduled_date, scheduled_time, duration_minutes, meeting_link,
+            status, student_notes, safety_logged, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 30, 'https://meet.cdes.edu.kh/session-' || ?, 'confirmed', ?, 1, ?, ?)
+        `).run(
+          id,
+          data.mentor_id,
+          data.student_id,
+          data.student_name,
+          data.topic,
+          data.session_type,
+          data.scheduled_date,
+          data.scheduled_time,
+          id,
+          data.student_notes || null,
+          now,
+          now
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : '';
+        if (msg.includes('UNIQUE constraint failed')) {
+          throw new ConflictError('This mentor time slot is already booked. Please choose another date or time.');
+        }
+        throw err;
+      }
 
       db.prepare('UPDATE mentor_profiles SET total_sessions = total_sessions + 1 WHERE id = ?').run(data.mentor_id);
       return db.prepare('SELECT * FROM mentorship_sessions WHERE id = ?').get(id);
@@ -298,7 +347,7 @@ export class CommunityRepository {
   public getAllProjects(category?: string, stage?: string) {
     const db = getDatabase();
     let query = 'SELECT * FROM student_projects WHERE 1=1';
-    const params: any[] = [];
+    const params: string[] = [];
 
     if (category && category !== 'ALL') {
       query += ' AND category = ?';
@@ -309,7 +358,7 @@ export class CommunityRepository {
       params.push(stage);
     }
 
-    query += ' ORDER BY upvotes_count DESC, created_at DESC';
+    query += ' ORDER BY upvotes_count DESC, created_at DESC LIMIT 100';
     return db.prepare(query).all(...params);
   }
 
@@ -344,6 +393,22 @@ export class CommunityRepository {
     const now = new Date().toISOString();
 
     return withTransaction(() => {
+      const project = db
+        .prepare('SELECT id, current_team_size, max_team_size FROM student_projects WHERE id = ?')
+        .get(projectId) as { id: string; current_team_size: number; max_team_size: number | null } | undefined;
+      if (!project) throw new NotFoundError('Project not found.');
+
+      const alreadyMember = db
+        .prepare('SELECT id FROM project_members WHERE project_id = ? AND user_id = ?')
+        .get(projectId, data.user_id) as { id: string } | undefined;
+      if (alreadyMember) {
+        return { success: true, memberId: alreadyMember.id, alreadyJoined: true };
+      }
+
+      if (project.max_team_size !== null && project.current_team_size >= project.max_team_size) {
+        throw new ConflictError('This project team has reached its maximum capacity.');
+      }
+
       const insert = db.prepare(`
         INSERT OR IGNORE INTO project_members (id, project_id, user_id, user_name, user_avatar, role_in_project, status, joined_at)
         VALUES (?, ?, ?, ?, ?, ?, 'accepted', ?)
@@ -360,14 +425,34 @@ export class CommunityRepository {
       if (insert.changes > 0) {
         db.prepare('UPDATE student_projects SET current_team_size = current_team_size + 1 WHERE id = ?').run(projectId);
       }
-      return { success: true, memberId: id };
+      return { success: true, memberId: id, alreadyJoined: false };
     });
   }
 
-  public upvoteProject(projectId: string) {
+  public upvoteProject(projectId: string, userId?: string) {
     const db = getDatabase();
-    db.prepare('UPDATE student_projects SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(projectId);
-    return db.prepare('SELECT upvotes_count FROM student_projects WHERE id = ?').get(projectId);
+    return withTransaction(() => {
+      const existing = db.prepare('SELECT id, upvotes_count FROM student_projects WHERE id = ?').get(projectId) as
+        | { id: string; upvotes_count: number }
+        | undefined;
+      if (!existing) throw new NotFoundError('Project not found.');
+      if (userId) {
+        const vote = db
+          .prepare(
+            `INSERT OR IGNORE INTO community_votes (id, entity_type, entity_id, user_id, created_at)
+             VALUES (?, 'project', ?, ?, ?)`
+          )
+          .run(`cv-${crypto.randomUUID()}`, projectId, userId, new Date().toISOString());
+        if (Number(vote.changes) === 0) {
+          return { upvotes_count: existing.upvotes_count, alreadyVoted: true };
+        }
+      }
+      db.prepare('UPDATE student_projects SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(projectId);
+      const updated = db.prepare('SELECT upvotes_count FROM student_projects WHERE id = ?').get(projectId) as {
+        upvotes_count: number;
+      };
+      return { upvotes_count: updated.upvotes_count, alreadyVoted: false };
+    });
   }
 
   // ==========================================
@@ -388,7 +473,7 @@ export class CommunityRepository {
       params.push(status);
     }
 
-    query += ' ORDER BY start_time ASC';
+    query += ' ORDER BY start_time ASC LIMIT 100';
     return db.prepare(query).all(...params);
   }
 
@@ -403,6 +488,22 @@ export class CommunityRepository {
     const now = new Date().toISOString();
 
     return withTransaction(() => {
+      const event = db
+        .prepare('SELECT id, current_rsvp_count, max_participants FROM campus_events WHERE id = ?')
+        .get(eventId) as { id: string; current_rsvp_count: number; max_participants: number | null } | undefined;
+      if (!event) throw new NotFoundError('Event not found.');
+
+      const existingReg = db
+        .prepare('SELECT id FROM event_registrations WHERE event_id = ? AND user_id = ?')
+        .get(eventId, data.user_id) as { id: string } | undefined;
+      if (existingReg) {
+        return { success: true, registrationId: existingReg.id, alreadyRegistered: true };
+      }
+
+      if (event.max_participants !== null && event.current_rsvp_count >= event.max_participants) {
+        throw new ConflictError('This event has reached maximum capacity.');
+      }
+
       const insert = db.prepare(`
         INSERT OR IGNORE INTO event_registrations (id, event_id, user_id, user_name, user_email, rsvp_status, created_at)
         VALUES (?, ?, ?, ?, ?, 'registered', ?)
@@ -411,7 +512,7 @@ export class CommunityRepository {
       if (insert.changes > 0) {
         db.prepare('UPDATE campus_events SET current_rsvp_count = current_rsvp_count + 1 WHERE id = ?').run(eventId);
       }
-      return { success: true, registrationId: id };
+      return { success: true, registrationId: id, alreadyRegistered: false };
     });
   }
 

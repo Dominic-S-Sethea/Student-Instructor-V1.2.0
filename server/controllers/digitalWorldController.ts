@@ -6,6 +6,7 @@ import { aiSafetyService } from '../services/aiSafetyService';
 import { AnalyticsRepository } from '../repositories/analyticsRepository';
 import { validate } from '../middleware/validationMiddleware';
 import { DigitalWorldChatSchema } from '../validators/apiSchemas';
+import { GameTelemetrySchema } from '../validators/domainSchemas';
 import { safeErrorMessage } from '../utils/httpErrors';
 
 const router = Router();
@@ -604,7 +605,7 @@ router.post('/companion/chat', authenticateToken, validate(DigitalWorldChatSchem
  * POST /api/digital-world/game-telemetry
  * Telemetry endpoint recording educational simulation events into SQLite when analytics consent is active.
  */
-router.post('/game-telemetry', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
+router.post('/game-telemetry', authenticateToken, validate(GameTelemetrySchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const actingStudentId = req.user!.userId;
     const {

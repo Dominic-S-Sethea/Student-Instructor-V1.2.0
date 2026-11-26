@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { getDatabase } from '../db/connection';
 import { PrivacyService } from './privacyService';
+import { safeJsonParse } from '../utils/safeJson';
 import {
   AgentKey,
   MultiAgentMetadata,
@@ -156,26 +157,42 @@ export class AIAgent2Service {
     }
 
     const db = getDatabase();
-    const row = db.prepare('SELECT * FROM student_longterm_memory_profiles WHERE student_id = ?').get(studentId) as any;
+    const row = db
+      .prepare('SELECT * FROM student_longterm_memory_profiles WHERE student_id = ?')
+      .get(studentId) as Record<string, unknown> | undefined;
 
     if (row) {
-      try {
-        return {
-          studentId: row.student_id,
-          identity: JSON.parse(row.identity_context || '{}'),
-          goals: JSON.parse(row.goals_context || '{}'),
-          interests: JSON.parse(row.interests_context || '[]'),
-          strengths: JSON.parse(row.strengths_context || '[]'),
-          weaknesses: JSON.parse(row.weaknesses_context || '[]'),
-          learningPatterns: JSON.parse(row.learning_patterns || '{}'),
-          achievements: JSON.parse(row.achievements_context || '[]'),
-          memoryConfidenceScore: row.memory_confidence_score || 88.0,
-          lastReflectionAt: row.last_reflection_at || new Date().toISOString(),
-          updatedAt: row.updated_at || new Date().toISOString()
-        };
-      } catch (err) {
-        console.error('Error parsing memory json:', err);
-      }
+      return {
+        studentId: String(row.student_id),
+        identity: safeJsonParse(typeof row.identity_context === 'string' ? row.identity_context : null, {
+          fullName: '',
+          educationTier: '',
+          schoolName: '',
+          primaryLanguage: 'km' as const,
+          learningDisposition: '',
+          socioGeographicContext: '',
+        }),
+        goals: safeJsonParse(typeof row.goals_context === 'string' ? row.goals_context : null, {
+          shortTermExamTarget: '',
+          longTermUniversityAspiration: '',
+          targetCareerDomain: '',
+          scholarshipAspiration: '',
+        }),
+        interests: safeJsonParse(typeof row.interests_context === 'string' ? row.interests_context : null, []),
+        strengths: safeJsonParse(typeof row.strengths_context === 'string' ? row.strengths_context : null, []),
+        weaknesses: safeJsonParse(typeof row.weaknesses_context === 'string' ? row.weaknesses_context : null, []),
+        learningPatterns: safeJsonParse(typeof row.learning_patterns === 'string' ? row.learning_patterns : null, {
+          pacingVelocity: 'deliberate_reflective' as const,
+          peakFocusHour: '',
+          preferredExplanationStyle: 'visual' as const,
+          gritPersistenceRating: 0,
+          errorRecoverySpeedSeconds: 0,
+        }),
+        achievements: safeJsonParse(typeof row.achievements_context === 'string' ? row.achievements_context : null, []),
+        memoryConfidenceScore: Number(row.memory_confidence_score) || 88.0,
+        lastReflectionAt: typeof row.last_reflection_at === 'string' ? row.last_reflection_at : new Date().toISOString(),
+        updatedAt: typeof row.updated_at === 'string' ? row.updated_at : new Date().toISOString(),
+      };
     }
 
     // Build neutral initial memory from real student_profiles row without writing synthetic demo records on GET
@@ -688,32 +705,47 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
    */
   public getActionPlans(studentId: string): AIActionPlan[] {
     const db = getDatabase();
-    const rows = db.prepare('SELECT * FROM ai_action_plans WHERE student_id = ? ORDER BY created_at DESC').all(studentId) as any[];
+    const rows = db
+      .prepare('SELECT * FROM ai_action_plans WHERE student_id = ? ORDER BY created_at DESC LIMIT 50')
+      .all(studentId) as Array<Record<string, unknown>>;
 
     if (rows && rows.length > 0) {
-      return rows.map(r => {
-        const milestones = db.prepare('SELECT * FROM ai_action_milestones WHERE plan_id = ? ORDER BY milestone_order ASC').all(r.id) as any[];
+      const planIds = rows.map((r) => String(r.id));
+      const placeholders = planIds.map(() => '?').join(', ');
+      const allMilestones = db
+        .prepare(`SELECT * FROM ai_action_milestones WHERE plan_id IN (${placeholders}) ORDER BY milestone_order ASC`)
+        .all(...planIds) as Array<Record<string, unknown>>;
+      const byPlan = new Map<string, Array<Record<string, unknown>>>();
+      for (const m of allMilestones) {
+        const key = String(m.plan_id);
+        const list = byPlan.get(key) || [];
+        list.push(m);
+        byPlan.set(key, list);
+      }
+
+      return rows.map((r) => {
+        const milestones = byPlan.get(String(r.id)) || [];
         return {
-          id: r.id,
-          studentId: r.student_id,
-          planType: r.plan_type,
-          title: r.title,
-          targetObjective: r.target_objective,
-          timeframeWeeks: r.timeframe_weeks,
-          progressPercentage: r.progress_percentage,
-          status: r.status,
-          milestones: (milestones || []).map(m => ({
-            id: m.id,
-            order: m.milestone_order,
-            title: m.title,
-            description: m.description,
-            targetTimeline: m.target_date || 'Within 2 weeks',
+          id: String(r.id),
+          studentId: String(r.student_id),
+          planType: String(r.plan_type) as AIActionPlan['planType'],
+          title: String(r.title),
+          targetObjective: String(r.target_objective || ''),
+          timeframeWeeks: Number(r.timeframe_weeks) || 0,
+          progressPercentage: Number(r.progress_percentage) || 0,
+          status: String(r.status || 'active') as AIActionPlan['status'],
+          milestones: milestones.map((m) => ({
+            id: String(m.id),
+            order: Number(m.milestone_order) || 0,
+            title: String(m.title),
+            description: String(m.description || ''),
+            targetTimeline: typeof m.target_date === 'string' && m.target_date ? m.target_date : 'Within 2 weeks',
             isCompleted: Boolean(m.is_completed),
-            linkedEntityType: m.linked_entity_type,
-            linkedEntityId: m.linked_entity_id
+            linkedEntityType: (m.linked_entity_type as ActionMilestone['linkedEntityType']) || undefined,
+            linkedEntityId: typeof m.linked_entity_id === 'string' ? m.linked_entity_id : undefined,
           })),
-          createdAt: r.created_at,
-          updatedAt: r.updated_at
+          createdAt: String(r.created_at),
+          updatedAt: String(r.updated_at),
         };
       });
     }

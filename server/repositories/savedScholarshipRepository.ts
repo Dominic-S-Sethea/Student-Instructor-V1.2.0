@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
 import { getDatabase, withTransaction } from '../db/connection';
 import { safeJsonParse } from '../utils/safeJson';
+import { BadRequestError } from '../utils/httpErrors';
+
+const MAX_SAVED_SCHOLARSHIPS_PER_USER = 200;
 
 export type SavedScholarshipStatus = 'saved' | 'preparing' | 'submitted' | 'awarded' | 'archived';
 
@@ -127,6 +130,13 @@ export class SavedScholarshipRepository {
          WHERE user_id = ? AND scholarship_id = ?`
       ).run(nextStatus, nextNote, JSON.stringify(nextChecklist), now, userId, scholarshipId);
       return this.getByUserAndScholarship(userId, scholarshipId);
+    }
+
+    const countRow = db
+      .prepare('SELECT COUNT(*) AS c FROM user_saved_scholarships WHERE user_id = ?')
+      .get(userId) as { c: number };
+    if (Number(countRow?.c ?? 0) >= MAX_SAVED_SCHOLARSHIPS_PER_USER) {
+      throw new BadRequestError(`Maximum limit of ${MAX_SAVED_SCHOLARSHIPS_PER_USER} saved scholarships reached.`);
     }
 
     const id = `sav-${crypto.randomUUID()}`;

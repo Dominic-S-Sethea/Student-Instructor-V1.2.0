@@ -13,6 +13,7 @@ import {
 } from '../middleware/authMiddleware';
 import { validate } from '../middleware/validationMiddleware';
 import { RetentionForecastSchema } from '../validators/apiSchemas';
+import { MasteryUpdateSchema, MisconceptionLogSchema } from '../validators/domainSchemas';
 import { safeErrorMessage } from '../utils/httpErrors';
 
 const router = Router();
@@ -36,9 +37,9 @@ router.get('/mastery/:studentId', authenticateToken, (req: AuthenticatedRequest,
 });
 
 /** POST /api/learning-science/mastery/update */
-router.post('/mastery/update', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+router.post('/mastery/update', authenticateToken, validate(MasteryUpdateSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   try {
-    const body = (req.body || {}) as Record<string, unknown>;
+    const body = req.body as Record<string, unknown>;
     const studentId = resolveAuthorizedStudentId(
       req,
       res,
@@ -46,12 +47,8 @@ router.post('/mastery/update', authenticateToken, (req: AuthenticatedRequest, re
     );
     if (!studentId) return;
 
-    const conceptId = typeof body.conceptId === 'string' ? body.conceptId : '';
-    const isCorrect = body.isCorrect;
-    if (!conceptId || typeof isCorrect !== 'boolean') {
-      res.status(400).json({ success: false, error: 'conceptId and boolean isCorrect are required.' });
-      return;
-    }
+    const conceptId = String(body.conceptId);
+    const isCorrect = Boolean(body.isCorrect);
 
     const result = learningEngine.updateStudentMastery(studentId, conceptId, isCorrect, {
       name: typeof body.conceptName === 'string' ? body.conceptName : undefined,
@@ -99,9 +96,9 @@ router.post('/retention-forecast', validate(RetentionForecastSchema, 'body'), (r
 });
 
 /** POST /api/learning-science/misconceptions/log */
-router.post('/misconceptions/log', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+router.post('/misconceptions/log', authenticateToken, validate(MisconceptionLogSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   try {
-    const body = (req.body || {}) as Record<string, unknown>;
+    const body = req.body as Record<string, unknown>;
     const studentId = resolveAuthorizedStudentId(
       req,
       res,
@@ -109,12 +106,8 @@ router.post('/misconceptions/log', authenticateToken, (req: AuthenticatedRequest
     );
     if (!studentId) return;
 
-    const subject = typeof body.subject === 'string' ? body.subject : '';
-    const misconceptionTitle = typeof body.misconceptionTitle === 'string' ? body.misconceptionTitle : '';
-    if (!subject || !misconceptionTitle) {
-      res.status(400).json({ success: false, error: 'subject and misconceptionTitle are required.' });
-      return;
-    }
+    const subject = String(body.subject);
+    const misconceptionTitle = String(body.misconceptionTitle);
 
     const taxonomy:
       | 'conceptual_flaw'

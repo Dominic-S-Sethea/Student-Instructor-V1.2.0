@@ -54,11 +54,23 @@ export class PrivacyService {
     if (!dob || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
       return false;
     }
-    const birthDate = new Date(`${dob}T00:00:00Z`);
-    if (Number.isNaN(birthDate.getTime())) {
+    const [yStr, mStr, dStr] = dob.split('-');
+    const year = Number(yStr);
+    const month = Number(mStr);
+    const day = Number(dStr);
+    const birthDate = new Date(Date.UTC(year, month - 1, day));
+    if (
+      Number.isNaN(birthDate.getTime()) ||
+      birthDate.getUTCFullYear() !== year ||
+      birthDate.getUTCMonth() + 1 !== month ||
+      birthDate.getUTCDate() !== day
+    ) {
       return false;
     }
     const now = new Date();
+    if (birthDate.getTime() > now.getTime()) {
+      return true; // Fail closed for invalid future DOBs
+    }
     let age = now.getUTCFullYear() - birthDate.getUTCFullYear();
     const monthDiff = now.getUTCMonth() - birthDate.getUTCMonth();
     if (monthDiff < 0 || (monthDiff === 0 && now.getUTCDate() < birthDate.getUTCDate())) {

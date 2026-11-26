@@ -26,8 +26,8 @@ This contract documents every stable HTTP API endpoint backing the V1.2.0 Pilot 
 | `PUT /api/users/profile` | Authenticated | `{ name?, education_level?, school?, location?, major?, target_career?, interests?, date_of_birth?, ... }` | `200`: updates only `req.user.userId`'s profile (`401` if guest) |
 | `POST /api/users/education` | Authenticated | `{ institution, degree, start_date?, end_date?, achievements? }` | `201`: `{ success: true, data: EducationHistoryRecord }` |
 | `DELETE /api/users/education/:id` | Authenticated (owner) | `:id` path param | `200` or `404` if not owned by user |
-| `GET /api/users/notifications` | Authenticated | — | `200`: `{ success: true, data: Notification[], unreadCount: number }` |
-| `POST /api/users/notifications/:id/read` | Authenticated (owner) | `:id` path param | `200`: marks user-owned notification read |
+| `GET /api/users/notifications` | Authenticated | — | `200`: `{ success: true, data: { notifications: Notification[], unreadCount: number } }` |
+| `PATCH /api/users/notifications/:id/read` | Authenticated (owner) | `:id` path param | `200`: marks user-owned notification read (`404` if missing/other user) |
 | `POST /api/users/notifications/read-all` | Authenticated | — | `200`: marks all caller notifications read |
 | `GET /api/privacy/consent` | Authenticated | — | `200`: `{ studentId, isMinor, parentalConsentVerified, parentVerificationStatus, allowAnalyticsTracking, allowResearchInclusion, allowAiMemory, consentStatus, anonymizedResearchId }` |
 | `POST /api/privacy/consent` | Authenticated | `{ isMinor?, parentEmail?, allowAnalyticsTracking?, allowResearchInclusion?, allowAiMemory?, withdrawAll? }` | `200`: locks `isMinor: true` when DOB < 18 or parent verification is pending; `withdrawAll: true` sets `consentStatus: "withdrawn"` |

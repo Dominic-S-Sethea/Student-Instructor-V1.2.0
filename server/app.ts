@@ -104,12 +104,20 @@ export function createApp(options: CreateAppOptions = {}): Express {
   app.use(httpMetricsMiddleware);
   app.use(requestLogger);
 
+  // Parse authenticated session before rate limiting & session-bound CSRF validation
+  app.use(optionalAuth);
+
   if (!options.disableRateLimit) {
-    app.use(rateLimiter());
+    const apiLimiter = rateLimiter();
+    app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+      if (req.path === '/health' || req.path.startsWith('/health/')) {
+        next();
+        return;
+      }
+      apiLimiter(req, res, next);
+    });
   }
 
-  // Parse authenticated session before generating/validating session-bound CSRF tokens
-  app.use(optionalAuth);
   app.use(generateCsrfToken);
   app.use(validateCsrfToken);
 

@@ -6,7 +6,7 @@ import { validate } from '../middleware/validationMiddleware';
 import { savedScholarshipRepository, SavedChecklistItem, SavedScholarshipStatus } from '../repositories/savedScholarshipRepository';
 import { notificationRepository } from '../repositories/notificationRepository';
 import { ScholarshipService } from '../services/scholarshipService';
-import { safeErrorMessage } from '../utils/httpErrors';
+import { sendRouteError } from '../utils/httpErrors';
 
 const router = Router();
 const scholarshipService = new ScholarshipService();
@@ -37,9 +37,10 @@ const SyncBookmarksSchema = z.object({
 
 function hydrateBookmarks(userId: string) {
   const savedRows = savedScholarshipRepository.listByUser(userId);
+  const byId = scholarshipService.getScholarshipsByIds(savedRows.map((entry) => entry.scholarshipId));
   return savedRows.map((entry) => ({
     ...entry,
-    scholarship: scholarshipService.getScholarshipById(entry.scholarshipId),
+    scholarship: byId.get(entry.scholarshipId) ?? null,
   }));
 }
 
@@ -64,7 +65,7 @@ router.get('/', authenticateToken, (req: AuthenticatedRequest, res: Response): v
     const saved = hydrateBookmarks(req.user!.userId);
     res.json({ success: true, saved, totalCount: saved.length });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to load saved scholarships.', 500) });
+    sendRouteError(res, err, 'Failed to load saved scholarships.');
   }
 });
 
@@ -95,7 +96,7 @@ router.post('/', authenticateToken, savedWriteLimiter, validate(SaveBookmarkSche
       },
     });
   } catch (err: unknown) {
-    res.status(400).json({ success: false, error: safeErrorMessage(err, 'Failed to save scholarship.', 400) });
+    sendRouteError(res, err, 'Failed to save scholarship.');
   }
 });
 
@@ -110,7 +111,7 @@ router.post('/sync', authenticateToken, savedWriteLimiter, validate(SyncBookmark
     const saved = hydrateBookmarks(req.user!.userId);
     res.json({ success: true, saved, totalCount: saved.length });
   } catch (err: unknown) {
-    res.status(400).json({ success: false, error: safeErrorMessage(err, 'Failed to sync bookmarks.', 400) });
+    sendRouteError(res, err, 'Failed to sync bookmarks.');
   }
 });
 
@@ -135,7 +136,7 @@ router.patch('/:scholarshipId', authenticateToken, savedWriteLimiter, validate(P
       },
     });
   } catch (err: unknown) {
-    res.status(400).json({ success: false, error: safeErrorMessage(err, 'Failed to update saved scholarship.', 400) });
+    sendRouteError(res, err, 'Failed to update saved scholarship.');
   }
 });
 
@@ -149,7 +150,7 @@ router.delete('/:scholarshipId', authenticateToken, savedWriteLimiter, (req: Aut
     }
     res.json({ success: true });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to remove bookmark.', 500) });
+    sendRouteError(res, err, 'Failed to remove bookmark.');
   }
 });
 

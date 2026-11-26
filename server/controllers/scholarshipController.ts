@@ -9,20 +9,25 @@ import {
 import { rateLimiter } from '../middleware/rateLimiter';
 import { validate } from '../middleware/validationMiddleware';
 import { ScholarshipExtractSchema } from '../validators/apiSchemas';
-import { asyncHandler, HttpError, safeErrorMessage } from '../utils/httpErrors';
+import {
+  ScholarshipMatchSchema,
+  ScholarshipReportSchema,
+  ScholarshipSubmitSchema,
+  ScholarshipVerifySchema,
+  ScholarshipWriteSchema,
+} from '../validators/domainSchemas';
+import { asyncHandler, sendRouteError } from '../utils/httpErrors';
+import { parseOptionalQueryString } from '../utils/queryParams';
 import savedScholarshipRoutes from '../routes/savedScholarshipRoutes';
 
 const router = Router();
 const scholarshipService = new ScholarshipService();
 const aiLimiter = rateLimiter(60000, 20, 'AI processing rate limit reached. Please wait before analyzing more documents.');
 const submissionLimiter = rateLimiter(60000, 15, 'Too many scholarship submissions or reports. Please try again shortly.');
+const matchLimiter = rateLimiter(60000, 30, 'Too many scholarship match requests. Please wait a minute.');
 
 function markDeprecated(res: Response): void {
   res.setHeader('Deprecation', 'true');
-}
-
-function sendError(res: Response, status: number, err: unknown, fallback: string): void {
-  res.status(status).json({ success: false, error: safeErrorMessage(err, fallback, status) });
 }
 
 function sendReviewError(res: Response, err: unknown): void {
@@ -30,25 +35,24 @@ function sendReviewError(res: Response, err: unknown): void {
     res.status(409).json({ success: false, code: 'CONFLICT', error: err.message });
     return;
   }
-  sendError(res, 400, err, 'Review failed');
+  sendRouteError(res, err, 'Review failed');
 }
 
 function handleCatalogList(req: Request, res: Response): void {
   try {
-    const { q, region, degree, field, funding, studentCategory, onlyVerified, sortBy } = req.query;
     const result = scholarshipService.getScholarships({
-      q: q as string | undefined,
-      region: region as string | undefined,
-      degree: degree as string | undefined,
-      field: field as string | undefined,
-      funding: funding as string | undefined,
-      studentCategory: studentCategory as string | undefined,
-      onlyVerified: onlyVerified === 'true',
-      sortBy: sortBy as string | undefined,
+      q: parseOptionalQueryString(req.query.q, 'q', 200),
+      region: parseOptionalQueryString(req.query.region, 'region', 80),
+      degree: parseOptionalQueryString(req.query.degree, 'degree', 80),
+      field: parseOptionalQueryString(req.query.field, 'field', 100),
+      funding: parseOptionalQueryString(req.query.funding, 'funding', 80),
+      studentCategory: parseOptionalQueryString(req.query.studentCategory, 'studentCategory', 80),
+      onlyVerified: parseOptionalQueryString(req.query.onlyVerified, 'onlyVerified', 10) === 'true',
+      sortBy: parseOptionalQueryString(req.query.sortBy, 'sortBy', 40),
     });
     res.json({ success: true, totalCount: result.totalCount, scholarships: result.scholarships, metrics: result.metrics });
   } catch (err: unknown) {
-    sendError(res, 500, err, 'Server error');
+    sendRouteError(res, err, 'Server error');
   }
 }
 
@@ -109,7 +113,7 @@ function handleReportSubmit(req: AuthenticatedRequest, res: Response, statusCode
     }
     res.json({ success: true, message: result.message, report: result.report });
   } catch (err: unknown) {
-    sendError(res, 400, err, 'Report failed');
+    sendRouteError(res, err, 'Report failed');
   }
 }
 
@@ -140,7 +144,7 @@ function handleReportResolve(req: AuthenticatedRequest, res: Response, mode: 'pu
     }
     res.json(mode === 'patch' ? { success: true, report, data: report } : { success: true, report });
   } catch (err: unknown) {
-    sendError(res, 400, err, 'Failed to resolve');
+    sendRouteError(res, err, 'Failed to resolve');
   }
 }
 
@@ -156,7 +160,7 @@ function handleCheckUpdates(req: AuthenticatedRequest, res: Response, idFromPara
     }
     res.json({ success: true, ...result });
   } catch (err: unknown) {
-    sendError(res, 500, err, 'Server error');
+    sendRouteError(res, err, 'Server error');
   }
 }
 
@@ -170,8 +174,7 @@ async function handleAiExtract(req: AuthenticatedRequest, res: Response, key: 'e
     const extracted = await scholarshipService.extractWithAI(rawText, typeof sourceUrl === 'string' ? sourceUrl : undefined);
     res.json(key === 'extractedData' ? { success: true, extractedData: extracted } : { success: true, data: extracted });
   } catch (err: unknown) {
-    const status = err instanceof HttpError ? err.status : 500;
-    sendError(res, status, err, 'AI extraction failed');
+    sendRouteError(res, err, 'AI extraction failed');
   }
 }
 
@@ -183,16 +186,16 @@ router.get('/featured', (_req: Request, res: Response): void => {
     const result = scholarshipService.getScholarships({ onlyVerified: true, sortBy: 'fully_funded' });
     res.json({ success: true, scholarships: result.scholarships.slice(0, 6), totalCount: result.totalCount });
   } catch (err: unknown) {
-    sendError(res, 500, err, 'Server error');
+    sendRouteError(res, err, 'Server error');
   }
 });
 router.get('/metrics', (_req, res) => res.json({ success: true, data: scholarshipService.getStats() }));
 router.get('/stats', (_req, res) => res.json({ success: true, data: scholarshipService.getStats() }));
-router.post('/match', optionalAuth, (req: AuthenticatedRequest, res: Response): void => {
+router.post('/match', optionalAuth, matchLimiter, validate(ScholarshipMatchSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   try {
     res.json({ success: true, data: scholarshipService.matchScholarships(req.body || {}) });
   } catch (err: unknown) {
-    sendError(res, 400, err, 'Match failed');
+    sendRouteError(res, err, 'Match failed');
   }
 });
 
@@ -205,7 +208,7 @@ router.get('/analytics/popular-searches', authenticateToken, requireRole('admin'
     const terms = scholarshipService.getTopSearchKeywords(10);
     res.json({ success: true, searches: terms.map((t) => ({ query: t.query, count: t.count, lastSearched: null })) });
   } catch (err: unknown) {
-    sendError(res, 500, err, 'Server error');
+    sendRouteError(res, err, 'Server error');
   }
 });
 router.get('/search-terms', authenticateToken, requireRole('admin'), (_req, res) => {
@@ -218,12 +221,12 @@ router.get('/admin/search-terms', authenticateToken, requireRole('admin'), (_req
 });
 
 // 3. ORGANIZATION SUBMISSION & EDITORIAL QUEUE
-router.post('/submit', authenticateToken, requireRole('organization', 'admin'), submissionLimiter, (req: AuthenticatedRequest, res): void => {
+router.post('/submit', authenticateToken, requireRole('organization', 'admin'), submissionLimiter, validate(ScholarshipSubmitSchema, 'body'), (req: AuthenticatedRequest, res): void => {
   try {
     const result = scholarshipService.submitOpportunity((req.body || {}) as Record<string, unknown>, req.user!.userId);
     res.status(201).json({ success: true, message: result.message, submission: result.submission });
   } catch (err: unknown) {
-    sendError(res, 400, err, 'Submission failed');
+    sendRouteError(res, err, 'Submission failed');
   }
 });
 router.get('/submissions/mine', authenticateToken, requireRole('organization', 'admin'), (req: AuthenticatedRequest, res) =>
@@ -255,8 +258,8 @@ router.post('/admin/submissions/:id/approve', authenticateToken, requireRole('ad
 router.post('/admin/submissions/:id/reject', authenticateToken, requireRole('admin'), (req: AuthenticatedRequest, res) => handleSubmissionReview(req, res, 'reject'));
 
 // 4. ERROR REPORTS
-router.post('/report', authenticateToken, submissionLimiter, (req: AuthenticatedRequest, res) => handleReportSubmit(req, res, 200));
-router.post('/report-error', authenticateToken, submissionLimiter, (req: AuthenticatedRequest, res) => {
+router.post('/report', authenticateToken, submissionLimiter, validate(ScholarshipReportSchema, 'body'), (req: AuthenticatedRequest, res) => handleReportSubmit(req, res, 200));
+router.post('/report-error', authenticateToken, submissionLimiter, validate(ScholarshipReportSchema, 'body'), (req: AuthenticatedRequest, res) => {
   markDeprecated(res);
   handleReportSubmit(req, res, 201);
 });
@@ -301,11 +304,11 @@ router.get('/:id', (req: Request, res: Response): void => {
     if (!item) { res.status(404).json({ success: false, error: 'Scholarship not found' }); return; }
     res.json({ success: true, scholarship: item });
   } catch (err: unknown) {
-    sendError(res, 500, err, 'Server error');
+    sendRouteError(res, err, 'Server error');
   }
 });
 
-router.post('/:id/verify', authenticateToken, requireRole('admin'), (req: AuthenticatedRequest, res: Response): void => {
+router.post('/:id/verify', authenticateToken, requireRole('admin'), validate(ScholarshipVerifySchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   try {
     const updated = scholarshipService.verifyScholarship({
       scholarshipId: req.params.id,
@@ -316,26 +319,26 @@ router.post('/:id/verify', authenticateToken, requireRole('admin'), (req: Authen
     if (!updated) { res.status(404).json({ success: false, error: 'Scholarship not found' }); return; }
     res.json({ success: true, scholarship: updated });
   } catch (err: unknown) {
-    sendError(res, 400, err, 'Verification failed');
+    sendRouteError(res, err, 'Verification failed');
   }
 });
 
-router.post('/', authenticateToken, requireRole('admin'), (req: AuthenticatedRequest, res: Response): void => {
+router.post('/', authenticateToken, requireRole('admin'), validate(ScholarshipWriteSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   try {
     const created = scholarshipService.createScholarship((req.body || {}) as Record<string, unknown>, req.user!.userId);
     res.status(201).json({ success: true, scholarship: created });
   } catch (err: unknown) {
-    sendError(res, 400, err, 'Failed to create');
+    sendRouteError(res, err, 'Failed to create');
   }
 });
 
-router.put('/:id', authenticateToken, requireRole('admin'), (req: AuthenticatedRequest, res: Response): void => {
+router.put('/:id', authenticateToken, requireRole('admin'), validate(ScholarshipWriteSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   try {
     const updated = scholarshipService.updateScholarship(req.params.id, (req.body || {}) as Record<string, unknown>, req.user!.userId);
     if (!updated) { res.status(404).json({ success: false, error: 'Scholarship not found' }); return; }
     res.json({ success: true, scholarship: updated });
   } catch (err: unknown) {
-    sendError(res, 400, err, 'Update failed');
+    sendRouteError(res, err, 'Update failed');
   }
 });
 
@@ -345,7 +348,7 @@ router.delete('/:id', authenticateToken, requireRole('admin'), (req: Authenticat
     if (!success) { res.status(404).json({ success: false, error: 'Scholarship not found' }); return; }
     res.json({ success: true, message: 'Scholarship deleted successfully' });
   } catch (err: unknown) {
-    sendError(res, 500, err, 'Delete failed');
+    sendRouteError(res, err, 'Delete failed');
   }
 });
 

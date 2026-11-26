@@ -3,30 +3,27 @@ import { communityRepository } from '../repositories/communityRepository';
 import { safetyModerationService } from '../services/safetyModerationService';
 import { AnalyticsRepository } from '../repositories/analyticsRepository';
 import { PrivacyService } from '../services/privacyService';
-import {
-  authenticateToken,
-  requireRole,
-  resolveAuthorizedStudentId,
-  AuthenticatedRequest,
-} from '../middleware/authMiddleware';
+import { authenticateToken, requireRole, resolveAuthorizedStudentId, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { rateLimiter } from '../middleware/rateLimiter';
+import { validate } from '../middleware/validationMiddleware';
+import {
+  CommunityCommentCreateSchema, CommunityPostCreateSchema, EventRsvpSchema,
+  MentorBookSchema, ModerationReportSchema, ProjectJoinSchema,
+} from '../validators/domainSchemas';
 import { HttpError, safeErrorMessage } from '../utils/httpErrors';
 import { assertSafeOptionalHttpUrl } from '../utils/safeUrl';
+import { parseOptionalQueryString } from '../utils/queryParams';
 import {
-  ALLOWED_POST_TYPES,
-  ALLOWED_SESSION_TYPES,
-  moderateCommunityPostInput,
-  normalizeReportItemType,
-  normalizeReportReason,
-  sanitizeAuthorDisplayName,
-  sanitizeCommunityTags,
-  stripPublicUserIds,
+  ALLOWED_POST_TYPES, ALLOWED_SESSION_TYPES, moderateCommunityPostInput,
+  normalizeReportItemType, normalizeReportReason, sanitizeAuthorDisplayName,
+  sanitizeCommunityTags, stripPublicUserIds,
 } from '../services/communityModerationHelper';
 
 const router = Router();
 const analyticsRepo = new AnalyticsRepository();
 const privacyService = new PrivacyService();
 const communityWriteLimiter = rateLimiter(60000, 30, 'Too many community submissions. Please slow down.');
+const upvoteLimiter = rateLimiter(60000, 30, 'Too many upvote requests. Please slow down.');
 
 function logConsentedActivity(userId: string, eventType: string, metadata: Record<string, unknown>): void {
   if (privacyService.canCollectAnalytics(userId)) {
@@ -39,11 +36,10 @@ function handle(res: Response, fn: () => unknown): void {
     fn();
   } catch (err: unknown) {
     if (err instanceof HttpError) {
-      res.status(err.status).json({ success: false, error: safeErrorMessage(err, 'Request failed', err.status) });
+      res.status(err.status).json({ success: false, ...(err.code ? { code: err.code } : {}), error: safeErrorMessage(err, 'Request failed', err.status) });
       return;
     }
-    const msg = err instanceof Error ? err.message : '';
-    if (msg.includes('FOREIGN KEY constraint failed')) {
+    if (err instanceof Error && err.message.includes('FOREIGN KEY constraint failed')) {
       res.status(404).json({ success: false, error: 'Referenced community entity not found.' });
       return;
     }
@@ -53,7 +49,9 @@ function handle(res: Response, fn: () => unknown): void {
 
 // 1. COMMUNITIES
 router.get('/communities', (req: Request, res: Response) =>
-  handle(res, () => res.json({ success: true, data: communityRepository.getAllCommunities(req.query.category as string | undefined) }))
+  handle(res, () =>
+    res.json({ success: true, data: communityRepository.getAllCommunities(parseOptionalQueryString(req.query.category, 'category', 60)) })
+  )
 );
 
 router.get('/communities/:slug', (req: Request, res: Response) =>
@@ -101,31 +99,26 @@ router.post('/communities/:id/leave', authenticateToken, (req: AuthenticatedRequ
 router.get('/posts', (req: Request, res: Response) =>
   handle(res, () => {
     const rows = communityRepository.getCommunityPosts(
-      req.query.communityId as string | undefined,
-      req.query.postType as string | undefined
+      parseOptionalQueryString(req.query.communityId, 'communityId', 120),
+      parseOptionalQueryString(req.query.postType, 'postType', 40)
     ) as Array<Record<string, unknown>>;
     res.json({ success: true, data: rows.map(stripPublicUserIds) });
   })
 );
 
-router.post('/posts', authenticateToken, communityWriteLimiter, (req: AuthenticatedRequest, res: Response) =>
+router.post('/posts', authenticateToken, communityWriteLimiter, validate(CommunityPostCreateSchema, 'body'), (req: AuthenticatedRequest, res: Response) =>
   handle(res, () => {
     const actingUserId = req.user!.userId;
-    const body = (req.body || {}) as Record<string, unknown>;
-    const communityId = typeof body.community_id === 'string' ? body.community_id.trim() : '';
-    const title = typeof body.title === 'string' ? body.title.trim().slice(0, 200) : '';
-    const content = typeof body.content === 'string' ? body.content.slice(0, 5000) : '';
-    if (!communityId || !title || !content.trim()) {
-      return res.status(400).json({ success: false, error: 'community_id, title, and content are required.' });
-    }
+    const body = req.body as Record<string, unknown>;
+    const communityId = String(body.community_id);
     if (!communityRepository.getCommunityById(communityId)) {
       return res.status(404).json({ success: false, error: 'Community not found.' });
     }
     const safeAvatar = assertSafeOptionalHttpUrl(body.author_avatar, 'author_avatar');
     const moderated = moderateCommunityPostInput(
       actingUserId,
-      title,
-      content,
+      String(body.title),
+      String(body.content),
       sanitizeAuthorDisplayName(body.author_name, req.user!.email),
       sanitizeCommunityTags(body.tags)
     );
@@ -151,8 +144,8 @@ router.post('/posts', authenticateToken, communityWriteLimiter, (req: Authentica
   })
 );
 
-router.post('/posts/:id/upvote', authenticateToken, (req: AuthenticatedRequest, res: Response) =>
-  handle(res, () => res.json({ success: true, data: communityRepository.upvotePost(req.params.id) }))
+router.post('/posts/:id/upvote', authenticateToken, upvoteLimiter, (req: AuthenticatedRequest, res: Response) =>
+  handle(res, () => res.json({ success: true, data: communityRepository.upvotePost(req.params.id, req.user!.userId) }))
 );
 
 // 3. COMMENTS
@@ -163,20 +156,16 @@ router.get('/posts/:id/comments', (req: Request, res: Response) =>
   })
 );
 
-router.post('/posts/:id/comments', authenticateToken, communityWriteLimiter, (req: AuthenticatedRequest, res: Response) =>
+router.post('/posts/:id/comments', authenticateToken, communityWriteLimiter, validate(CommunityCommentCreateSchema, 'body'), (req: AuthenticatedRequest, res: Response) =>
   handle(res, () => {
     const actingUserId = req.user!.userId;
-    const body = (req.body || {}) as Record<string, unknown>;
-    const content = typeof body.content === 'string' ? body.content.slice(0, 3000) : '';
-    if (!content.trim()) {
-      return res.status(400).json({ success: false, error: 'content is required.' });
-    }
+    const body = req.body as Record<string, unknown>;
     if (!communityRepository.getPostById(req.params.id)) {
       return res.status(404).json({ success: false, error: 'Post not found.' });
     }
     const safeAvatar = assertSafeOptionalHttpUrl(body.author_avatar, 'author_avatar');
     const rawAuthorName = sanitizeAuthorDisplayName(body.author_name, req.user!.email);
-    const filterResult = safetyModerationService.evaluateContent(content, actingUserId);
+    const filterResult = safetyModerationService.evaluateContent(String(body.content), actingUserId);
     const authorCheck = safetyModerationService.evaluateContent(rawAuthorName, actingUserId);
     if (filterResult.action === 'blocked' || authorCheck.action === 'blocked') {
       return res.status(400).json({
@@ -199,8 +188,8 @@ router.post('/posts/:id/comments', authenticateToken, communityWriteLimiter, (re
   })
 );
 
-router.post('/comments/:id/upvote', authenticateToken, (req: AuthenticatedRequest, res: Response) =>
-  handle(res, () => res.json({ success: true, data: communityRepository.upvoteComment(req.params.id) }))
+router.post('/comments/:id/upvote', authenticateToken, upvoteLimiter, (req: AuthenticatedRequest, res: Response) =>
+  handle(res, () => res.json({ success: true, data: communityRepository.upvoteComment(req.params.id, req.user!.userId) }))
 );
 
 router.post('/posts/:postId/accept-answer/:commentId', authenticateToken, (req: AuthenticatedRequest, res: Response) =>
@@ -218,7 +207,7 @@ router.post('/posts/:postId/accept-answer/:commentId', authenticateToken, (req: 
 
 // 4. MENTOR NETWORK
 router.get('/mentors', (req: Request, res: Response) =>
-  handle(res, () => res.json({ success: true, data: communityRepository.getAllMentors(req.query.badge as string | undefined) }))
+  handle(res, () => res.json({ success: true, data: communityRepository.getAllMentors(parseOptionalQueryString(req.query.badge, 'badge', 60)) }))
 );
 
 router.get('/mentors/:id', (req: Request, res: Response) =>
@@ -229,17 +218,11 @@ router.get('/mentors/:id', (req: Request, res: Response) =>
   })
 );
 
-router.post('/mentors/book', authenticateToken, communityWriteLimiter, (req: AuthenticatedRequest, res: Response) =>
+router.post('/mentors/book', authenticateToken, communityWriteLimiter, validate(MentorBookSchema, 'body'), (req: AuthenticatedRequest, res: Response) =>
   handle(res, () => {
     const actingUserId = req.user!.userId;
-    const body = (req.body || {}) as Record<string, unknown>;
-    const mentorId = typeof body.mentor_id === 'string' ? body.mentor_id.trim() : '';
-    const topic = typeof body.topic === 'string' ? body.topic.trim() : '';
-    const scheduledDate = typeof body.scheduled_date === 'string' ? body.scheduled_date.trim() : '';
-    const scheduledTime = typeof body.scheduled_time === 'string' ? body.scheduled_time.trim() : '';
-    if (!mentorId || !topic || !scheduledDate || !scheduledTime) {
-      return res.status(400).json({ success: false, error: 'mentor_id, topic, scheduled_date, and scheduled_time are required.' });
-    }
+    const body = req.body as Record<string, unknown>;
+    const mentorId = String(body.mentor_id);
     if (!communityRepository.getMentorById(mentorId)) {
       return res.status(404).json({ success: false, error: 'Mentor not found.' });
     }
@@ -248,14 +231,14 @@ router.post('/mentors/book', authenticateToken, communityWriteLimiter, (req: Aut
     const session = communityRepository.bookMentorshipSession({
       mentor_id: mentorId,
       student_id: actingUserId,
-      student_name: typeof body.student_name === 'string' ? body.student_name : req.user!.email.split('@')[0],
-      topic,
+      student_name: typeof body.student_name === 'string' && body.student_name ? body.student_name : req.user!.email.split('@')[0],
+      topic: String(body.topic),
       session_type: sessionType,
-      scheduled_date: scheduledDate,
-      scheduled_time: scheduledTime,
+      scheduled_date: String(body.scheduled_date),
+      scheduled_time: String(body.scheduled_time),
       student_notes: typeof body.student_notes === 'string' ? body.student_notes : undefined,
     });
-    logConsentedActivity(actingUserId, 'MENTOR_SESSION_BOOK', { mentorId, topic, sessionType });
+    logConsentedActivity(actingUserId, 'MENTOR_SESSION_BOOK', { mentorId, topic: body.topic, sessionType });
     return res.json({ success: true, data: session });
   })
 );
@@ -273,7 +256,10 @@ router.get('/projects', (req: Request, res: Response) =>
   handle(res, () =>
     res.json({
       success: true,
-      data: communityRepository.getAllProjects(req.query.category as string | undefined, req.query.stage as string | undefined),
+      data: communityRepository.getAllProjects(
+        parseOptionalQueryString(req.query.category, 'category', 60),
+        parseOptionalQueryString(req.query.stage, 'stage', 60)
+      ),
     })
   )
 );
@@ -289,27 +275,24 @@ router.get('/projects/:slug', (req: Request, res: Response) =>
   })
 );
 
-router.post('/projects/:id/join', authenticateToken, (req: AuthenticatedRequest, res: Response) =>
+router.post('/projects/:id/join', authenticateToken, validate(ProjectJoinSchema, 'body'), (req: AuthenticatedRequest, res: Response) =>
   handle(res, () => {
-    if (!communityRepository.getProjectById(req.params.id)) {
-      return res.status(404).json({ success: false, error: 'Project not found.' });
-    }
     const actingUserId = req.user!.userId;
-    const body = (req.body || {}) as Record<string, unknown>;
+    const body = req.body as Record<string, unknown>;
     const safeAvatar = assertSafeOptionalHttpUrl(body.user_avatar, 'user_avatar');
     const result = communityRepository.joinProject(req.params.id, {
       user_id: actingUserId,
-      user_name: typeof body.user_name === 'string' ? body.user_name : req.user!.email.split('@')[0],
+      user_name: typeof body.user_name === 'string' && body.user_name ? body.user_name : req.user!.email.split('@')[0],
       user_avatar: safeAvatar,
-      role_in_project: typeof body.role_in_project === 'string' ? body.role_in_project : 'Collaborator',
+      role_in_project: typeof body.role_in_project === 'string' && body.role_in_project ? body.role_in_project : 'Collaborator',
     });
     logConsentedActivity(actingUserId, 'PROJECT_JOIN_REQUEST', { projectId: req.params.id, role: body.role_in_project });
     return res.json({ success: true, data: result });
   })
 );
 
-router.post('/projects/:id/upvote', authenticateToken, (req: AuthenticatedRequest, res: Response) =>
-  handle(res, () => res.json({ success: true, data: communityRepository.upvoteProject(req.params.id) }))
+router.post('/projects/:id/upvote', authenticateToken, upvoteLimiter, (req: AuthenticatedRequest, res: Response) =>
+  handle(res, () => res.json({ success: true, data: communityRepository.upvoteProject(req.params.id, req.user!.userId) }))
 );
 
 // 6. CAMPUS EVENTS
@@ -317,18 +300,21 @@ router.get('/events', (req: Request, res: Response) =>
   handle(res, () =>
     res.json({
       success: true,
-      data: communityRepository.getAllEvents(req.query.eventType as string | undefined, req.query.status as string | undefined),
+      data: communityRepository.getAllEvents(
+        parseOptionalQueryString(req.query.eventType, 'eventType', 60),
+        parseOptionalQueryString(req.query.status, 'status', 60)
+      ),
     })
   )
 );
 
-router.post('/events/:id/rsvp', authenticateToken, (req: AuthenticatedRequest, res: Response) =>
+router.post('/events/:id/rsvp', authenticateToken, validate(EventRsvpSchema, 'body'), (req: AuthenticatedRequest, res: Response) =>
   handle(res, () => {
     const actingUserId = req.user!.userId;
-    const body = (req.body || {}) as Record<string, unknown>;
+    const body = req.body as Record<string, unknown>;
     const result = communityRepository.rsvpEvent(req.params.id, {
       user_id: actingUserId,
-      user_name: typeof body.user_name === 'string' ? body.user_name : req.user!.email.split('@')[0],
+      user_name: typeof body.user_name === 'string' && body.user_name ? body.user_name : req.user!.email.split('@')[0],
       user_email: req.user!.email,
     });
     logConsentedActivity(actingUserId, 'CAMPUS_EVENT_RSVP', { eventId: req.params.id });
@@ -346,7 +332,9 @@ router.get('/students/:studentId/event-registrations', authenticateToken, (req: 
 
 // 7. PARTNER ORGANIZATIONS & 8. AI COMMUNITY INTELLIGENCE
 router.get('/organizations', (req: Request, res: Response) =>
-  handle(res, () => res.json({ success: true, data: communityRepository.getAllOrganizations(req.query.orgType as string | undefined) }))
+  handle(res, () =>
+    res.json({ success: true, data: communityRepository.getAllOrganizations(parseOptionalQueryString(req.query.orgType, 'orgType', 60)) })
+  )
 );
 
 router.get('/ai-recommendations', authenticateToken, (req: AuthenticatedRequest, res: Response) =>
@@ -354,7 +342,7 @@ router.get('/ai-recommendations', authenticateToken, (req: AuthenticatedRequest,
     const studentId = resolveAuthorizedStudentId(
       req,
       res,
-      typeof req.query.studentId === 'string' ? req.query.studentId : undefined
+      parseOptionalQueryString(req.query.studentId, 'studentId', 120)
     );
     if (!studentId) return;
     res.json({
@@ -368,18 +356,14 @@ router.get('/ai-recommendations', authenticateToken, (req: AuthenticatedRequest,
 );
 
 // 9. SAFETY & MODERATION
-router.post('/moderation/report', authenticateToken, communityWriteLimiter, (req: AuthenticatedRequest, res: Response) =>
+router.post('/moderation/report', authenticateToken, communityWriteLimiter, validate(ModerationReportSchema, 'body'), (req: AuthenticatedRequest, res: Response) =>
   handle(res, () => {
     const actingUserId = req.user!.userId;
-    const body = (req.body || {}) as Record<string, unknown>;
-    const reportedItemId = typeof body.reported_item_id === 'string' ? body.reported_item_id.trim() : '';
-    if (!reportedItemId) {
-      return res.status(400).json({ success: false, error: 'reported_item_id is required.' });
-    }
+    const body = req.body as Record<string, unknown>;
     const report = safetyModerationService.submitReport({
       reporter_id: actingUserId,
       reported_item_type: normalizeReportItemType(body.reported_item_type),
-      reported_item_id: reportedItemId,
+      reported_item_id: String(body.reported_item_id),
       reason: normalizeReportReason(body.reason),
       description: typeof body.description === 'string' ? body.description : '',
     });
@@ -392,7 +376,9 @@ router.post('/moderation/report', authenticateToken, communityWriteLimiter, (req
 );
 
 router.get('/moderation/reports', authenticateToken, requireRole('admin'), (req: AuthenticatedRequest, res: Response) =>
-  handle(res, () => res.json({ success: true, data: safetyModerationService.getReports(req.query.status as string | undefined) }))
+  handle(res, () =>
+    res.json({ success: true, data: safetyModerationService.getReports(parseOptionalQueryString(req.query.status, 'status', 60)) })
+  )
 );
 
 export default router;

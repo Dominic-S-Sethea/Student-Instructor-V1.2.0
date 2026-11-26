@@ -1,4 +1,4 @@
-import { getDatabase } from '../db/connection';
+import { getDatabase, withTransaction } from '../db/connection';
 import crypto from 'node:crypto';
 import {
   AvatarProfile,
@@ -27,63 +27,68 @@ export class AvatarRepository {
   }
 
   upsertAvatarProfile(profile: Partial<AvatarProfile> & { student_id: string }): AvatarProfile {
-    const now = new Date().toISOString();
-    const existing = this.getAvatarProfile(profile.student_id);
+    return withTransaction(() => {
+      const now = new Date().toISOString();
+      const existing = this.getAvatarProfile(profile.student_id);
 
-    if (existing) {
-      this.db
-        .prepare(`
-          UPDATE avatar_profiles
-          SET avatar_name = COALESCE(?, avatar_name),
-              gender_presentation = COALESCE(?, gender_presentation),
-              skin_tone = COALESCE(?, skin_tone),
-              hair_style = COALESCE(?, hair_style),
-              hair_color = COALESCE(?, hair_color),
-              eye_color = COALESCE(?, eye_color),
-              clothing_outfit = COALESCE(?, clothing_outfit),
-              accessory = COALESCE(?, accessory),
-              expression = COALESCE(?, expression),
-              updated_at = ?
-          WHERE student_id = ?
-        `)
-        .run(
-          profile.avatar_name ?? null,
-          profile.gender_presentation ?? null,
-          profile.skin_tone ?? null,
-          profile.hair_style ?? null,
-          profile.hair_color ?? null,
-          profile.eye_color ?? null,
-          profile.clothing_outfit ?? null,
-          profile.accessory ?? null,
-          profile.expression ?? null,
-          now,
-          profile.student_id
-        );
-    } else {
-      this.db
-        .prepare(`
-          INSERT INTO avatar_profiles (
-            student_id, avatar_name, gender_presentation, skin_tone, hair_style, hair_color,
-            eye_color, clothing_outfit, accessory, expression, level, merit_points, updated_at, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 150, ?, ?)
-        `)
-        .run(
-          profile.student_id,
-          profile.avatar_name || 'Cadet Scholar',
-          profile.gender_presentation || 'neutral',
-          profile.skin_tone || '#E0AC69',
-          profile.hair_style || 'short_wavy',
-          profile.hair_color || '#2A2421',
-          profile.eye_color || '#3B2F2F',
-          profile.clothing_outfit || 'cdes_uniform',
-          profile.accessory || 'glasses_round',
-          profile.expression || 'smiling',
-          now,
-          now
-        );
-    }
+      if (existing) {
+        this.db
+          .prepare(`
+            UPDATE avatar_profiles
+            SET avatar_name = COALESCE(?, avatar_name),
+                gender_presentation = COALESCE(?, gender_presentation),
+                skin_tone = COALESCE(?, skin_tone),
+                hair_style = COALESCE(?, hair_style),
+                hair_color = COALESCE(?, hair_color),
+                eye_color = COALESCE(?, eye_color),
+                clothing_outfit = COALESCE(?, clothing_outfit),
+                accessory = COALESCE(?, accessory),
+                expression = COALESCE(?, expression),
+                updated_at = ?
+            WHERE student_id = ?
+          `)
+          .run(
+            profile.avatar_name ?? null,
+            profile.gender_presentation ?? null,
+            profile.skin_tone ?? null,
+            profile.hair_style ?? null,
+            profile.hair_color ?? null,
+            profile.eye_color ?? null,
+            profile.clothing_outfit ?? null,
+            profile.accessory ?? null,
+            profile.expression ?? null,
+            now,
+            profile.student_id
+          );
+      } else {
+        this.db
+          .prepare(`
+            INSERT INTO avatar_profiles (
+              student_id, avatar_name, gender_presentation, skin_tone, hair_style, hair_color,
+              eye_color, clothing_outfit, accessory, expression, level, merit_points, updated_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 150, ?, ?)
+            ON CONFLICT(student_id) DO UPDATE SET
+              avatar_name = COALESCE(excluded.avatar_name, avatar_profiles.avatar_name),
+              updated_at = excluded.updated_at
+          `)
+          .run(
+            profile.student_id,
+            profile.avatar_name || 'Cadet Scholar',
+            profile.gender_presentation || 'neutral',
+            profile.skin_tone || '#E0AC69',
+            profile.hair_style || 'short_wavy',
+            profile.hair_color || '#2A2421',
+            profile.eye_color || '#3B2F2F',
+            profile.clothing_outfit || 'cdes_uniform',
+            profile.accessory || 'glasses_round',
+            profile.expression || 'smiling',
+            now,
+            now
+          );
+      }
 
-    return this.getAvatarProfile(profile.student_id)!;
+      return this.getAvatarProfile(profile.student_id)!;
+    });
   }
 
   addMeritPoints(studentId: string, points: number): void {
@@ -138,101 +143,98 @@ export class AvatarRepository {
         WHERE si.student_id = ?
         ORDER BY ai.category ASC, si.acquired_at DESC
       `)
-      .all(studentId) as any[];
+      .all(studentId) as Array<Record<string, unknown>>;
 
     return rows.map((r) => ({
-      id: r.id,
-      student_id: r.student_id,
-      item_id: r.item_id,
-      quantity: r.quantity,
-      acquired_at: r.acquired_at,
-      is_equipped: r.is_equipped,
+      id: String(r.id),
+      student_id: String(r.student_id),
+      item_id: String(r.item_id),
+      quantity: Number(r.quantity),
+      acquired_at: String(r.acquired_at),
+      is_equipped: Number(r.is_equipped),
       item: {
-        id: r.itm_id,
-        name: r.itm_name,
-        category: r.itm_category,
-        description: r.itm_description,
-        icon_key: r.itm_icon_key,
-        default_slot: r.itm_default_slot,
-        educational_value: r.itm_educational_value,
-        subject_tag: r.itm_subject_tag,
-        unlock_condition_type: r.itm_unlock_condition_type,
-        unlock_condition_val: r.itm_unlock_condition_val,
-        created_at: r.itm_created_at,
+        id: String(r.itm_id),
+        name: String(r.itm_name),
+        category: String(r.itm_category) as AvatarItem['category'],
+        description: String(r.itm_description || ''),
+        icon_key: String(r.itm_icon_key || ''),
+        default_slot: String(r.itm_default_slot || '') as AvatarItem['default_slot'],
+        educational_value: String(r.itm_educational_value || ''),
+        subject_tag: String(r.itm_subject_tag || ''),
+        unlock_condition_type: String(r.itm_unlock_condition_type || 'free') as AvatarItem['unlock_condition_type'],
+        unlock_condition_val: String(r.itm_unlock_condition_val || ''),
+        created_at: String(r.itm_created_at || ''),
       },
     }));
   }
 
   addInventoryItem(studentId: string, itemId: string): void {
-    const now = new Date().toISOString();
-    const existing = this.db
-      .prepare('SELECT * FROM student_inventory WHERE student_id = ? AND item_id = ?')
-      .get(studentId, itemId) as { id: string } | undefined;
-
-    if (existing) {
-      this.db
-        .prepare('UPDATE student_inventory SET quantity = quantity + 1 WHERE id = ?')
-        .run(existing.id);
-    } else {
+    withTransaction(() => {
+      const now = new Date().toISOString();
       const id = `inv-${crypto.randomUUID()}`;
       this.db
         .prepare(`
           INSERT INTO student_inventory (id, student_id, item_id, quantity, acquired_at, is_equipped)
           VALUES (?, ?, ?, 1, ?, 0)
+          ON CONFLICT(student_id, item_id) DO UPDATE SET quantity = quantity + 1
         `)
         .run(id, studentId, itemId, now);
-    }
+    });
   }
 
   // ----------------------------------------------------
   // VIRTUAL ROOM
   // ----------------------------------------------------
   getVirtualRoom(studentId: string): VirtualRoom | null {
-    let room = this.db
-      .prepare('SELECT * FROM virtual_rooms WHERE student_id = ?')
-      .get(studentId) as unknown as VirtualRoom | undefined;
+    return withTransaction(() => {
+      let room = this.db
+        .prepare('SELECT * FROM virtual_rooms WHERE student_id = ?')
+        .get(studentId) as unknown as VirtualRoom | undefined;
 
-    if (!room) {
-      const now = new Date().toISOString();
-      const roomId = `room-${studentId}`;
-      this.db
-        .prepare(`
-          INSERT INTO virtual_rooms (
-            id, student_id, room_name, background_theme, wall_color, floor_style, layout_grid_size, study_streak_days, updated_at, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, 12, 3, ?, ?)
-        `)
-        .run(roomId, studentId, 'Study Sanctuary', 'daylight_study', '#F0F4F8', 'warm_wood', now, now);
+      if (!room) {
+        const now = new Date().toISOString();
+        const roomId = `room-${studentId}`;
+        this.db
+          .prepare(`
+            INSERT OR IGNORE INTO virtual_rooms (
+              id, student_id, room_name, background_theme, wall_color, floor_style, layout_grid_size, study_streak_days, updated_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 12, 3, ?, ?)
+          `)
+          .run(roomId, studentId, 'Study Sanctuary', 'daylight_study', '#F0F4F8', 'warm_wood', now, now);
 
-      room = this.db.prepare('SELECT * FROM virtual_rooms WHERE id = ?').get(roomId) as unknown as VirtualRoom;
-    }
+        room = this.db.prepare('SELECT * FROM virtual_rooms WHERE student_id = ?').get(studentId) as unknown as VirtualRoom;
+      }
 
-    return room;
+      return room;
+    });
   }
 
   updateVirtualRoom(studentId: string, roomData: Partial<VirtualRoom>): VirtualRoom {
-    const now = new Date().toISOString();
-    this.getVirtualRoom(studentId); // ensure created
+    return withTransaction(() => {
+      const now = new Date().toISOString();
+      this.getVirtualRoom(studentId);
 
-    this.db
-      .prepare(`
-        UPDATE virtual_rooms
-        SET room_name = COALESCE(?, room_name),
-            background_theme = COALESCE(?, background_theme),
-            wall_color = COALESCE(?, wall_color),
-            floor_style = COALESCE(?, floor_style),
-            updated_at = ?
-        WHERE student_id = ?
-      `)
-      .run(
-        roomData.room_name ?? null,
-        roomData.background_theme ?? null,
-        roomData.wall_color ?? null,
-        roomData.floor_style ?? null,
-        now,
-        studentId
-      );
+      this.db
+        .prepare(`
+          UPDATE virtual_rooms
+          SET room_name = COALESCE(?, room_name),
+              background_theme = COALESCE(?, background_theme),
+              wall_color = COALESCE(?, wall_color),
+              floor_style = COALESCE(?, floor_style),
+              updated_at = ?
+          WHERE student_id = ?
+        `)
+        .run(
+          roomData.room_name ?? null,
+          roomData.background_theme ?? null,
+          roomData.wall_color ?? null,
+          roomData.floor_style ?? null,
+          now,
+          studentId
+        );
 
-    return this.getVirtualRoom(studentId)!;
+      return this.getVirtualRoom(studentId)!;
+    });
   }
 
   getRoomObjects(roomId: string): (RoomObject & { item: AvatarItem })[] {

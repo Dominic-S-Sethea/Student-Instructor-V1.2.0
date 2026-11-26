@@ -8,6 +8,20 @@
  */
 
 import { getDatabase } from '../db/connection';
+import { safeJsonParse } from '../utils/safeJson';
+
+interface KnowledgeAggregateRow {
+  id: string;
+  domain: string;
+  subject: string;
+  grade_or_level: string;
+  difficulty_rating: number;
+  provincial_readiness: string | null;
+  top_learning_challenges: string | null;
+  career_alignment_score: number;
+  national_curriculum_notes: string;
+  updated_at: string;
+}
 
 export interface EducationKnowledgeAggregate {
   id: string;
@@ -51,16 +65,17 @@ export class KnowledgeMapService {
     const rows = this.db.prepare(`
       SELECT * FROM education_knowledge_aggregates
       ORDER BY difficulty_rating DESC
-    `).all() as any[];
+      LIMIT 200
+    `).all() as unknown as KnowledgeAggregateRow[];
 
-    return rows.map(r => ({
+    return rows.map((r) => ({
       id: r.id,
       domain: r.domain,
       subject: r.subject,
       gradeOrLevel: r.grade_or_level,
       difficultyRating: r.difficulty_rating,
-      provincialReadiness: JSON.parse(r.provincial_readiness || '{}'),
-      topLearningChallenges: JSON.parse(r.top_learning_challenges || '[]'),
+      provincialReadiness: safeJsonParse(r.provincial_readiness, {}),
+      topLearningChallenges: safeJsonParse(r.top_learning_challenges, []),
       careerAlignmentScore: r.career_alignment_score,
       nationalCurriculumNotes: r.national_curriculum_notes,
       updatedAt: r.updated_at,

@@ -1,7 +1,10 @@
 import { Router, Response } from 'express';
 import { AnalyticsService } from '../services/analyticsService';
 import { authenticateToken, requireRole, AuthenticatedRequest } from '../middleware/authMiddleware';
-import { safeErrorMessage } from '../utils/httpErrors';
+import { validate } from '../middleware/validationMiddleware';
+import { AnalyticsTrackSchema } from '../validators/domainSchemas';
+import { sendRouteError } from '../utils/httpErrors';
+import { parseOptionalPositiveInt } from '../utils/queryParams';
 
 const router = Router();
 const analyticsService = new AnalyticsService();
@@ -10,16 +13,10 @@ const analyticsService = new AnalyticsService();
  * @route POST /api/analytics/track
  * @desc Universal Event Tracking (authenticated + analytics consent required)
  */
-router.post('/track', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+router.post('/track', authenticateToken, validate(AnalyticsTrackSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   try {
-    const body = (req.body || {}) as Record<string, unknown>;
-    const eventType = typeof body.eventType === 'string' ? body.eventType : '';
-
-    if (!eventType) {
-      res.status(400).json({ success: false, error: 'eventType is required.' });
-      return;
-    }
-
+    const body = req.body as Record<string, unknown>;
+    const eventType = String(body.eventType);
     const actingUserId = req.user!.userId;
     const ingested = analyticsService.trackEvent({
       studentId: actingUserId,
@@ -50,10 +47,7 @@ router.post('/track', authenticateToken, (req: AuthenticatedRequest, res: Respon
       data: ingested,
     });
   } catch (err: unknown) {
-    res.status(400).json({
-      success: false,
-      error: err instanceof Error ? err.message : 'Failed to track analytics event.',
-    });
+    sendRouteError(res, err, 'Failed to track analytics event.');
   }
 });
 
@@ -76,10 +70,7 @@ router.get('/engagement', authenticateToken, requireRole('admin'), (_req: Authen
       },
     });
   } catch (err: unknown) {
-    res.status(500).json({
-      success: false,
-      error: safeErrorMessage(err, 'Failed to load platform engagement.', 500),
-    });
+    sendRouteError(res, err, 'Failed to load platform engagement.');
   }
 });
 
@@ -89,15 +80,11 @@ router.get('/engagement', authenticateToken, requireRole('admin'), (_req: Authen
  */
 router.get('/recent', authenticateToken, requireRole('admin'), (req: AuthenticatedRequest, res: Response): void => {
   try {
-    const parsedLimit = Number.parseInt(String(req.query.limit ?? '30'), 10);
-    const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(1, parsedLimit), 200) : 30;
+    const limit = parseOptionalPositiveInt(req.query.limit, 'limit', 30, 200);
     const events = analyticsService.getRecentActivities(limit);
     res.json({ success: true, data: events });
   } catch (err: unknown) {
-    res.status(500).json({
-      success: false,
-      error: safeErrorMessage(err, 'Failed to load recent activities.', 500),
-    });
+    sendRouteError(res, err, 'Failed to load recent activities.');
   }
 });
 
@@ -119,10 +106,7 @@ router.post('/events', authenticateToken, (req: AuthenticatedRequest, res: Respo
     });
     res.status(result.persisted ? 201 : 200).json({ success: true, ...result });
   } catch (err: unknown) {
-    res.status(400).json({
-      success: false,
-      error: err instanceof Error ? err.message : 'Failed to record activity event.',
-    });
+    sendRouteError(res, err, 'Failed to record activity event.');
   }
 });
 
@@ -146,10 +130,7 @@ router.post('/game', authenticateToken, (req: AuthenticatedRequest, res: Respons
     });
     res.status(result.persisted ? 201 : 200).json({ success: true, ...result });
   } catch (err: unknown) {
-    res.status(400).json({
-      success: false,
-      error: err instanceof Error ? err.message : 'Failed to record game event.',
-    });
+    sendRouteError(res, err, 'Failed to record game event.');
   }
 });
 
@@ -174,10 +155,7 @@ router.post('/learning', authenticateToken, (req: AuthenticatedRequest, res: Res
     });
     res.status(result.persisted ? 201 : 200).json({ success: true, ...result });
   } catch (err: unknown) {
-    res.status(400).json({
-      success: false,
-      error: err instanceof Error ? err.message : 'Failed to record learning event.',
-    });
+    sendRouteError(res, err, 'Failed to record learning event.');
   }
 });
 

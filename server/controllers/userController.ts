@@ -3,7 +3,8 @@ import { UserService } from '../services/userService';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { validate } from '../middleware/validationMiddleware';
 import { UserEducationCreateSchema, UserProfileUpdateSchema } from '../validators/apiSchemas';
-import { safeErrorMessage } from '../utils/httpErrors';
+import { sendRouteError } from '../utils/httpErrors';
+import { parseOptionalPositiveInt } from '../utils/queryParams';
 import { notificationRepository } from '../repositories/notificationRepository';
 
 const router = Router();
@@ -15,10 +16,7 @@ router.get('/profile', authenticateToken, (req: AuthenticatedRequest, res: Respo
     const data = userService.getProfile(req.user!.userId);
     res.json({ success: true, data });
   } catch (err: unknown) {
-    res.status(500).json({
-      success: false,
-      error: safeErrorMessage(err, 'Failed to retrieve profile.', 500),
-    });
+    sendRouteError(res, err, 'Failed to retrieve profile.');
   }
 });
 
@@ -47,10 +45,7 @@ router.put('/profile', authenticateToken, validate(UserProfileUpdateSchema, 'bod
     });
     res.json({ success: true, data: updated });
   } catch (err: unknown) {
-    res.status(400).json({
-      success: false,
-      error: safeErrorMessage(err, 'Failed to update profile.', 400),
-    });
+    sendRouteError(res, err, 'Failed to update profile.');
   }
 });
 
@@ -68,10 +63,7 @@ router.post('/education', authenticateToken, validate(UserEducationCreateSchema,
 
     res.status(201).json({ success: true, data: record });
   } catch (err: unknown) {
-    res.status(400).json({
-      success: false,
-      error: safeErrorMessage(err, 'Failed to add education record.', 400),
-    });
+    sendRouteError(res, err, 'Failed to add education record.');
   }
 });
 
@@ -88,16 +80,12 @@ router.delete('/education/:id', authenticateToken, (req: AuthenticatedRequest, r
 /** GET /api/users/notifications — list authenticated user's persisted notifications. */
 router.get('/notifications', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
   try {
-    const rawLimit = Number(req.query.limit);
-    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 50) : 30;
+    const limit = parseOptionalPositiveInt(req.query.limit, 'limit', 30, 50);
     const notifications = notificationRepository.listByUser(req.user!.userId, limit);
     const unreadCount = notificationRepository.getUnreadCount(req.user!.userId);
     res.json({ success: true, data: { notifications, unreadCount } });
   } catch (err: unknown) {
-    res.status(500).json({
-      success: false,
-      error: safeErrorMessage(err, 'Failed to load notifications.', 500),
-    });
+    sendRouteError(res, err, 'Failed to load notifications.');
   }
 });
 
