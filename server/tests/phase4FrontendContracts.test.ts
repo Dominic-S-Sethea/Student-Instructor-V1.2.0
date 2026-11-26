@@ -77,10 +77,12 @@ function testStaticFrontendInvariants(): void {
     assert.ok(kmBlock.includes(`'${key}':`), `Missing Khmer translation key: ${key}`);
   }
 
-  // 4. index.html includes pre-paint dark theme script and SVG favicon
+  // 4. index.html loads external pre-paint dark theme script (strict CSP) and SVG favicon
   const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8');
-  assert.ok(indexHtml.includes('cdes_study_theme'), 'index.html must apply dark mode before paint');
+  assert.ok(indexHtml.includes('src="/theme-init.js"'), 'index.html must load external /theme-init.js for strict CSP');
   assert.ok(indexHtml.includes('rel="icon"'), 'index.html must include a favicon');
+  const themeInitJs = readFileSync(join(ROOT, 'public', 'theme-init.js'), 'utf8');
+  assert.ok(themeInitJs.includes('cdes_study_theme'), 'public/theme-init.js must apply dark mode before paint');
 }
 
 async function testLiveClientBackendContracts(): Promise<void> {

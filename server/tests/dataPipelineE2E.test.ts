@@ -1,7 +1,11 @@
 import assert from 'node:assert';
 import { getDatabase } from '../db/connection';
 import { hermesMemoryService } from '../services/hermesMemoryService';
-import { verifyAnonymizedExportIntegrity } from '../services/dataPipelineValidator';
+import {
+  ERASURE_EXEMPT_TABLES,
+  ERASURE_SPECS,
+  verifyAnonymizedExportIntegrity,
+} from '../services/dataPipelineValidator';
 import type { AnonymizedResearchDataPoint } from '../types/analytics';
 import { createPhaseTestServer, createUserAndLogin } from './helpers/httpTestHelper';
 
@@ -76,10 +80,23 @@ async function run(): Promise<void> {
     const audit = verifyAnonymizedExportIntegrity(dataset);
     assert.strictEqual(audit.valid, true, `Anonymized export audit failed: ${audit.violations.join('; ')}`);
 
+    // Seed saved scholarship bookmark + notification before erasure
+    const schRow = db.prepare('SELECT id FROM scholarships WHERE is_deleted = 0 LIMIT 1').get() as { id: string } | undefined;
+    if (schRow) {
+      const saveRes = await stuCons.request('POST', '/api/scholarships/saved', {
+        scholarshipId: schRow.id,
+        targetNote: 'Private personal essay note',
+      });
+      assert.strictEqual(saveRes.status, 201);
+    }
+    db.prepare(
+      "INSERT INTO user_notifications (id, user_id, category, title, body, is_read, created_at) VALUES ('ntf-erase-1', 'usr-pipe-c', 'system', 'Test', 'Body', 0, ?)"
+    ).run(new Date().toISOString());
+
     // 4. Right-to-Erasure wipes all optional pipeline tables & excludes student from subsequent export
     const eraseRes = await stuCons.request('POST', '/api/privacy/erasure');
     assert.strictEqual(eraseRes.status, 200);
-    assert.ok(Number(eraseRes.json.totalRowsErased) >= 3, 'Right-to-erasure must delete persisted pipeline rows');
+    assert.ok(Number(eraseRes.json.totalRowsErased) >= 4, 'Right-to-erasure must delete persisted pipeline, bookmark, and notification rows');
     assert.strictEqual((eraseRes.json.data as { consentStatus: string }).consentStatus, 'withdrawn');
 
     for (const [tbl, col] of [
@@ -88,10 +105,28 @@ async function run(): Promise<void> {
       ['student_intelligence_profile', 'student_id'],
       ['hermes_memory_facts', 'user_id'],
       ['hermes_student_memory_docs', 'user_id'],
+      ['user_saved_scholarships', 'user_id'],
+      ['user_notifications', 'user_id'],
     ] as const) {
       const remaining = (db.prepare(`SELECT COUNT(*) AS c FROM ${tbl} WHERE ${col} = ?`).get('usr-pipe-c') as { c: number }).c;
       assert.strictEqual(remaining, 0, `${tbl} must have 0 rows after right-to-erasure`);
     }
+
+    // 5. Schema completeness check: every table with student_id or user_id must be in ERASURE_SPECS or ERASURE_EXEMPT_TABLES
+    const coveredTables = new Set(ERASURE_SPECS.map((s) => s.table));
+    const allTables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+      .all() as Array<{ name: string }>;
+    const uncovered: string[] = [];
+    for (const { name } of allTables) {
+      const cols = db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>;
+      if (cols.some((c) => c.name === 'student_id' || c.name === 'user_id')) {
+        if (!coveredTables.has(name) && !ERASURE_EXEMPT_TABLES.has(name)) {
+          uncovered.push(name);
+        }
+      }
+    }
+    assert.deepStrictEqual(uncovered, [], `Tables with student_id/user_id missing from ERASURE_SPECS/ERASURE_EXEMPT_TABLES: ${uncovered.join(', ')}`);
 
     const postEraseExport = await admin.request('GET', '/api/research/anonymized-dataset');
     assert.strictEqual(postEraseExport.status, 200);
