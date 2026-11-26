@@ -302,21 +302,37 @@ export const AvatarWorldView: React.FC<AvatarWorldViewProps> = ({
     );
   }
 
-  if (error || !worldState) {
+  if (error || !worldState || !worldState.room || !Array.isArray(worldState.room.objects)) {
     return (
-      <div className="w-full min-h-[400px] flex flex-col items-center justify-center p-8 bg-white rounded-3xl border border-rose-200 text-center space-y-4">
-        <AlertCircle className="w-10 h-10 text-rose-500" />
+      <div className="w-full min-h-[400px] flex flex-col items-center justify-center p-8 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 text-center space-y-4">
+        <AlertCircle className="w-10 h-10 text-blue-600 dark:text-blue-400" />
         <div className="max-w-md">
-          <h3 className="text-base font-bold text-slate-800">Unable to load Virtual Room</h3>
-          <p className="text-xs text-slate-500 mt-1">{error}</p>
+          <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+            Virtual Study Room Requires Live Server Session
+          </h3>
+          <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+            {error || 'Sign in against the live study backend to enter your personalized 2D study room and achievements wall.'}
+          </p>
         </div>
-        <button
-          onClick={loadWorld}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center space-x-2"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Retry Connection</span>
-        </button>
+        <div className="flex items-center gap-2.5 flex-wrap justify-center">
+          <button
+            type="button"
+            onClick={loadWorld}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center space-x-2 cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry Connection</span>
+          </button>
+          {onNavigateTab && (
+            <button
+              type="button"
+              onClick={() => onNavigateTab('dashboard')}
+              className="px-4 py-2 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold cursor-pointer"
+            >
+              Return Home
+            </button>
+          )}
+        </div>
       </div>
     );
   }

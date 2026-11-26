@@ -3,17 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { AppTabRouter } from './components/AppTabRouter';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppFooter } from './components/navigation/AppFooter';
 import { ADMIN_ONLY_TABS } from './components/navigation/navConfig';
 import { readTabFromHash, VALID_TABS, writeTabHash } from './utils/tabHashRouting';
+import { importWithRetry } from './utils/lazyWithRetry';
 import { topCambodianUniversities } from './data/universityIntelligenceData';
 import { universityClient } from './services/universityClient';
 import { usePersistedNotifications } from './hooks/usePersistedNotifications';
-import { useSidebarShellState } from './hooks/useSidebarShellState';
-import { mergeLiveUniversities } from './utils/mergeUniversities';
+import { useSidebarShellState, type NavigateTabOptions } from './hooks/useSidebarShellState';
+import { mergeLiveUniversities, normalizeUniversityMedia } from './utils/mergeUniversities';
 import { buildSessionStudentProfile } from './utils/appSessionProfile';
 import { LanguageProvider } from './context/LanguageContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -29,17 +31,12 @@ import type {
   ComprehensiveUniversityProfile,
   StudentProfile,
 } from './types';
-import {
-  initialMentors,
-  initialMeetups,
-  initialMajorInsights,
-  initialOpportunities,
-} from './data/mockData';
+import { initialMentors, initialMeetups, initialMajorInsights, initialOpportunities } from './data/mockData';
 
-const BookingModal = lazy(() => import('./components/BookingModal').then((m) => ({ default: m.BookingModal })));
-const PatchNotesModal = lazy(() => import('./components/PatchNotesModal').then((m) => ({ default: m.PatchNotesModal })));
-const AnalyticsTelemetryDrawer = lazy(() => import('./components/AnalyticsTelemetryDrawer').then((m) => ({ default: m.AnalyticsTelemetryDrawer })));
-const ROICalculatorModal = lazy(() => import('./components/ROICalculatorModal').then((m) => ({ default: m.ROICalculatorModal })));
+const BookingModal = lazy(() => importWithRetry(() => import('./components/BookingModal').then((m) => ({ default: m.BookingModal }))));
+const PatchNotesModal = lazy(() => importWithRetry(() => import('./components/PatchNotesModal').then((m) => ({ default: m.PatchNotesModal }))));
+const AnalyticsTelemetryDrawer = lazy(() => importWithRetry(() => import('./components/AnalyticsTelemetryDrawer').then((m) => ({ default: m.AnalyticsTelemetryDrawer }))));
+const ROICalculatorModal = lazy(() => importWithRetry(() => import('./components/ROICalculatorModal').then((m) => ({ default: m.ROICalculatorModal }))));
 
 function AppContent() {
   const { user, authenticated, profile: authProfile } = useAuth();
@@ -66,19 +63,28 @@ function AppContent() {
   const [advisorPrefillPrompt, setAdvisorPrefillPrompt] = useState<string>('');
   const [tabHistory, setTabHistory] = useState<TabView[]>([]);
   const [selectedUniversityId, setSelectedUniversityId] = useState<string | null>(null);
-  const [universities, setUniversities] = useState<ComprehensiveUniversityProfile[]>(topCambodianUniversities);
+  const [universities, setUniversities] = useState<ComprehensiveUniversityProfile[]>(() =>
+    normalizeUniversityMedia(topCambodianUniversities)
+  );
   const [universitiesLoading, setUniversitiesLoading] = useState(false);
   const [universitiesError, setUniversitiesError] = useState<string | null>(null);
   const [roiModalUnivId, setRoiModalUnivId] = useState<string | null>(null);
   const [isPatchNotesOpen, setIsPatchNotesOpen] = useState(false);
+  const clearNavCommandRef = useRef<() => void>(() => {});
+
+  const closeActiveOverlays = useCallback(() => {
+    setRoiModalUnivId(null);
+    setBookingMentor(null);
+    setIsPatchNotesOpen(false);
+  }, []);
 
   useEffect(() => {
     setStudentProfile(buildSessionStudentProfile(authenticated, user, authProfile));
     setAdvisorPrefillPrompt('');
-    setBookingMentor(null);
+    closeActiveOverlays();
     setSelectedUniversityId(null);
     setTabHistory((prev) => (isAdmin ? prev : prev.filter((t) => !ADMIN_ONLY_TABS.includes(t))));
-  }, [sessionKey, authenticated, user, authProfile, isAdmin]);
+  }, [sessionKey, authenticated, user, authProfile, isAdmin, closeActiveOverlays]);
 
   const loadLiveUniversities = useCallback(async () => {
     setUniversitiesLoading(true);
@@ -99,6 +105,8 @@ function AppContent() {
 
   useEffect(() => {
     const syncFromHash = (): void => {
+      closeActiveOverlays();
+      clearNavCommandRef.current();
       const next = readTabFromHash(isAdmin);
       setActiveTab((current) => (next !== current ? next : current));
     };
@@ -108,7 +116,7 @@ function AppContent() {
       window.removeEventListener('hashchange', syncFromHash);
       window.removeEventListener('popstate', syncFromHash);
     };
-  }, [isAdmin]);
+  }, [isAdmin, closeActiveOverlays]);
 
   useEffect(() => {
     if (!isAdmin && ADMIN_ONLY_TABS.includes(activeTab)) {
@@ -117,10 +125,14 @@ function AppContent() {
     }
   }, [isAdmin, activeTab]);
 
-  const handleNavigateTab = useCallback((tab: TabView) => {
+  const handleNavigateTab = useCallback((tab: TabView, options?: NavigateTabOptions) => {
     let destination: TabView = VALID_TABS.has(tab) ? tab : 'dashboard';
     if (ADMIN_ONLY_TABS.includes(destination) && !isAdmin) {
       destination = 'dashboard';
+    }
+    closeActiveOverlays();
+    if (!options?.preserveSubCommand) {
+      clearNavCommandRef.current();
     }
     setActiveTab((current) => {
       if (destination !== current) {
@@ -129,16 +141,21 @@ function AppContent() {
       return destination;
     });
     writeTabHash(destination);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [isAdmin]);
+    if (!options?.skipScrollTop) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [isAdmin, closeActiveOverlays]);
 
-  const { sidebarCollapsed, toggleSidebarCollapsed, navCommand, handleSelectSubAction } = useSidebarShellState(
+  const { sidebarCollapsed, toggleSidebarCollapsed, navCommand, clearNavCommand, handleSelectSubAction } = useSidebarShellState(
     handleNavigateTab,
     setRoiModalUnivId,
     universities[0]?.id || 'univ-cadt'
   );
+  clearNavCommandRef.current = clearNavCommand;
 
   const handleGoBack = useCallback(() => {
+    closeActiveOverlays();
+    clearNavCommandRef.current();
     setTabHistory((history) => {
       const nextHistory = [...history];
       while (nextHistory.length > 0) {
@@ -152,7 +169,7 @@ function AppContent() {
       }
       return nextHistory;
     });
-  }, [isAdmin]);
+  }, [isAdmin, closeActiveOverlays]);
 
   const handleStartAdvisorPrompt = useCallback((promptText: string) => {
     setAdvisorPrefillPrompt(promptText);
@@ -209,58 +226,30 @@ function AppContent() {
     }));
   };
 
-  const handleHostMeetup = (newMeetupData: Partial<StudentMeetup>) => {
+  const handleHostMeetup = (d: Partial<StudentMeetup>) => {
     const created: StudentMeetup = {
-      id: `meetup-${Date.now()}`,
-      title: newMeetupData.title || 'Student Study Circle',
-      category: newMeetupData.category || 'Exam Review',
-      topic: newMeetupData.topic || '',
-      objective: newMeetupData.objective || '',
-      date: newMeetupData.date || 'Upcoming Weekend',
-      time: newMeetupData.time || '3:00 PM',
-      duration: '90 mins',
-      format: newMeetupData.format || 'online',
-      location: newMeetupData.location || 'Google Meet',
-      meetingLink: newMeetupData.meetingLink || 'https://meet.google.com/ais-study-circle',
-      hostStudentId: studentProfile.id,
-      hostName: studentProfile.name,
-      hostAvatar: studentProfile.avatar,
-      hostGradeLevel: studentProfile.educationLevel,
-      currentParticipantsCount: 1,
-      maxParticipants: newMeetupData.maxParticipants || 20,
-      isJoined: true,
-      participants: [{ id: studentProfile.id, name: studentProfile.name, avatar: studentProfile.avatar, role: 'Host' }],
-      chatMessages: newMeetupData.chatMessages || [],
-      status: 'upcoming',
-      tags: newMeetupData.tags || ['Study Group'],
-      materialsOrPrep: newMeetupData.materialsOrPrep || 'Bring past exam questions.',
+      id: `meetup-${Date.now()}`, title: d.title || 'Student Study Circle', category: d.category || 'Exam Review',
+      topic: d.topic || '', objective: d.objective || '', date: d.date || 'Upcoming Weekend',
+      time: d.time || '3:00 PM', duration: '90 mins', format: d.format || 'online',
+      location: d.location || 'Google Meet', meetingLink: d.meetingLink || 'https://meet.google.com/ais-study-circle',
+      hostStudentId: studentProfile.id, hostName: studentProfile.name, hostAvatar: studentProfile.avatar,
+      hostGradeLevel: studentProfile.educationLevel, currentParticipantsCount: 1, maxParticipants: d.maxParticipants || 20,
+      isJoined: true, participants: [{ id: studentProfile.id, name: studentProfile.name, avatar: studentProfile.avatar, role: 'Host' }],
+      chatMessages: d.chatMessages || [], status: 'upcoming', tags: d.tags || ['Study Group'],
+      materialsOrPrep: d.materialsOrPrep || 'Bring past exam questions.',
     };
     setMeetups((prev) => [created, ...prev]);
     handleNavigateTab('meetups');
   };
 
   const handleAddChatMessage = (meetupId: string, text: string) => {
-    setMeetups((prev) =>
-      prev.map((m) =>
-        m.id === meetupId
-          ? {
-              ...m,
-              chatMessages: [
-                ...m.chatMessages,
-                {
-                  id: `msg-${Date.now()}`,
-                  senderId: studentProfile.id,
-                  senderName: studentProfile.name,
-                  senderAvatar: studentProfile.avatar,
-                  timestamp: 'Just now',
-                  text,
-                  isHost: m.hostStudentId === studentProfile.id,
-                },
-              ],
-            }
-          : m
-      )
-    );
+    setMeetups((prev) => prev.map((m) => (m.id === meetupId ? {
+      ...m,
+      chatMessages: [...m.chatMessages, {
+        id: `msg-${Date.now()}`, senderId: studentProfile.id, senderName: studentProfile.name,
+        senderAvatar: studentProfile.avatar, timestamp: 'Just now', text, isHost: m.hostStudentId === studentProfile.id,
+      }],
+    } : m)));
   };
 
   return (
@@ -300,6 +289,7 @@ function AppContent() {
         <AppTabRouter
           activeTab={activeTab}
           navCommand={navCommand}
+          onConsumeNavCommand={clearNavCommand}
           sessionKey={sessionKey}
           authenticated={authenticated}
           userId={user?.id}
@@ -357,40 +347,35 @@ function AppContent() {
           onOpenAuthModal={() => setAuthModalOpen(true)}
         />
 
-        <AppFooter
-          onOpenPatchNotes={() => setIsPatchNotesOpen(true)}
-          onNavigateTab={handleNavigateTab}
-        />
+        <AppFooter onOpenPatchNotes={() => setIsPatchNotesOpen(true)} onNavigateTab={handleNavigateTab} />
       </div>
 
       {authModalOpen && <AuthModal onClose={() => setAuthModalOpen(false)} />}
 
-      <Suspense fallback={null}>
-        {bookingMentor && (
-          <BookingModal mentor={bookingMentor} studentProfile={studentProfile} onClose={() => setBookingMentor(null)} onConfirmBooking={handleConfirmBooking} />
-        )}
-        {roiModalUnivId && (
-          <ROICalculatorModal isOpen={!!roiModalUnivId} onClose={() => setRoiModalUnivId(null)} universities={universities} initialUniversityId={roiModalUnivId} />
-        )}
-        {isAdmin && <AnalyticsTelemetryDrawer />}
-        {isPatchNotesOpen && (
-          <PatchNotesModal isOpen={isPatchNotesOpen} onClose={() => setIsPatchNotesOpen(false)} onNavigateToScholarships={() => handleNavigateTab('scholarships')} />
-        )}
-      </Suspense>
+      <ErrorBoundary resetKey={`${activeTab}:${roiModalUnivId || ''}:${isPatchNotesOpen}`}>
+        <Suspense fallback={null}>
+          {bookingMentor && <BookingModal mentor={bookingMentor} studentProfile={studentProfile} onClose={() => setBookingMentor(null)} onConfirmBooking={handleConfirmBooking} />}
+          {roiModalUnivId && <ROICalculatorModal isOpen={!!roiModalUnivId} onClose={() => setRoiModalUnivId(null)} universities={universities} initialUniversityId={roiModalUnivId} />}
+          {isAdmin && <AnalyticsTelemetryDrawer />}
+          {isPatchNotesOpen && <PatchNotesModal isOpen={isPatchNotesOpen} onClose={() => setIsPatchNotesOpen(false)} onNavigateToScholarships={() => handleNavigateTab('scholarships')} />}
+        </Suspense>
+      </ErrorBoundary>
     </div>
   );
 }
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <LanguageProvider>
-        <AuthProvider>
-          <SettingsProvider>
-            <SavedScholarshipsProvider><AppContent /></SavedScholarshipsProvider>
-          </SettingsProvider>
-        </AuthProvider>
-      </LanguageProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <SettingsProvider>
+              <SavedScholarshipsProvider><AppContent /></SavedScholarshipsProvider>
+            </SettingsProvider>
+          </AuthProvider>
+        </LanguageProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

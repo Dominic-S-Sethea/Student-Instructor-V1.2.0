@@ -9,6 +9,7 @@ import {
   type HermesMemorySnapshotResponse,
 } from '../../services/memoryClient';
 import { GrowthMemoryFactCard } from './GrowthMemoryFactCard';
+import { AdvisorGuestNotice } from './AdvisorGuestNotice';
 
 const CATEGORIES: Array<{ id: HermesFactCategory; label: string }> = [
   { id: 'preference', label: 'Preference' },
@@ -20,9 +21,10 @@ const CATEGORIES: Array<{ id: HermesFactCategory; label: string }> = [
   { id: 'milestone', label: 'Milestone' },
 ];
 
-export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void }> = ({
-  onNavigateTab,
-}) => {
+export const GrowthMemoryPanel: React.FC<{
+  onNavigateTab?: (tab: string) => void;
+  onOpenAuthModal?: () => void;
+}> = ({ onNavigateTab, onOpenAuthModal }) => {
   const { authenticated } = useAuth();
   const { language } = useLanguage();
   const isKhmer = language === 'km';
@@ -169,19 +171,7 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
   };
 
   if (!authenticated) {
-    return (
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
-        <Lock className="w-8 h-8 text-blue-600 mx-auto" />
-        <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-          {isKhmer ? 'សូមចូលគណនីដើម្បីបើកការចងចាំការសិក្សា' : 'Sign in to enable My Growth Memory'}
-        </h2>
-        <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mx-auto">
-          {isKhmer
-            ? 'ទីប្រឹក្សាសិក្សានឹងចងចាំវិធីសិក្សា សាកលវិទ្យាល័យគោលដៅ និងគោលដៅ Bac II របស់អ្នកនៅពេលអ្នកចូលគណនី និងបើកការយល់ព្រម។'
-            : 'Study Advisor remembers your study style, target universities, and Bac II milestones across sessions once you sign in and enable AI memory consent.'}
-        </p>
-      </div>
-    );
+    return <AdvisorGuestNotice variant="memory" isKhmer={isKhmer} onOpenAuthModal={onOpenAuthModal} />;
   }
 
   if (snapshot && !snapshot.enabled) {

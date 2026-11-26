@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
 import { StudentDashboard } from './StudentDashboard';
+import { importWithRetry } from '../utils/lazyWithRetry';
 import type { NavSubCommand } from '../hooks/useSidebarShellState';
 import type {
   ComprehensiveUniversityProfile,
@@ -12,27 +13,28 @@ import type {
   UniversityMajorInsight,
 } from '../types';
 
-const AIAdvisor = lazy(() => import('./AIAdvisor').then((m) => ({ default: m.AIAdvisor })));
-const UniversityAlumniView = lazy(() => import('./UniversityAlumniView').then((m) => ({ default: m.UniversityAlumniView })));
-const MentorDiscovery = lazy(() => import('./MentorDiscovery').then((m) => ({ default: m.MentorDiscovery })));
-const StudentMeetupsView = lazy(() => import('./StudentMeetupsView').then((m) => ({ default: m.StudentMeetupsView })));
-const MajorsAndCareersView = lazy(() => import('./MajorsAndCareersView').then((m) => ({ default: m.MajorsAndCareersView })));
-const ConferencesAndAMAsView = lazy(() => import('./ConferencesAndAMAsView').then((m) => ({ default: m.ConferencesAndAMAsView })));
-const StudentProfileView = lazy(() => import('./StudentProfileView').then((m) => ({ default: m.StudentProfileView })));
-const STEMDiscoveryView = lazy(() => import('./STEMDiscoveryView').then((m) => ({ default: m.STEMDiscoveryView })));
-const DecisionEngineView = lazy(() => import('./DecisionEngineView').then((m) => ({ default: m.DecisionEngineView })));
-const UniversityIntelligenceView = lazy(() => import('./UniversityIntelligenceView').then((m) => ({ default: m.UniversityIntelligenceView })));
-const ScholarshipIntelligenceView = lazy(() => import('./ScholarshipIntelligenceView').then((m) => ({ default: m.ScholarshipIntelligenceView })));
-const AvatarWorldView = lazy(() => import('./avatar/AvatarWorldView').then((m) => ({ default: m.AvatarWorldView })));
-const CommunityDashboard = lazy(() => import('./community/CommunityDashboard').then((m) => ({ default: m.CommunityDashboard })));
-const ResearchLaboratoryView = lazy(() => import('./research/ResearchLaboratoryView').then((m) => ({ default: m.ResearchLaboratoryView })));
-const PlatformArchitectureView = lazy(() => import('./architecture/PlatformArchitectureView').then((m) => ({ default: m.PlatformArchitectureView })));
-const EducationDataPlatformView = lazy(() => import('./data-strategy/EducationDataPlatformView').then((m) => ({ default: m.EducationDataPlatformView })));
-const SettingsView = lazy(() => import('./settings/SettingsView').then((m) => ({ default: m.SettingsView })));
+const AIAdvisor = lazy(() => importWithRetry(() => import('./AIAdvisor').then((m) => ({ default: m.AIAdvisor }))));
+const UniversityAlumniView = lazy(() => importWithRetry(() => import('./UniversityAlumniView').then((m) => ({ default: m.UniversityAlumniView }))));
+const MentorDiscovery = lazy(() => importWithRetry(() => import('./MentorDiscovery').then((m) => ({ default: m.MentorDiscovery }))));
+const StudentMeetupsView = lazy(() => importWithRetry(() => import('./StudentMeetupsView').then((m) => ({ default: m.StudentMeetupsView }))));
+const MajorsAndCareersView = lazy(() => importWithRetry(() => import('./MajorsAndCareersView').then((m) => ({ default: m.MajorsAndCareersView }))));
+const ConferencesAndAMAsView = lazy(() => importWithRetry(() => import('./ConferencesAndAMAsView').then((m) => ({ default: m.ConferencesAndAMAsView }))));
+const StudentProfileView = lazy(() => importWithRetry(() => import('./StudentProfileView').then((m) => ({ default: m.StudentProfileView }))));
+const STEMDiscoveryView = lazy(() => importWithRetry(() => import('./STEMDiscoveryView').then((m) => ({ default: m.STEMDiscoveryView }))));
+const DecisionEngineView = lazy(() => importWithRetry(() => import('./DecisionEngineView').then((m) => ({ default: m.DecisionEngineView }))));
+const UniversityIntelligenceView = lazy(() => importWithRetry(() => import('./UniversityIntelligenceView').then((m) => ({ default: m.UniversityIntelligenceView }))));
+const ScholarshipIntelligenceView = lazy(() => importWithRetry(() => import('./ScholarshipIntelligenceView').then((m) => ({ default: m.ScholarshipIntelligenceView }))));
+const AvatarWorldView = lazy(() => importWithRetry(() => import('./avatar/AvatarWorldView').then((m) => ({ default: m.AvatarWorldView }))));
+const CommunityDashboard = lazy(() => importWithRetry(() => import('./community/CommunityDashboard').then((m) => ({ default: m.CommunityDashboard }))));
+const ResearchLaboratoryView = lazy(() => importWithRetry(() => import('./research/ResearchLaboratoryView').then((m) => ({ default: m.ResearchLaboratoryView }))));
+const PlatformArchitectureView = lazy(() => importWithRetry(() => import('./architecture/PlatformArchitectureView').then((m) => ({ default: m.PlatformArchitectureView }))));
+const EducationDataPlatformView = lazy(() => importWithRetry(() => import('./data-strategy/EducationDataPlatformView').then((m) => ({ default: m.EducationDataPlatformView }))));
+const SettingsView = lazy(() => importWithRetry(() => import('./settings/SettingsView').then((m) => ({ default: m.SettingsView }))));
 
 export interface AppTabRouterProps {
   activeTab: TabView;
   navCommand?: NavSubCommand | null;
+  onConsumeNavCommand?: () => void;
   sessionKey: string;
   authenticated: boolean;
   userId?: string;
@@ -132,6 +134,7 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = (props) => {
                 onConsumeInitialPrompt={props.onConsumeAdvisorPrompt}
                 onOpenBooking={props.onOpenBooking}
                 onNavigateTab={(tab) => props.onNavigateTab(tab as TabView)}
+                onOpenAuthModal={props.onOpenAuthModal}
                 externalSubTab={advSubCmd?.subTab}
                 externalSubTabNonce={advSubCmd?.nonce}
               />
@@ -246,6 +249,7 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = (props) => {
               externalDirectoryView={schViewCmd?.view}
               externalViewNonce={schViewCmd?.nonce}
               openSavedNonce={schSavedNonce}
+              onConsumeSavedNonce={props.onConsumeNavCommand}
             />
           )}
 

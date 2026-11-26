@@ -79,7 +79,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                 : 'Sign in or create a free student account to save your education timeline, manage scholarship targets, and control your privacy settings.'}
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-700 dark:text-slate-300">
+          <div id="profile-education-privacy" className="scroll-mt-6 rounded-2xl transition-all grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-700 dark:text-slate-300">
             <div className="rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3.5">
               <GraduationCap className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1" />
               <div className="font-bold">Education Timeline</div>

@@ -133,9 +133,9 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
     }
 
     const alreadyOpen = openGroupIds.includes(group.id);
-    const alreadyInGroup = group.matchTabs.includes(currentTab);
+    const onDefaultTab = currentTab === group.defaultTab;
 
-    if (alreadyInGroup) {
+    if (onDefaultTab) {
       setOpenGroupIds(alreadyOpen ? [] : [group.id]);
       return;
     }

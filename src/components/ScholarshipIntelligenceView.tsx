@@ -55,6 +55,7 @@ interface ScholarshipIntelligenceViewProps {
   externalDirectoryView?: 'top_universities' | 'flagship';
   externalViewNonce?: number;
   openSavedNonce?: number;
+  onConsumeSavedNonce?: () => void;
 }
 
 export const ScholarshipIntelligenceView: React.FC<ScholarshipIntelligenceViewProps> = ({
@@ -62,6 +63,7 @@ export const ScholarshipIntelligenceView: React.FC<ScholarshipIntelligenceViewPr
   externalDirectoryView,
   externalViewNonce,
   openSavedNonce,
+  onConsumeSavedNonce,
 }) => {
   const { language, t } = useLanguage();
   const { authenticated, user, profile: authProfile, logout } = useAuth();
@@ -126,8 +128,9 @@ export const ScholarshipIntelligenceView: React.FC<ScholarshipIntelligenceViewPr
   useEffect(() => {
     if (openSavedNonce) {
       setIsSavedDrawerOpen(true);
+      onConsumeSavedNonce?.();
     }
-  }, [openSavedNonce]);
+  }, [openSavedNonce, onConsumeSavedNonce]);
 
   // Fetch from API with AbortController + recoverable error state
   const fetchScholarships = async (signal?: AbortSignal): Promise<void> => {

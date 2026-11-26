@@ -19,6 +19,7 @@ import { AIKnowledgeSearchView } from './ai/AIKnowledgeSearchView';
 import { AIMemoryProfileView } from './ai/AIMemoryProfileView';
 import { PersonalEducationOSView } from './ai/PersonalEducationOSView';
 import { GrowthMemoryPanel } from './ai/GrowthMemoryPanel';
+import { AdvisorGuestNotice } from './ai/AdvisorGuestNotice';
 
 interface AIAdvisorProps {
   studentProfile: StudentProfile;
@@ -27,6 +28,7 @@ interface AIAdvisorProps {
   onConsumeInitialPrompt?: () => void;
   onOpenBooking: (mentor: Mentor) => void;
   onNavigateTab?: (tab: string) => void;
+  onOpenAuthModal?: () => void;
   externalSubTab?: AIAdvisorSubTab;
   externalSubTabNonce?: number;
 }
@@ -54,6 +56,7 @@ export const AIAdvisor: React.FC<AIAdvisorProps> = ({
   onConsumeInitialPrompt,
   onOpenBooking,
   onNavigateTab,
+  onOpenAuthModal,
   externalSubTab,
   externalSubTabNonce,
 }) => {
@@ -372,14 +375,18 @@ export const AIAdvisor: React.FC<AIAdvisorProps> = ({
         </div>
       )}
 
-      {activeSubTab === 'growth-memory' && <GrowthMemoryPanel onNavigateTab={onNavigateTab} />}
+      {activeSubTab === 'growth-memory' && (
+        <GrowthMemoryPanel onNavigateTab={onNavigateTab} onOpenAuthModal={onOpenAuthModal} />
+      )}
       {activeSubTab === 'recommendations' && authenticated && user?.id && (
         <AIRecommendationsView studentId={user.id} onNavigateTab={onNavigateTab} />
       )}
       {activeSubTab === 'recommendations' && !authenticated && (
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center text-sm text-slate-600 dark:text-slate-300">
-          {isKhmer ? 'សូមចូលគណនីដើម្បីមើលការណែនាំផ្ទាល់ខ្លួនរបស់អ្នក។' : 'Sign in to view personalized recommendations.'}
-        </div>
+        <AdvisorGuestNotice
+          isKhmer={isKhmer}
+          onOpenAuthModal={onOpenAuthModal}
+          onBackToChat={() => setActiveSubTab('chat')}
+        />
       )}
       {activeSubTab === 'education-os' && isAdmin && user?.id && (
         <PersonalEducationOSView studentId={user.id} onNavigateTab={onNavigateTab} />
