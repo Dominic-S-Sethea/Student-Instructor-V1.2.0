@@ -227,6 +227,7 @@ export class ScholarshipService {
   }
 
   public reportError(data: Record<string, unknown>): { message: string; report: FormattedErrorReport } {
+    assertSafeScholarshipUrls(data);
     const report = this.repo.submitErrorReport(data);
     return {
       message: 'Thank you for reporting! Our editorial team will review and verify this information.',

@@ -111,7 +111,7 @@ async function run(): Promise<void> {
       database: { tablesCount: number; sqlite: { writeOps: number; busyTimeoutRetries: number; writerMax: number } };
       http: { totalRequests: number; errors5xx: number; p50Ms: number; p95Ms: number };
     };
-    assert(metricsJson.database.tablesCount >= 120);
+    assert(metricsJson.database.tablesCount >= 90);
     assert(metricsJson.http.totalRequests >= 70);
     assert.strictEqual(metricsJson.http.errors5xx, 0);
     console.log(

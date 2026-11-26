@@ -685,19 +685,7 @@ export class ScholarshipRepository {
   }
 
   public runInTransaction<T>(fn: () => T): T {
-    this.db.exec('BEGIN IMMEDIATE;');
-    try {
-      const result = fn();
-      this.db.exec('COMMIT;');
-      return result;
-    } catch (err) {
-      try {
-        this.db.exec('ROLLBACK;');
-      } catch {
-        // ignore rollback error
-      }
-      throw err;
-    }
+    return withTransaction(fn);
   }
 
   public updateSubmissionStatus(

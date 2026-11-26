@@ -14,15 +14,18 @@ const HARD_LOCK_THRESHOLD = 8;
 const SOFT_LOCK_MS = 60 * 1000;
 const HARD_LOCK_MS = 300 * 1000;
 
-function hashIdentifier(email: string): string {
-  return crypto.createHash('sha256').update(email).digest('hex').slice(0, 12);
+function hashIdentifier(value: string): string {
+  return crypto.createHash('sha256').update(value).digest('hex').slice(0, 12);
 }
 
 export class AuthLockoutService {
   private readonly entries = new Map<string, LockoutEntry>();
 
-  private normalize(email: string): string {
-    return email.trim().toLowerCase();
+  private buildKey(email: string, ip?: string): string {
+    const normEmail = email.trim().toLowerCase();
+    if (!normEmail) return '';
+    const normIp = (ip || 'unknown').trim().toLowerCase() || 'unknown';
+    return `${normIp}|${normEmail}`;
   }
 
   private prune(nowMs: number): void {
@@ -47,8 +50,8 @@ export class AuthLockoutService {
     }
   }
 
-  public getLockoutSeconds(email: string, nowMs = Date.now()): number {
-    const key = this.normalize(email);
+  public getLockoutSeconds(email: string, ip?: string, nowMs = Date.now()): number {
+    const key = this.buildKey(email, ip);
     if (!key) return 0;
     const entry = this.entries.get(key);
     if (!entry) return 0;
@@ -62,7 +65,7 @@ export class AuthLockoutService {
   }
 
   public recordFailure(email: string, ip?: string, nowMs = Date.now()): { locked: boolean; retryAfterSeconds: number } {
-    const key = this.normalize(email);
+    const key = this.buildKey(email, ip);
     if (!key) return { locked: false, retryAfterSeconds: 0 };
     this.prune(nowMs);
 
@@ -82,7 +85,7 @@ export class AuthLockoutService {
 
     if (retryAfterSeconds > 0) {
       logger.warn('SECURITY_LOGIN_LOCKOUT', {
-        emailHash: hashIdentifier(key),
+        emailHash: hashIdentifier(email.trim().toLowerCase()),
         ip: ip || 'unknown',
         failures,
         retryAfterSeconds,
@@ -91,8 +94,8 @@ export class AuthLockoutService {
     return { locked: retryAfterSeconds > 0, retryAfterSeconds };
   }
 
-  public recordSuccess(email: string): void {
-    const key = this.normalize(email);
+  public recordSuccess(email: string, ip?: string): void {
+    const key = this.buildKey(email, ip);
     if (key) this.entries.delete(key);
   }
 
@@ -102,3 +105,4 @@ export class AuthLockoutService {
 }
 
 export const authLockoutService = new AuthLockoutService();
+

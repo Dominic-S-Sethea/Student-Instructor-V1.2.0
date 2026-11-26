@@ -8,6 +8,7 @@ export interface UserRecord {
   role: 'student' | 'admin' | 'organization' | 'mentor';
   status: 'active' | 'pending_verification' | 'suspended';
   is_deleted?: number;
+  token_version?: number;
   created_at: string;
   updated_at: string;
   last_login_at?: string | null;
@@ -217,5 +218,29 @@ export class UserRepository {
       .prepare('DELETE FROM education_history WHERE id = ? AND student_id = ?')
       .run(educationId, studentProfileId);
     return Number(res.changes) > 0;
+  }
+
+  public bumpTokenVersion(userId: string): number {
+    const now = new Date().toISOString();
+    this.db
+      .prepare('UPDATE users SET token_version = COALESCE(token_version, 1) + 1, updated_at = ? WHERE id = ?')
+      .run(now, userId);
+    const row = this.db.prepare('SELECT token_version FROM users WHERE id = ?').get(userId) as
+      | { token_version?: number }
+      | undefined;
+    return typeof row?.token_version === 'number' ? row.token_version : 2;
+  }
+
+  public updatePasswordAndBumpVersion(userId: string, passwordHash: string): number {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        'UPDATE users SET password_hash = ?, token_version = COALESCE(token_version, 1) + 1, updated_at = ? WHERE id = ?'
+      )
+      .run(passwordHash, now, userId);
+    const row = this.db.prepare('SELECT token_version FROM users WHERE id = ?').get(userId) as
+      | { token_version?: number }
+      | undefined;
+    return typeof row?.token_version === 'number' ? row.token_version : 2;
   }
 }

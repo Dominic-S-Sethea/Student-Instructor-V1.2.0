@@ -128,11 +128,18 @@ export function verifyDatabaseHealth(): {
     const intRow = db.prepare('PRAGMA quick_check').get() as { quick_check?: string } | undefined;
     let schemaVersion = readinessState.schemaVersion;
     try {
-      const verRow = db
-        .prepare('SELECT schema_version AS v FROM schema_version ORDER BY v DESC LIMIT 1')
-        .get() as { v?: number } | undefined;
-      if (verRow && typeof verRow.v === 'number') {
-        schemaVersion = verRow.v;
+      const migRow = db
+        .prepare('SELECT MAX(version) AS v FROM schema_migrations')
+        .get() as { v?: number | null } | undefined;
+      if (migRow && typeof migRow.v === 'number') {
+        schemaVersion = migRow.v;
+      } else {
+        const verRow = db
+          .prepare('SELECT schema_version AS v FROM schema_version ORDER BY v DESC LIMIT 1')
+          .get() as { v?: number } | undefined;
+        if (verRow && typeof verRow.v === 'number') {
+          schemaVersion = verRow.v;
+        }
       }
     } catch {
       schemaVersion = 0;
@@ -173,21 +180,44 @@ export function closeDatabase(): void {
     databaseInstance = null;
     openedDbPath = null;
   }
+  txDepth = 0;
   closeExplainDb();
   dbMetrics.reset();
   resetDatabaseReadiness();
 }
 
 let savepointSeq = 0;
+let txDepth = 0;
 
 /**
- * Executes `fn` inside a SQLite SAVEPOINT transaction so both standalone and nested
- * repository writes commit or roll back atomically without nesting errors.
+ * Executes `fn` inside a SQLite transaction. Top-level calls use `BEGIN IMMEDIATE` so WAL write
+ * locks wait on `busy_timeout` instead of failing immediately on deferred lock upgrades; nested
+ * calls transparently use `SAVEPOINT`.
  */
 export function withTransaction<T>(fn: () => T): T {
   const db = getDatabase();
+  if (txDepth === 0) {
+    db.exec('BEGIN IMMEDIATE;');
+    txDepth = 1;
+    try {
+      const result = fn();
+      db.exec('COMMIT;');
+      return result;
+    } catch (err: unknown) {
+      try {
+        db.exec('ROLLBACK;');
+      } catch {
+        // ignore rollback error
+      }
+      throw err;
+    } finally {
+      txDepth = 0;
+    }
+  }
+
   const sp = `cdes_sp_${++savepointSeq}`;
   db.exec(`SAVEPOINT ${sp};`);
+  txDepth += 1;
   try {
     const result = fn();
     db.exec(`RELEASE SAVEPOINT ${sp};`);
@@ -200,6 +230,8 @@ export function withTransaction<T>(fn: () => T): T {
       // ignore rollback error
     }
     throw err;
+  } finally {
+    txDepth -= 1;
   }
 }
 

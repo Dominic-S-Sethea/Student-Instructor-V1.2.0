@@ -4,12 +4,15 @@ import { z } from 'zod';
 // Authentication Schemas
 // ============================================================================
 
+const passwordByteLimit = (val: string) => Buffer.byteLength(val, 'utf8') <= 72;
+
 export const RegisterSchema = z.object({
   email: z.string().trim().email('Invalid email format').max(255),
   password: z
     .string()
     .min(8, 'Password must be at least 8 characters long.')
-    .max(128, 'Password is too long'),
+    .max(72, 'Password must be at most 72 characters.')
+    .refine(passwordByteLimit, 'Password must not exceed 72 UTF-8 bytes.'),
   role: z.enum(['student', 'organization'], {
     message: 'Role must be either "student" or "organization".',
   }),
@@ -20,7 +23,20 @@ export const RegisterSchema = z.object({
 
 export const LoginSchema = z.object({
   email: z.string().trim().email('Invalid email format').max(255),
-  password: z.string().min(1, 'Password is required').max(128),
+  password: z
+    .string()
+    .min(1, 'Password is required')
+    .max(72, 'Password must be at most 72 characters.')
+    .refine(passwordByteLimit, 'Password must not exceed 72 UTF-8 bytes.'),
+});
+
+export const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required').max(72),
+  newPassword: z
+    .string()
+    .min(8, 'New password must be at least 8 characters long.')
+    .max(72, 'Password must be at most 72 characters.')
+    .refine(passwordByteLimit, 'Password must not exceed 72 UTF-8 bytes.'),
 });
 
 // ============================================================================

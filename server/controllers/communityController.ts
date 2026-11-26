@@ -11,6 +11,7 @@ import {
 } from '../middleware/authMiddleware';
 import { rateLimiter } from '../middleware/rateLimiter';
 import { HttpError, safeErrorMessage } from '../utils/httpErrors';
+import { assertSafeOptionalHttpUrl } from '../utils/safeUrl';
 import {
   ALLOWED_POST_TYPES,
   ALLOWED_SESSION_TYPES,
@@ -19,6 +20,7 @@ import {
   normalizeReportReason,
   sanitizeAuthorDisplayName,
   sanitizeCommunityTags,
+  stripPublicUserIds,
 } from '../services/communityModerationHelper';
 
 const router = Router();
@@ -97,12 +99,13 @@ router.post('/communities/:id/leave', authenticateToken, (req: AuthenticatedRequ
 
 // 2. POSTS & DISCUSSIONS
 router.get('/posts', (req: Request, res: Response) =>
-  handle(res, () =>
-    res.json({
-      success: true,
-      data: communityRepository.getCommunityPosts(req.query.communityId as string | undefined, req.query.postType as string | undefined),
-    })
-  )
+  handle(res, () => {
+    const rows = communityRepository.getCommunityPosts(
+      req.query.communityId as string | undefined,
+      req.query.postType as string | undefined
+    ) as Array<Record<string, unknown>>;
+    res.json({ success: true, data: rows.map(stripPublicUserIds) });
+  })
 );
 
 router.post('/posts', authenticateToken, communityWriteLimiter, (req: AuthenticatedRequest, res: Response) =>
@@ -118,6 +121,7 @@ router.post('/posts', authenticateToken, communityWriteLimiter, (req: Authentica
     if (!communityRepository.getCommunityById(communityId)) {
       return res.status(404).json({ success: false, error: 'Community not found.' });
     }
+    const safeAvatar = assertSafeOptionalHttpUrl(body.author_avatar, 'author_avatar');
     const moderated = moderateCommunityPostInput(
       actingUserId,
       title,
@@ -136,14 +140,14 @@ router.post('/posts', authenticateToken, communityWriteLimiter, (req: Authentica
       author_id: actingUserId,
       author_name: moderated.authorName,
       author_role: req.user!.role,
-      author_avatar: typeof body.author_avatar === 'string' ? body.author_avatar : undefined,
+      author_avatar: safeAvatar,
       post_type: postType,
       title: moderated.title,
       content: moderated.content,
       tags: moderated.tags,
     }) as Record<string, unknown> | undefined;
     logConsentedActivity(actingUserId, 'COMMUNITY_POST_CREATE', { postId: post?.id, communityId, postType });
-    return res.json({ success: true, data: post, notice: moderated.notice });
+    return res.json({ success: true, data: post ? stripPublicUserIds(post) : post, notice: moderated.notice });
   })
 );
 
@@ -153,7 +157,10 @@ router.post('/posts/:id/upvote', authenticateToken, (req: AuthenticatedRequest, 
 
 // 3. COMMENTS
 router.get('/posts/:id/comments', (req: Request, res: Response) =>
-  handle(res, () => res.json({ success: true, data: communityRepository.getPostComments(req.params.id) }))
+  handle(res, () => {
+    const rows = communityRepository.getPostComments(req.params.id) as Array<Record<string, unknown>>;
+    res.json({ success: true, data: rows.map(stripPublicUserIds) });
+  })
 );
 
 router.post('/posts/:id/comments', authenticateToken, communityWriteLimiter, (req: AuthenticatedRequest, res: Response) =>
@@ -167,6 +174,7 @@ router.post('/posts/:id/comments', authenticateToken, communityWriteLimiter, (re
     if (!communityRepository.getPostById(req.params.id)) {
       return res.status(404).json({ success: false, error: 'Post not found.' });
     }
+    const safeAvatar = assertSafeOptionalHttpUrl(body.author_avatar, 'author_avatar');
     const rawAuthorName = sanitizeAuthorDisplayName(body.author_name, req.user!.email);
     const filterResult = safetyModerationService.evaluateContent(content, actingUserId);
     const authorCheck = safetyModerationService.evaluateContent(rawAuthorName, actingUserId);
@@ -182,12 +190,12 @@ router.post('/posts/:id/comments', authenticateToken, communityWriteLimiter, (re
       author_id: actingUserId,
       author_name: authorCheck.sanitizedContent,
       author_role: req.user!.role,
-      author_avatar: typeof body.author_avatar === 'string' ? body.author_avatar : undefined,
+      author_avatar: safeAvatar,
       parent_comment_id: typeof body.parent_comment_id === 'string' ? body.parent_comment_id : undefined,
       content: filterResult.sanitizedContent,
     }) as Record<string, unknown> | undefined;
     logConsentedActivity(actingUserId, 'COMMUNITY_COMMENT_ADD', { postId: req.params.id, commentId: comment?.id });
-    return res.json({ success: true, data: comment, notice: filterResult.warningNotice });
+    return res.json({ success: true, data: comment ? stripPublicUserIds(comment) : comment, notice: filterResult.warningNotice });
   })
 );
 
@@ -274,7 +282,8 @@ router.get('/projects/:slug', (req: Request, res: Response) =>
   handle(res, () => {
     const project = communityRepository.getProjectBySlug(req.params.slug) as Record<string, unknown> | undefined;
     if (!project) return res.status(404).json({ success: false, error: 'Project not found' });
-    const members = communityRepository.getProjectMembers(String(project.id));
+    const rawMembers = communityRepository.getProjectMembers(String(project.id)) as Array<Record<string, unknown>>;
+    const members = rawMembers.map(stripPublicUserIds);
     const milestones = communityRepository.getProjectMilestones(String(project.id));
     return res.json({ success: true, data: { ...project, members, milestones } });
   })
@@ -287,10 +296,11 @@ router.post('/projects/:id/join', authenticateToken, (req: AuthenticatedRequest,
     }
     const actingUserId = req.user!.userId;
     const body = (req.body || {}) as Record<string, unknown>;
+    const safeAvatar = assertSafeOptionalHttpUrl(body.user_avatar, 'user_avatar');
     const result = communityRepository.joinProject(req.params.id, {
       user_id: actingUserId,
       user_name: typeof body.user_name === 'string' ? body.user_name : req.user!.email.split('@')[0],
-      user_avatar: typeof body.user_avatar === 'string' ? body.user_avatar : undefined,
+      user_avatar: safeAvatar,
       role_in_project: typeof body.role_in_project === 'string' ? body.role_in_project : 'Collaborator',
     });
     logConsentedActivity(actingUserId, 'PROJECT_JOIN_REQUEST', { projectId: req.params.id, role: body.role_in_project });

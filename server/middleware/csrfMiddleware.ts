@@ -99,12 +99,22 @@ export function validateCsrfToken(req: Request, res: Response, next: NextFunctio
   }
 
   const cookies = parseCookies(req.headers.cookie);
-  const authHeader = req.headers['authorization'];
-  const hasBearer = typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
+  const authReq = req as AuthenticatedRequest;
+  const hasVerifiedBearer = Boolean(authReq.user && authReq.authSource === 'bearer');
   const hasSessionCookie = Boolean(cookies['cdes_jwt']);
 
-  if (hasBearer && !hasSessionCookie) {
+  if (hasVerifiedBearer && !hasSessionCookie) {
     next();
+    return;
+  }
+
+  const secFetchSite = typeof req.headers['sec-fetch-site'] === 'string' ? req.headers['sec-fetch-site'].toLowerCase() : '';
+  if (secFetchSite === 'cross-site') {
+    res.status(403).json({
+      success: false,
+      code: 'CSRF_CROSS_SITE_BLOCKED',
+      error: 'Cross-site state-changing request rejected.',
+    });
     return;
   }
 

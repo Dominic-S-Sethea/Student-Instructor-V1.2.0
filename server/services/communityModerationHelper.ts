@@ -104,3 +104,11 @@ export function normalizeReportReason(
   }
   return 'inappropriate_content';
 }
+
+export function stripPublicUserIds<T extends Record<string, unknown>>(
+  row: T
+): Omit<T, 'author_id' | 'user_id'> {
+  const { author_id: _a, user_id: _u, ...rest } = row;
+  return rest;
+}
+

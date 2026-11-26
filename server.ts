@@ -2,14 +2,21 @@ import { loadConfig } from './server/config';
 import { closeDatabase } from './server/db/connection';
 import { runMigrations } from './server/db/migrate';
 import { createApp } from './server/app';
+import { getJwtSecret } from './server/services/authService';
 
 async function startServer(): Promise<void> {
   const config = loadConfig();
 
-  if ((config.isProduction || config.isStaging) && !(process.env.JWT_SECRET || '').trim()) {
-    console.warn(
-      `[SECURITY] JWT_SECRET is not set in ${config.nodeEnv}; an ephemeral secret will be used and sessions will invalidate on restart.`
-    );
+  if (config.isProduction || config.isStaging) {
+    try {
+      getJwtSecret();
+    } catch (err: unknown) {
+      console.error(
+        `[FATAL][SECURITY] Invalid JWT_SECRET in ${config.nodeEnv}:`,
+        err instanceof Error ? err.message : err
+      );
+      process.exit(1);
+    }
   }
 
   try {

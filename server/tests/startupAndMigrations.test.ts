@@ -38,7 +38,7 @@ async function run(): Promise<void> {
     process.env.NODE_ENV = 'production';
     const prodRes = runMigrations({ seedCatalog: true, seedDemo: false });
     assert.strictEqual(prodRes.success, true);
-    assert.strictEqual(prodRes.schemaVersion, 11);
+    assert.strictEqual(prodRes.schemaVersion, 12);
     const db = getDatabase();
     const userCount = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
     assert.strictEqual(userCount, 0, 'Production startup must create zero demo users');
@@ -83,13 +83,14 @@ async function run(): Promise<void> {
     `).run(mig7Now, mig7Now);
     closeDatabase();
 
-    // Upgrade to v11
+    // Upgrade to v12
     const upgRes = runMigrations({ seedCatalog: true, seedDemo: true });
-    assert.strictEqual(upgRes.schemaVersion, 11);
+    assert.strictEqual(upgRes.schemaVersion, 12);
     assert(upgRes.appliedMigrations.some((m) => m.includes('008')));
     assert(upgRes.appliedMigrations.some((m) => m.includes('009')));
     assert(upgRes.appliedMigrations.some((m) => m.includes('010')));
     assert(upgRes.appliedMigrations.some((m) => m.includes('011')));
+    assert(upgRes.appliedMigrations.some((m) => m.includes('012')));
     const upgradedRow = getDatabase()
       .prepare('SELECT id, email FROM users WHERE id = ?')
       .get('usr-legacy-1') as { id: string; email: string } | undefined;
@@ -104,7 +105,7 @@ async function run(): Promise<void> {
       const healthJson = (await healthRes.json()) as { status: string; aiEnabled: boolean; database: { schemaVersion: number } };
       assert.strictEqual(healthJson.status, 'ok');
       assert.strictEqual(healthJson.aiEnabled, false);
-      assert.strictEqual(healthJson.database.schemaVersion, 11);
+      assert.strictEqual(healthJson.database.schemaVersion, 12);
     });
 
     // 3. Backup & Restore drill into new location
