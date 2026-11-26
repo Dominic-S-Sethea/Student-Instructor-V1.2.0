@@ -70,6 +70,8 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
     savedIds,
     savedMetadataById,
     isAccountSynced,
+    error: savedError,
+    clearError: clearSavedError,
     toggleSaveScholarship,
     updateSavedStatus,
     toggleChecklistItem,
@@ -312,18 +314,32 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
             </div>
           </div>
 
-          {(fetchError || accessNotice) && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300/60 bg-slate-950/50 px-4 py-2.5 text-xs text-amber-100">
-              <span>{fetchError || accessNotice}</span>
-              {fetchError && (
-                <button
-                  type="button"
-                  onClick={() => void fetchScholarships()}
-                  className="rounded-lg bg-white/20 px-3 py-1 font-bold text-white hover:bg-white/30"
-                >
-                  Retry
-                </button>
-              )}
+          {(fetchError || savedError || accessNotice) && (
+            <div
+              role="alert"
+              className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300/60 bg-slate-950/50 px-4 py-2.5 text-xs text-amber-100"
+            >
+              <span>{fetchError || savedError || accessNotice}</span>
+              <div className="flex items-center gap-2">
+                {fetchError && (
+                  <button
+                    type="button"
+                    onClick={() => void fetchScholarships()}
+                    className="rounded-lg bg-white/20 px-3 py-1 font-bold text-white hover:bg-white/30 cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                )}
+                {savedError && (
+                  <button
+                    type="button"
+                    onClick={clearSavedError}
+                    className="rounded-lg bg-white/20 px-3 py-1 font-bold text-white hover:bg-white/30 cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

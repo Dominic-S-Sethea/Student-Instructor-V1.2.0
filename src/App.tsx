@@ -7,6 +7,7 @@ import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { AppTabRouter } from './components/AppTabRouter';
 import { ADMIN_ONLY_TABS } from './components/navigation/navConfig';
+import { readTabFromHash, VALID_TABS, writeTabHash } from './utils/tabHashRouting';
 import { topCambodianUniversities } from './data/universityIntelligenceData';
 import { universityClient } from './services/universityClient';
 import { usePersistedNotifications } from './hooks/usePersistedNotifications';
@@ -15,6 +16,7 @@ import { buildSessionStudentProfile } from './utils/appSessionProfile';
 import { LanguageProvider } from './context/LanguageContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SavedScholarshipsProvider } from './context/SavedScholarshipsContext';
 import { AuthModal } from './components/AuthModal';
 import type {
   TabView,
@@ -35,44 +37,6 @@ const BookingModal = lazy(() => import('./components/BookingModal').then((m) => 
 const PatchNotesModal = lazy(() => import('./components/PatchNotesModal').then((m) => ({ default: m.PatchNotesModal })));
 const AnalyticsTelemetryDrawer = lazy(() => import('./components/AnalyticsTelemetryDrawer').then((m) => ({ default: m.AnalyticsTelemetryDrawer })));
 const ROICalculatorModal = lazy(() => import('./components/ROICalculatorModal').then((m) => ({ default: m.ROICalculatorModal })));
-
-const VALID_TABS: ReadonlySet<TabView> = new Set<TabView>([
-  'dashboard',
-  'avatar-world',
-  'decision-engine',
-  'university-intelligence',
-  'scholarships',
-  'advisor',
-  'ai-advisor',
-  'alumni',
-  'meetups',
-  'mentors',
-  'opportunities',
-  'profile',
-  'stem-discovery',
-  'events',
-  'community',
-  'research-lab',
-  'platform-architecture',
-  'data-strategy',
-  'become-mentor',
-]);
-
-function readTabFromHash(isAdmin: boolean): TabView {
-  if (typeof window === 'undefined') return 'dashboard';
-  const raw = window.location.hash.replace(/^#\/?/, '').split('?')[0].trim() as TabView;
-  if (!raw || !VALID_TABS.has(raw)) return 'dashboard';
-  if (!isAdmin && ADMIN_ONLY_TABS.includes(raw)) return 'dashboard';
-  return raw;
-}
-
-function writeTabHash(tab: TabView): void {
-  if (typeof window === 'undefined') return;
-  const targetHash = `#${tab}`;
-  if (window.location.hash !== targetHash) {
-    window.history.pushState(null, '', targetHash);
-  }
-}
 
 function AppContent() {
   const { user, authenticated, profile: authProfile } = useAuth();
@@ -292,6 +256,12 @@ function AppContent() {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans flex flex-col selection:bg-blue-500 selection:text-white transition-colors">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:rounded-xl focus:bg-blue-600 focus:text-white focus:font-semibold focus:shadow-lg"
+      >
+        Skip to main content
+      </a>
       <Navbar
         currentTab={activeTab}
         activeTab={activeTab}
@@ -413,7 +383,9 @@ export default function App() {
     <ThemeProvider>
       <LanguageProvider>
         <AuthProvider>
-          <AppContent />
+          <SavedScholarshipsProvider>
+            <AppContent />
+          </SavedScholarshipsProvider>
         </AuthProvider>
       </LanguageProvider>
     </ThemeProvider>

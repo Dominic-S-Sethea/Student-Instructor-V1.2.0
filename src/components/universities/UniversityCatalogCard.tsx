@@ -9,7 +9,7 @@ interface UniversityCatalogCardProps {
   onOpenROI: (univId: string) => void;
 }
 
-export const UniversityCatalogCard: React.FC<UniversityCatalogCardProps> = ({
+export const UniversityCatalogCard: React.FC<UniversityCatalogCardProps> = React.memo(({
   univ,
   onOpenDossier,
   onOpenROI,
@@ -129,4 +129,6 @@ export const UniversityCatalogCard: React.FC<UniversityCatalogCardProps> = ({
       </button>
     </div>
   </div>
-);
+));
+
+UniversityCatalogCard.displayName = 'UniversityCatalogCard';

@@ -99,7 +99,11 @@ export const NotificationBellMenu: React.FC<NotificationBellMenuProps> = ({
             )}
           </div>
 
-          <div className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+          <div
+            aria-live="polite"
+            aria-relevant="additions text"
+            className="max-h-72 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800"
+          >
             {notifications.length === 0 ? (
               <div className="p-6 text-center text-xs text-slate-500 dark:text-slate-400">
                 {isKhmer ? 'មិនមានការជូនដំណឹងថ្មីទេ' : 'You are all caught up.'}

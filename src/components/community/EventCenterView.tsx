@@ -25,6 +25,7 @@ export const EventCenterView: React.FC<Props> = ({ onOpenReportModal, studentRol
   const [eventTypeFilter, setEventTypeFilter] = useState<string>('ALL');
   const [registeredEventIds, setRegisteredEventIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [rsvpError, setRsvpError] = useState<string | null>(null);
 
   useEffect(() => {
     void loadEvents();
@@ -34,10 +35,11 @@ export const EventCenterView: React.FC<Props> = ({ onOpenReportModal, studentRol
   const loadEvents = async (): Promise<void> => {
     try {
       setLoading(true);
+      setRsvpError(null);
       const data = await communityClient.getEvents(eventTypeFilter !== 'ALL' ? eventTypeFilter : undefined);
       setEvents(data);
     } catch (err) {
-      console.error('Failed to load campus events:', err);
+      setRsvpError(err instanceof Error ? err.message : 'Failed to load campus events.');
     } finally {
       setLoading(false);
     }
@@ -45,6 +47,7 @@ export const EventCenterView: React.FC<Props> = ({ onOpenReportModal, studentRol
 
   const handleRsvp = async (eventId: string): Promise<void> => {
     try {
+      setRsvpError(null);
       await communityClient.rsvpEvent(eventId, {
         response: 'yes',
         notes: studentRole
@@ -53,7 +56,7 @@ export const EventCenterView: React.FC<Props> = ({ onOpenReportModal, studentRol
       setRegisteredEventIds(prev => new Set(prev).add(eventId));
       setEvents(prev => prev.map(e => e.id === eventId ? { ...e, current_rsvp_count: e.current_rsvp_count + 1 } : e));
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Could not register for event');
+      setRsvpError(err instanceof Error ? err.message : 'Could not register for event');
     }
   };
 
@@ -99,6 +102,7 @@ export const EventCenterView: React.FC<Props> = ({ onOpenReportModal, studentRol
             {['ALL', 'workshop', 'hackathon', 'competition', 'webinar', 'ama_session'].map(t => (
               <button
                 key={t}
+                type="button"
                 onClick={() => setEventTypeFilter(t)}
                 className={`px-3 py-1 rounded-lg text-xs font-medium transition capitalize ${
                   eventTypeFilter === t
@@ -112,6 +116,22 @@ export const EventCenterView: React.FC<Props> = ({ onOpenReportModal, studentRol
           </div>
         </div>
       </div>
+
+      {rsvpError && (
+        <div
+          role="alert"
+          className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs text-rose-700 flex items-center justify-between gap-2"
+        >
+          <span>{rsvpError}</span>
+          <button
+            type="button"
+            onClick={() => setRsvpError(null)}
+            className="text-rose-800 font-semibold hover:underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Events Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">

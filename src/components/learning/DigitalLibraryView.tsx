@@ -43,6 +43,7 @@ export const DigitalLibraryView: React.FC<DigitalLibraryViewProps> = ({
   const [subjects, setSubjects] = useState<(Subject & { categories?: Category[] })[]>([]);
   const [contents, setContents] = useState<(LearningContent & { subject_name?: string; subject_color?: string })[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Filters
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
@@ -66,6 +67,7 @@ export const DigitalLibraryView: React.FC<DigitalLibraryViewProps> = ({
   const fetchCatalog = async (): Promise<void> => {
     try {
       setLoading(true);
+      setLoadError(null);
       const [subData, contentData] = await Promise.all([
         learningClient.getSubjects(studentId),
         learningClient.getContentCatalog(
@@ -82,7 +84,9 @@ export const DigitalLibraryView: React.FC<DigitalLibraryViewProps> = ({
       setSubjects(subData);
       setContents(contentData);
     } catch (err) {
-      console.error('Error fetching digital library:', err);
+      setLoadError(
+        err instanceof Error ? err.message : 'Unable to load the digital library catalog right now.'
+      );
     } finally {
       setLoading(false);
     }
@@ -170,6 +174,21 @@ export const DigitalLibraryView: React.FC<DigitalLibraryViewProps> = ({
       </div>
 
       {/* Filter and Search Bar */}
+      {loadError && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 flex flex-wrap items-center justify-between gap-2"
+        >
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={() => void fetchCatalog()}
+            className="px-3 py-1 rounded-lg bg-rose-600 text-white font-semibold hover:bg-rose-700 cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-4">
         <form onSubmit={handleSearchSubmit} className="flex gap-2">
           <div className="relative flex-1">

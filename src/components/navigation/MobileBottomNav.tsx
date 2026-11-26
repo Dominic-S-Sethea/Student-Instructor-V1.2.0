@@ -37,7 +37,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   return (
     <nav
       aria-label="Mobile quick navigation"
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-1 py-1.5"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-1 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]"
     >
       <div className="grid grid-cols-5 gap-1 max-w-lg mx-auto">
         {PRIMARY_NAV_ITEMS.map((item) => {
@@ -48,6 +48,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
             <button
               key={item.id}
               type="button"
+              aria-current={active ? 'page' : undefined}
               onClick={() => onSelectTab(item.id)}
               className={`min-h-[44px] flex flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1 text-[11px] font-bold transition-colors cursor-pointer ${
                 active

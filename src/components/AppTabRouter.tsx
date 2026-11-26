@@ -69,7 +69,7 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = (props) => {
   const { activeTab, sessionKey, isAdmin, studentProfile, mentors, meetups, majorInsights, opportunities, universities } = props;
 
   return (
-    <main className="flex-1 w-full mx-auto pb-20 lg:pb-0">
+    <main id="main-content" tabIndex={-1} className="flex-1 w-full mx-auto pb-20 lg:pb-0 focus:outline-hidden">
       {activeTab === 'dashboard' && (
         <StudentDashboard
           key={sessionKey}

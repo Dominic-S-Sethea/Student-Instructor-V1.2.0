@@ -154,11 +154,13 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
     }
   };
 
+  const [confirmingClear, setConfirmingClear] = useState(false);
+
   const handleClearAll = async (): Promise<void> => {
-    if (!window.confirm('Clear your USER, MEMORY notes, and all saved facts?')) return;
     setError(null);
     try {
       await memoryClient.clearAll();
+      setConfirmingClear(false);
       setStatusNote('All Hermes Growth Memory cleared.');
       await loadSnapshot();
     } catch (err) {
@@ -225,18 +227,38 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => void handleClearAll()}
-          className="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-          <span>Reset My Memory</span>
-        </button>
+        {!confirmingClear ? (
+          <button
+            type="button"
+            onClick={() => setConfirmingClear(true)}
+            className="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Reset My Memory</span>
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 self-start sm:self-auto" role="group" aria-label="Confirm memory reset">
+            <button
+              type="button"
+              onClick={() => void handleClearAll()}
+              className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Confirm Reset</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingClear(false)}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       {error && (
-        <div className="rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 px-4 py-2.5 text-xs text-rose-700 dark:text-rose-300">
+        <div role="alert" className="rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 px-4 py-2.5 text-xs text-rose-700 dark:text-rose-300">
           {error}
         </div>
       )}

@@ -37,6 +37,7 @@ export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
   const [joinRole, setJoinRole] = useState('Frontend & Khmer NLP Contributor');
   const [joining, setJoining] = useState(false);
   const [joinSuccess, setJoinSuccess] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
   const studentId = authenticated && user?.id ? user.id : '';
   const studentName = authenticated ? profile?.name || user?.email?.split('@')[0] || 'Student' : 'Guest';
@@ -88,6 +89,7 @@ export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
 
     try {
       setJoining(true);
+      setJoinError(null);
       await communityClient.joinProject(selectedProject.id, {
         user_id: studentId,
         user_name: studentName,
@@ -101,8 +103,8 @@ export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
         // Refresh project
         handleSelectProject(selectedProject);
       }, 1500);
-    } catch (err: any) {
-      alert(err.message || 'Could not join project');
+    } catch (err) {
+      setJoinError(err instanceof Error ? err.message : 'Could not join project');
     } finally {
       setJoining(false);
     }
@@ -403,6 +405,15 @@ export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {joinError && (
+                  <div
+                    role="alert"
+                    className="p-2.5 bg-rose-50 text-rose-700 rounded-xl text-xs border border-rose-200"
+                  >
+                    {joinError}
+                  </div>
+                )}
 
                 <div className="p-3 bg-blue-50 rounded-xl text-xs text-blue-800 border border-blue-200 leading-relaxed">
                   💡 By joining, you commit to collaborative teamwork and academic honesty under CDES project guidelines.

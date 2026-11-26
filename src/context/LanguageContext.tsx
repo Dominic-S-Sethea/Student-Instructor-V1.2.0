@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { analytics } from '../utils/analytics';
 
 export type Language = 'en' | 'km';
@@ -443,7 +443,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     document.documentElement.lang = language;
   }, [language]);
 
-  const setLanguage = (lang: Language): void => {
+  const setLanguage = useCallback((lang: Language): void => {
     setLanguageState(lang);
     try {
       localStorage.setItem('preferred_language', lang);
@@ -451,25 +451,29 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // Ignore storage access errors
     }
     analytics.track('change_language', { language: lang });
-  };
+  }, []);
 
-  const t = (key: string, fallback?: string): string => {
-    const currentDict = translations[language];
-    if (currentDict && currentDict[key]) {
-      return currentDict[key];
-    }
-    // Fallback to English
-    if (translations.en[key]) {
-      return translations.en[key];
-    }
-    return fallback || key;
-  };
-
-  return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
-      {children}
-    </LanguageContext.Provider>
+  const t = useCallback(
+    (key: string, fallback?: string): string => {
+      const currentDict = translations[language];
+      if (currentDict && currentDict[key]) {
+        return currentDict[key];
+      }
+      // Fallback to English
+      if (translations.en[key]) {
+        return translations.en[key];
+      }
+      return fallback || key;
+    },
+    [language]
   );
+
+  const value = useMemo<LanguageContextType>(
+    () => ({ language, setLanguage, t }),
+    [language, setLanguage, t]
+  );
+
+  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 };
 
 export const useLanguage = () => useContext(LanguageContext);

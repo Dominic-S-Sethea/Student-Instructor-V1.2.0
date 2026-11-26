@@ -14,7 +14,7 @@ import {
   downloadUniversityDossier,
 } from '../services/googleDriveService';
 import { getSafeHttpUrl } from '../utils/safeUrl';
-import { useEscapeKey } from '../hooks/useModalAccessibility';
+import { useAccessibleDialog } from '../hooks/useModalAccessibility';
 import type { ComprehensiveUniversityProfile } from '../types';
 
 interface GoogleDriveHubModalProps {
@@ -34,7 +34,7 @@ export const GoogleDriveHubModal: React.FC<GoogleDriveHubModalProps> = ({
   const [photoUrlInput, setPhotoUrlInput] = useState('');
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  useEscapeKey(isOpen, onClose);
+  useAccessibleDialog(isOpen, onClose, dialogRef);
 
   const previewMarkdown = useMemo(
     () => (currentUniversity ? buildUniversityDossierMarkdown(currentUniversity) : ''),

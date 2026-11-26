@@ -11,7 +11,7 @@ interface ScholarshipDirectoryCardProps {
   onOpenDetail: (scholarship: ScholarshipItem) => void;
 }
 
-export const ScholarshipDirectoryCard: React.FC<ScholarshipDirectoryCardProps> = ({
+export const ScholarshipDirectoryCard: React.FC<ScholarshipDirectoryCardProps> = React.memo(({
   scholarship,
   isSaved,
   onToggleSave,
@@ -203,4 +203,6 @@ export const ScholarshipDirectoryCard: React.FC<ScholarshipDirectoryCardProps> =
       </div>
     </article>
   );
-};
+});
+
+ScholarshipDirectoryCard.displayName = 'ScholarshipDirectoryCard';

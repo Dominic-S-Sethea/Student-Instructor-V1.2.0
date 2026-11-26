@@ -38,6 +38,7 @@ export const MentorCenterView: React.FC<Props> = ({ onOpenReportModal }) => {
   const [bookingNotes, setBookingNotes] = useState('');
   const [submittingBooking, setSubmittingBooking] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   const studentId = user?.id || '';
   const studentName = profile?.name || user?.email?.split('@')[0] || 'Student';
@@ -91,6 +92,7 @@ export const MentorCenterView: React.FC<Props> = ({ onOpenReportModal }) => {
 
     try {
       setSubmittingBooking(true);
+      setBookingError(null);
       const newSession = await communityClient.bookMentor({
         mentor_id: selectedMentor.id,
         student_id: studentId,
@@ -110,7 +112,7 @@ export const MentorCenterView: React.FC<Props> = ({ onOpenReportModal }) => {
         setActiveTab('my_sessions');
       }, 1800);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to book session');
+      setBookingError(err instanceof Error ? err.message : 'Failed to book session');
     } finally {
       setSubmittingBooking(false);
     }
@@ -469,6 +471,15 @@ export const MentorCenterView: React.FC<Props> = ({ onOpenReportModal }) => {
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {bookingError && (
+                  <div
+                    role="alert"
+                    className="p-2.5 bg-rose-50 text-rose-700 rounded-xl text-xs border border-rose-200"
+                  >
+                    {bookingError}
+                  </div>
+                )}
 
                 <div className="p-2.5 bg-blue-50 text-blue-800 rounded-xl text-[11px] flex items-center gap-2 border border-blue-200">
                   <ShieldCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />

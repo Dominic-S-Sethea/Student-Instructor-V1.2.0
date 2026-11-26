@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import Markdown from 'react-markdown';
+import { SafeMarkdown } from '../common/SafeMarkdown';
 import {
   Sparkles,
   Bot,
@@ -510,7 +510,7 @@ Welcome to CDES AI 2.0. Select any specialized agent or choose a suggested inqui
 
                       {/* Message Content */}
                       <div className={`prose prose-xs max-w-none ${isUser ? 'text-white prose-invert' : 'text-slate-800'}`}>
-                        <Markdown>{msg.text}</Markdown>
+                        <SafeMarkdown>{msg.text}</SafeMarkdown>
                       </div>
 
                       {/* Memory Anchors Applied */}
@@ -977,7 +977,7 @@ Welcome to CDES AI 2.0. Select any specialized agent or choose a suggested inqui
             </div>
 
             <div className="prose prose-xs max-w-none text-slate-700 leading-relaxed">
-              <Markdown>{adaptiveConcept.explanations[activeExplanationMode].body}</Markdown>
+              <SafeMarkdown>{adaptiveConcept.explanations[activeExplanationMode].body}</SafeMarkdown>
             </div>
 
             <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/80 text-xs text-amber-900 font-medium">
@@ -1186,7 +1186,7 @@ Welcome to CDES AI 2.0. Select any specialized agent or choose a suggested inqui
                 <p className="text-xs">{safetyTestResult.interventionExplanation}</p>
                 {safetyTestResult.neutralizedResponse && (
                   <div className="p-3 bg-white rounded-xl border border-rose-200 text-xs text-slate-800 prose prose-xs max-w-none">
-                    <Markdown>{safetyTestResult.neutralizedResponse}</Markdown>
+                    <SafeMarkdown>{safetyTestResult.neutralizedResponse}</SafeMarkdown>
                   </div>
                 )}
               </div>

@@ -158,6 +158,13 @@ async function run(): Promise<void> {
           headers: { 'Content-Type': 'application/json' },
         });
       }
+      if (url === '/api/test/slow') {
+        return await new Promise<Response>((_resolve, reject) => {
+          const onAbort = () => reject(init?.signal?.reason || new Error('Aborted'));
+          if (init?.signal?.aborted) return onAbort();
+          init?.signal?.addEventListener('abort', onAbort, { once: true });
+        });
+      }
       return new Response(JSON.stringify({ success: true, data: { ping: 'pong' } }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -178,6 +185,19 @@ async function run(): Promise<void> {
     await assert.rejects(
       () => apiGet('/api/test/fail'),
       (err: unknown) => err instanceof ApiClientError && err.status === 400 && err.code === 'BAD_INPUT'
+    );
+
+    // 5. apiClient default timeout (408 REQUEST_TIMEOUT) & caller AbortSignal composition
+    await assert.rejects(
+      () => apiGet('/api/test/slow', { timeoutMs: 25 }),
+      (err: unknown) => err instanceof ApiClientError && err.status === 408 && err.code === 'REQUEST_TIMEOUT'
+    );
+
+    const callerAbort = new AbortController();
+    setTimeout(() => callerAbort.abort(new Error('USER_CANCELLED')), 15);
+    await assert.rejects(
+      () => apiGet('/api/test/slow', { signal: callerAbort.signal, timeoutMs: 5000 }),
+      (err: unknown) => err instanceof Error && err.message === 'USER_CANCELLED'
     );
   } finally {
     globalThis.fetch = originalFetch;

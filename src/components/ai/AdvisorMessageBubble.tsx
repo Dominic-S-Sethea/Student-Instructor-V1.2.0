@@ -1,5 +1,4 @@
 import React from 'react';
-import Markdown from 'react-markdown';
 import {
   ArrowRight,
   Bot,
@@ -14,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { ChatMessage } from '../../types';
 import { getSafeHttpUrl } from '../../utils/safeUrl';
+import { SafeMarkdown } from '../common/SafeMarkdown';
 
 interface AdvisorMessageBubbleProps {
   message: ChatMessage;
@@ -22,7 +22,7 @@ interface AdvisorMessageBubbleProps {
   onSelectQuestion: (q: string) => void;
 }
 
-export const AdvisorMessageBubble: React.FC<AdvisorMessageBubbleProps> = ({
+export const AdvisorMessageBubble: React.FC<AdvisorMessageBubbleProps> = React.memo(({
   message,
   isSourcesExpanded,
   onToggleSources,
@@ -52,7 +52,7 @@ export const AdvisorMessageBubble: React.FC<AdvisorMessageBubbleProps> = ({
           <div className="whitespace-pre-wrap">{message.text}</div>
         ) : (
           <div className="space-y-2 leading-relaxed [&_h3]:text-base [&_h3]:font-bold [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline">
-            <Markdown>{message.text}</Markdown>
+            <SafeMarkdown>{message.text}</SafeMarkdown>
           </div>
         )}
 
@@ -170,4 +170,6 @@ export const AdvisorMessageBubble: React.FC<AdvisorMessageBubbleProps> = ({
       </div>
     </div>
   );
-};
+});
+
+AdvisorMessageBubble.displayName = 'AdvisorMessageBubble';

@@ -272,7 +272,13 @@ export const AIAdvisor: React.FC<AIAdvisorProps> = ({
           </div>
 
           <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col h-[540px]">
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5">
+            <div
+              role="log"
+              aria-live="polite"
+              aria-relevant="additions text"
+              aria-label={isKhmer ? 'ប្រវត្តិសន្ទនាទីប្រឹក្សាសិក្សា' : 'Study Advisor conversation'}
+              className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5"
+            >
               {messages.map((msg) => (
                 <AdvisorMessageBubble
                   key={msg.id}

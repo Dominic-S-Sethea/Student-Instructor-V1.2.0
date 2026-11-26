@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { profileClient, PrivacyConsentState } from '../services/profileClient';
 import type { EducationEntry } from '../services/authClient';
+import { PrivacyErasureCard } from './PrivacyErasureCard';
 
 export const StudentEducationAndPrivacyPanel: React.FC = () => {
   const { authenticated, user, profile, education, refreshSession } = useAuth();
@@ -381,6 +382,12 @@ export const StudentEducationAndPrivacyPanel: React.FC = () => {
               {isKhmer ? 'បិទការចែករំលែកទាំងអស់' : 'Turn Off All Optional Sharing'}
             </button>
           </div>
+          <PrivacyErasureCard
+            isKhmer={isKhmer}
+            disabled={saving}
+            onErased={(next, msg) => { setConsent(next); setErrorMsg(null); setStatusMsg(msg); }}
+            onError={(msg) => { setStatusMsg(null); setErrorMsg(msg); }}
+          />
         </div>
       )}
     </div>

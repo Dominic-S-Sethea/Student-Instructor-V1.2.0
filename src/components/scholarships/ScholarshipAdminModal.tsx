@@ -163,10 +163,12 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
     }
   };
 
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
   const handleDeleteScholarship = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this scholarship entry?')) return;
     try {
       await apiFetchRaw(`/api/scholarships/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      setPendingDeleteId(null);
       notifySuccess('Scholarship removed from database.');
       onRefreshData();
     } catch (err) {
@@ -620,13 +622,34 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
                       >
                         Verify Now
                       </button>
-                      <button
-                        onClick={() => handleDeleteScholarship(sch.id)}
-                        className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
-                        title="Delete scholarship"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {pendingDeleteId === sch.id ? (
+                        <div className="inline-flex items-center gap-1" role="group" aria-label="Confirm scholarship deletion">
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteScholarship(sch.id)}
+                            className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold hover:bg-rose-700 cursor-pointer"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingDeleteId(null)}
+                            className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-semibold hover:bg-slate-200 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setPendingDeleteId(sch.id)}
+                          className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                          title="Delete scholarship"
+                          aria-label={`Delete ${sch.name}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

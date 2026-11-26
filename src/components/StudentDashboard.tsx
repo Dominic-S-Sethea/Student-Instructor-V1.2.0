@@ -22,9 +22,8 @@ import type {
 import type { ScholarshipItem } from '../types/scholarship';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
+import { useSavedScholarshipsContext } from '../context/SavedScholarshipsContext';
 import { scholarshipClient } from '../services/scholarshipClient';
-import { savedScholarshipClient } from '../services/savedScholarshipClient';
-import { readSavedScholarshipIds, writeSavedScholarshipIds } from '../utils/savedScholarships';
 import { UpcomingDeadlinesStrip } from './dashboard/UpcomingDeadlinesStrip';
 
 interface StudentDashboardProps {
@@ -58,14 +57,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   const { language } = useLanguage();
   const isKhmer = language === 'km';
   const { authenticated, user, profile: authProfile } = useAuth();
-  const scopeId = authenticated ? user?.id ?? null : null;
+  const { savedIds } = useSavedScholarshipsContext();
+  const savedCount = savedIds.length;
 
   const [aiQuestion, setAiQuestion] = useState('');
   const [liveScholarships, setLiveScholarships] = useState<ScholarshipItem[]>([]);
   const [totalScholarships, setTotalScholarships] = useState<number>(0);
   const [loadingScholarships, setLoadingScholarships] = useState(true);
   const [scholarshipError, setScholarshipError] = useState<string | null>(null);
-  const [savedCount, setSavedCount] = useState<number>(() => readSavedScholarshipIds(scopeId).length);
 
   const navigate = (tab: TabView): void => {
     if (onNavigate) onNavigate(tab);
@@ -103,28 +102,6 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({
   useEffect(() => {
     void loadUpcomingDeadlines();
   }, [loadUpcomingDeadlines]);
-
-  useEffect(() => {
-    if (!scopeId) {
-      setSavedCount(readSavedScholarshipIds(null).length);
-      return;
-    }
-    let active = true;
-    savedScholarshipClient
-      .list()
-      .then((rows) => {
-        if (!active) return;
-        const ids = rows.map((r) => r.scholarshipId);
-        writeSavedScholarshipIds(scopeId, ids);
-        setSavedCount(ids.length);
-      })
-      .catch(() => {
-        if (active) setSavedCount(readSavedScholarshipIds(scopeId).length);
-      });
-    return () => {
-      active = false;
-    };
-  }, [scopeId]);
 
   const upcomingStrip = useMemo(() => {
     const open = liveScholarships.filter((s) => s.deadlineStatus !== 'expired');

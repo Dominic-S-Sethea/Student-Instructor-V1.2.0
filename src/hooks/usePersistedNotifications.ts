@@ -1,16 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { NotificationItem } from '../types';
 import { notificationClient } from '../services/notificationClient';
 
 export function usePersistedNotifications(authenticated: boolean, sessionKey: string) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const notificationsRef = useRef(notifications);
+  notificationsRef.current = notifications;
 
   useEffect(() => {
     if (!authenticated) {
       setNotifications([]);
+      setError(null);
       return;
     }
     let active = true;
+    setError(null);
     notificationClient
       .list(30)
       .then((res) => {
@@ -27,8 +32,10 @@ export function usePersistedNotifications(authenticated: boolean, sessionKey: st
           }))
         );
       })
-      .catch(() => {
-        if (active) setNotifications([]);
+      .catch((err) => {
+        if (!active) return;
+        setNotifications([]);
+        setError(err instanceof Error ? err.message : 'Unable to load notifications.');
       });
     return () => {
       active = false;
@@ -37,20 +44,32 @@ export function usePersistedNotifications(authenticated: boolean, sessionKey: st
 
   const markRead = useCallback(
     (id: string) => {
+      setError(null);
+      const snapshot = notificationsRef.current;
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
-      if (authenticated) void notificationClient.markRead(id).catch(() => {});
+      if (!authenticated) return;
+      void notificationClient.markRead(id).catch((err) => {
+        setNotifications(snapshot);
+        setError(err instanceof Error ? err.message : 'Failed to mark notification as read.');
+      });
     },
     [authenticated]
   );
 
   const markAllRead = useCallback(() => {
+    setError(null);
+    const snapshot = notificationsRef.current;
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    if (authenticated) void notificationClient.markAllRead().catch(() => {});
+    if (!authenticated) return;
+    void notificationClient.markAllRead().catch((err) => {
+      setNotifications(snapshot);
+      setError(err instanceof Error ? err.message : 'Failed to mark all notifications as read.');
+    });
   }, [authenticated]);
 
   const pushNotification = useCallback((item: NotificationItem) => {
     setNotifications((prev) => [item, ...prev]);
   }, []);
 
-  return { notifications, markRead, markAllRead, pushNotification };
+  return { notifications, error, markRead, markAllRead, pushNotification };
 }

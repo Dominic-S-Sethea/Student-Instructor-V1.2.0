@@ -168,6 +168,7 @@ export const TopNav: React.FC<TopNavProps> = ({
               <button
                 key={item.id}
                 type="button"
+                aria-current={active ? 'page' : undefined}
                 onClick={() => navigate(item.id)}
                 className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
                   active
@@ -209,6 +210,7 @@ export const TopNav: React.FC<TopNavProps> = ({
                     <button
                       key={item.id}
                       type="button"
+                      aria-current={active ? 'page' : undefined}
                       onClick={() => navigate(item.id)}
                       className={`w-full text-left px-3 py-2 rounded-xl transition-colors cursor-pointer ${
                         active
@@ -366,6 +368,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           <button
             type="button"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-expanded={mobileMenuOpen}
             aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
             className="lg:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
           >
@@ -381,6 +384,7 @@ export const TopNav: React.FC<TopNavProps> = ({
           isKhmer={isKhmer}
           isAdmin={isAdmin}
           onNavigate={navigate}
+          onClose={() => setMobileMenuOpen(false)}
         />
       )}
     </header>
