@@ -1,0 +1,1 @@
+import{d as i}from"./index-B3tC0RU0.js";const e={async chat(a){return i("/api/advisor/chat",{method:"POST",body:JSON.stringify(a)})},async evaluateDecision(a){return i("/api/decision/evaluate",{method:"POST",body:JSON.stringify(a)})}};export{e as g};
