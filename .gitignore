@@ -17,3 +17,6 @@ audit-current.json
 
 # bun.lock — deprecated as canonical on this host (no Bun); package-lock.json is the source of truth.
 *bun.lock
+
+__pycache__/
+*.pyc

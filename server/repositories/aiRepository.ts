@@ -76,7 +76,7 @@ export class AIRepository {
     return row || null;
   }
 
-  public updateAIMemory(studentId: string, updates: { preference_data?: any; learning_history?: any; career_interest?: string }): AIMemoryRecord {
+  public updateAIMemory(studentId: string, updates: { preference_data?: unknown; learning_history?: unknown; career_interest?: string }): AIMemoryRecord {
     const now = new Date().toISOString();
     const existing = this.getAIMemory(studentId);
 

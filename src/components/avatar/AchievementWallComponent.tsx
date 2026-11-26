@@ -25,7 +25,7 @@ export const AchievementWallComponent: React.FC<AchievementWallProps> = ({
   });
 
   return (
-    <div className="bg-gradient-to-b from-amber-950/80 to-amber-900/90 p-3 sm:p-4 rounded-2xl border-4 border-amber-800/80 shadow-2xl backdrop-blur-md max-w-xl mx-auto select-none">
+    <div className="bg-gradient-to-b from-amber-950/80 to-amber-900/90 p-3 sm:p-4 rounded-2xl border-4 border-amber-800/80 shadow-2xl backdrop-blur-md max-w-xl mx-auto">
       {/* Wall Header Ribbon */}
       <div className="flex items-center justify-between border-b border-amber-700/60 pb-2 mb-3">
         <div className="flex items-center space-x-2">

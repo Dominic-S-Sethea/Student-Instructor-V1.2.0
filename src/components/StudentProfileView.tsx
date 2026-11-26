@@ -15,7 +15,9 @@ import type { ScholarshipItem } from '../types/scholarship';
 import { StudentEducationAndPrivacyPanel } from './StudentEducationAndPrivacyPanel';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useSavedScholarshipsContext } from '../context/SavedScholarshipsContext';
 import { scholarshipClient } from '../services/scholarshipClient';
+import { getSafeHttpUrl } from '../utils/safeUrl';
 
 interface StudentProfileViewProps {
   studentProfile: StudentProfile;
@@ -28,17 +30,6 @@ interface StudentProfileViewProps {
   onNavigateTab?: (tab: TabView) => void;
 }
 
-function readSavedScholarshipIds(): string[] {
-  try {
-    const raw = localStorage.getItem('csip_saved_scholarships');
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
-
 export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
   studentProfile,
   onCancelBooking,
@@ -48,22 +39,28 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
   const { authenticated, user, profile: authProfile } = useAuth();
   const { language } = useLanguage();
   const isKhmer = language === 'km';
-  const [savedIds] = useState<string[]>(readSavedScholarshipIds);
-  const [savedCatalog, setSavedCatalog] = useState<ScholarshipItem[]>([]);
+  const { savedIds, hydratedItems } = useSavedScholarshipsContext();
+  const [fallbackCatalog, setFallbackCatalog] = useState<ScholarshipItem[]>([]);
 
   useEffect(() => {
-    if (!authenticated || savedIds.length === 0) return;
+    if (!authenticated || savedIds.length === 0 || hydratedItems.length >= savedIds.length) {
+      setFallbackCatalog([]);
+      return;
+    }
     let active = true;
     scholarshipClient
       .list()
       .then((res) => {
         if (!active) return;
-        const list = Array.isArray(res.scholarships) ? res.scholarships : [];
-        setSavedCatalog(list.filter((s) => savedIds.includes(s.id)));
+        setFallbackCatalog((res.scholarships || []).filter((s) => savedIds.includes(s.id)));
       })
-      .catch(() => { /* fallback cleanly to count only */ });
-    return () => { active = false; };
-  }, [authenticated, savedIds]);
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [authenticated, savedIds, hydratedItems.length]);
+
+  const savedCatalog = hydratedItems.length > 0 ? hydratedItems : fallbackCatalog;
 
   if (!authenticated) {
     return (
@@ -82,7 +79,7 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                 : 'Sign in or create a free student account to save your education timeline, manage scholarship targets, and control your privacy settings.'}
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-700 dark:text-slate-300">
+          <div id="profile-education-privacy" className="scroll-mt-6 rounded-2xl transition-all grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-slate-700 dark:text-slate-300">
             <div className="rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3.5">
               <GraduationCap className="w-4 h-4 text-blue-600 dark:text-blue-400 mb-1" />
               <div className="font-bold">Education Timeline</div>
@@ -166,7 +163,9 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
       </div>
 
       {/* Persistent Private Education Profile & Consent Panel */}
-      <StudentEducationAndPrivacyPanel />
+      <div id="profile-education-privacy" className="scroll-mt-6">
+        <StudentEducationAndPrivacyPanel />
+      </div>
 
       {/* Saved Scholarships Snapshot */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
@@ -237,21 +236,23 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <a
-                  href={session.meetingLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold inline-flex items-center gap-1.5"
-                >
-                  <Video className="w-3.5 h-3.5" />
-                  <span>Join Meet</span>
-                </a>
+                {getSafeHttpUrl(session.meetingLink) && (
+                  <a
+                    href={getSafeHttpUrl(session.meetingLink)!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold inline-flex items-center gap-1.5"
+                  >
+                    <Video className="w-3.5 h-3.5" />
+                    <span>{isKhmer ? 'ចូលរួម' : 'Join Meet'}</span>
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={() => onCancelBooking(session.id)}
                   className="px-3 py-2 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-medium cursor-pointer"
                 >
-                  Cancel
+                  {isKhmer ? 'បោះបង់' : 'Cancel'}
                 </button>
               </div>
             </div>

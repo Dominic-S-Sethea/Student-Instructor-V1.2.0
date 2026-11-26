@@ -17,12 +17,15 @@ import {
 } from 'lucide-react';
 import { ClientStudentProject } from '../../types';
 import { communityClient } from '../../services/communityClient';
+import { useAuth } from '../../context/AuthContext';
+import { getSafeHttpUrl } from '../../utils/safeUrl';
 
 interface Props {
   onOpenReportModal: (itemType: string, itemId: string) => void;
 }
 
 export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
+  const { authenticated, user, profile } = useAuth();
   const [projects, setProjects] = useState<ClientStudentProject[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedStage, setSelectedStage] = useState<string>('ALL');
@@ -34,9 +37,10 @@ export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
   const [joinRole, setJoinRole] = useState('Frontend & Khmer NLP Contributor');
   const [joining, setJoining] = useState(false);
   const [joinSuccess, setJoinSuccess] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
 
-  const studentId = 'usr-student-01';
-  const studentName = 'Dara Chan';
+  const studentId = authenticated && user?.id ? user.id : '';
+  const studentName = authenticated ? profile?.name || user?.email?.split('@')[0] || 'Student' : 'Guest';
 
   useEffect(() => {
     loadProjects();
@@ -85,6 +89,7 @@ export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
 
     try {
       setJoining(true);
+      setJoinError(null);
       await communityClient.joinProject(selectedProject.id, {
         user_id: studentId,
         user_name: studentName,
@@ -98,8 +103,8 @@ export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
         // Refresh project
         handleSelectProject(selectedProject);
       }, 1500);
-    } catch (err: any) {
-      alert(err.message || 'Could not join project');
+    } catch (err) {
+      setJoinError(err instanceof Error ? err.message : 'Could not join project');
     } finally {
       setJoining(false);
     }
@@ -282,11 +287,11 @@ export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
                 ))}
               </div>
 
-              {selectedProject.repository_url && (
+              {getSafeHttpUrl(selectedProject.repository_url) && (
                 <a
-                  href={selectedProject.repository_url}
+                  href={getSafeHttpUrl(selectedProject.repository_url)!}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="w-full py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 transition"
                 >
                   <Github className="w-4 h-4" /> Open Source Repository
@@ -400,6 +405,15 @@ export const ProjectRoomView: React.FC<Props> = ({ onOpenReportModal }) => {
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {joinError && (
+                  <div
+                    role="alert"
+                    className="p-2.5 bg-rose-50 text-rose-700 rounded-xl text-xs border border-rose-200"
+                  >
+                    {joinError}
+                  </div>
+                )}
 
                 <div className="p-3 bg-blue-50 rounded-xl text-xs text-blue-800 border border-blue-200 leading-relaxed">
                   💡 By joining, you commit to collaborative teamwork and academic honesty under CDES project guidelines.

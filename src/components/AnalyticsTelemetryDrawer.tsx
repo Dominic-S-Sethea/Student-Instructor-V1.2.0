@@ -1,15 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { Activity, ShieldCheck, ChevronUp, ChevronDown, Trash2, Radio, Server, Check } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Activity, ChevronUp, ChevronDown, Trash2, Server } from 'lucide-react';
 import { TelemetryEvent } from '../types';
 import { analytics } from '../utils/analytics';
+import { useAccessibleDialog } from '../hooks/useModalAccessibility';
 
 export const AnalyticsTelemetryDrawer: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [events, setEvents] = useState<TelemetryEvent[]>(analytics.getRecentEvents());
   const [selectedEvent, setSelectedEvent] = useState<TelemetryEvent | null>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+
+  useAccessibleDialog(isOpen, () => setIsOpen(false), drawerRef, { lockScroll: false });
 
   useEffect(() => {
-    const unsubscribe = analytics.subscribe((newEvent) => {
+    const unsubscribe = analytics.subscribe(() => {
       setEvents(analytics.getRecentEvents());
     });
     return () => unsubscribe();
@@ -33,11 +37,13 @@ export const AnalyticsTelemetryDrawer: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-3 right-4 z-40">
+    <div className="fixed bottom-20 lg:bottom-3 right-4 z-40">
       {!isOpen ? (
         <button
           type="button"
           onClick={() => setIsOpen(true)}
+          aria-expanded={false}
+          aria-controls="telemetry-drawer-panel"
           className="flex items-center gap-2 px-3.5 py-2 rounded-full bg-slate-900/90 text-white text-xs font-bold shadow-lg hover:bg-slate-800 border border-slate-700/60 backdrop-blur-xs transition-all cursor-pointer group"
         >
           <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -49,11 +55,19 @@ export const AnalyticsTelemetryDrawer: React.FC = () => {
           <ChevronUp className="w-3.5 h-3.5 opacity-70" />
         </button>
       ) : (
-        <div className="bg-white rounded-3xl shadow-2xl border border-gray-200 w-96 max-w-[95vw] p-4 text-left space-y-3 animate-in fade-in slide-in-from-bottom-5 duration-200">
+        <div
+          id="telemetry-drawer-panel"
+          ref={drawerRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="telemetry-drawer-title"
+          tabIndex={-1}
+          className="bg-white rounded-3xl shadow-2xl border border-gray-200 w-96 max-w-[95vw] p-4 text-left space-y-3 animate-in fade-in slide-in-from-bottom-5 duration-200 focus:outline-hidden"
+        >
           <div className="flex items-center justify-between pb-2 border-b border-gray-100">
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-              <h3 className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
+              <h3 id="telemetry-drawer-title" className="text-xs font-bold text-gray-900 flex items-center gap-1.5">
                 <Activity className="w-3.5 h-3.5 text-indigo-600" />
                 <span>Decision Intelligence Telemetry</span>
               </h3>
@@ -67,14 +81,16 @@ export const AnalyticsTelemetryDrawer: React.FC = () => {
                   setSelectedEvent(null);
                 }}
                 title="Clear Event Log"
-                className="text-gray-400 hover:text-rose-500 p-1 rounded-md"
+                aria-label="Clear event log"
+                className="text-gray-400 hover:text-rose-500 p-1 rounded-md cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-md"
+                aria-label="Close telemetry drawer"
+                className="text-gray-400 hover:text-gray-600 p-1 rounded-md cursor-pointer"
               >
                 <ChevronDown className="w-4 h-4" />
               </button>
@@ -89,36 +105,41 @@ export const AnalyticsTelemetryDrawer: React.FC = () => {
           </div>
 
           {/* Events List */}
-          <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+          <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1" aria-live="polite">
             {events.length === 0 ? (
               <div className="text-center py-6 text-xs text-gray-400">
                 No events captured yet. Navigate tabs, compare universities, or calculate ROI to stream events.
               </div>
             ) : (
-              events.map((evt) => (
-                <div
-                  key={evt.id}
-                  onClick={() => setSelectedEvent(evt === selectedEvent ? null : evt)}
-                  className={`p-2 rounded-xl border text-xs cursor-pointer transition-all ${
-                    selectedEvent?.id === evt.id
-                      ? 'border-indigo-500 bg-indigo-50/50'
-                      : 'border-gray-100 hover:border-gray-200 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-bold ${getEventBadge(evt.eventName)}`}>
-                      {evt.eventName}
-                    </span>
-                    <span className="text-[10px] text-gray-400">{evt.timestamp}</span>
-                  </div>
-
-                  {selectedEvent?.id === evt.id && (
-                    <div className="mt-2 bg-slate-900 text-slate-100 p-2 rounded-lg text-[10px] font-mono overflow-x-auto">
-                      <pre>{JSON.stringify(evt.data, null, 2)}</pre>
+              events.map((evt) => {
+                const isSelected = selectedEvent?.id === evt.id;
+                return (
+                  <button
+                    key={evt.id}
+                    type="button"
+                    aria-expanded={isSelected}
+                    onClick={() => setSelectedEvent(isSelected ? null : evt)}
+                    className={`w-full text-left p-2 rounded-xl border text-xs cursor-pointer transition-all ${
+                      isSelected
+                        ? 'border-indigo-500 bg-indigo-50/50'
+                        : 'border-gray-100 hover:border-gray-200 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`px-2 py-0.5 rounded-md font-mono text-[10px] font-bold ${getEventBadge(evt.eventName)}`}>
+                        {evt.eventName}
+                      </span>
+                      <span className="text-[10px] text-gray-400">{evt.timestamp}</span>
                     </div>
-                  )}
-                </div>
-              ))
+
+                    {isSelected && (
+                      <div className="mt-2 bg-slate-900 text-slate-100 p-2 rounded-lg text-[10px] font-mono overflow-x-auto">
+                        <pre>{JSON.stringify(evt.data, null, 2)}</pre>
+                      </div>
+                    )}
+                  </button>
+                );
+              })
             )}
           </div>
 

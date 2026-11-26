@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import Markdown from 'react-markdown';
+import { SafeMarkdown } from '../common/SafeMarkdown';
 import {
   Sparkles,
   Bot,
@@ -45,6 +45,8 @@ import {
   KnowledgePipelineItem,
   ClosedLoopAnalyticsMetric
 } from '../../types/aiOS';
+import { apiFetchRaw } from '../../services/apiClient';
+import { useAuth } from '../../context/AuthContext';
 
 interface PersonalEducationOSViewProps {
   studentId?: string;
@@ -62,9 +64,12 @@ type OSTab =
   | 'analytics-funnel';
 
 export const PersonalEducationOSView: React.FC<PersonalEducationOSViewProps> = ({
-  studentId = 'usr-student-01',
+  studentId,
   onNavigateTab
 }) => {
+  const { user, authenticated } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const effectiveStudentId = user?.id || studentId || '';
   const [activeTab, setActiveTab] = useState<OSTab>('command-center');
   const [agents, setAgents] = useState<MultiAgentMetadata[]>([]);
   const [selectedAgentKey, setSelectedAgentKey] = useState<AgentKey>('education_advisor');
@@ -78,7 +83,7 @@ export const PersonalEducationOSView: React.FC<PersonalEducationOSViewProps> = (
     sources?: Array<{ title: string; category: string; source: string; score: number }>;
     memoryApplied?: string[];
     followUps?: string[];
-    actionRec?: { type: string; title: string; payload: Record<string, any> };
+    actionRec?: { type: string; title: string; payload: Record<string, unknown> };
     safetyAudit?: SafetyAuditResult;
   }>>([]);
   const [chatInput, setChatInput] = useState('');
@@ -113,79 +118,60 @@ export const PersonalEducationOSView: React.FC<PersonalEducationOSViewProps> = (
 
   // Initial load
   useEffect(() => {
-    // 1. Fetch Agents
-    fetch('/api/ai-os/agents')
-      .then(res => res.json())
-      .then(data => {
+    void apiFetchRaw<{ agents?: MultiAgentMetadata[] }>('/api/ai-os/agents')
+      .then((data) => {
         if (data.agents) setAgents(data.agents);
       })
-      .catch(console.error);
+      .catch(() => undefined);
 
-    // 2. Fetch Memory
-    fetch(`/api/ai-os/memory/${studentId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.memory) setMemory(data.memory);
-      })
-      .catch(console.error);
-
-    // 3. Fetch Matches
-    fetch(`/api/ai-os/recommendations/${studentId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.matches) setMatches(data.matches);
-      })
-      .catch(console.error);
-
-    // 4. Fetch Action Plans
-    fetch(`/api/ai-os/action-plans/${studentId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.plans) setActionPlans(data.plans);
-      })
-      .catch(console.error);
-
-    // 5. Fetch Adaptive Concept
-    fetch('/api/ai-os/tutor/concept')
-      .then(res => res.json())
-      .then(data => {
+    void apiFetchRaw<{ concept?: AdaptiveTutorConcept }>('/api/ai-os/tutor/concept')
+      .then((data) => {
         if (data.concept) setAdaptiveConcept(data.concept);
       })
-      .catch(console.error);
+      .catch(() => undefined);
 
-    // 6. Fetch Knowledge Pipeline
-    fetch('/api/ai-os/knowledge/pipeline')
-      .then(res => res.json())
-      .then(data => {
-        if (data.pipeline) setPipelineDocs(data.pipeline);
-      })
-      .catch(console.error);
+    if (authenticated && effectiveStudentId) {
+      const encodedId = encodeURIComponent(effectiveStudentId);
+      void apiFetchRaw<{ memory?: StudentLongTermMemory }>(`/api/ai-os/memory/${encodedId}`)
+        .then((data) => {
+          if (data.memory) setMemory(data.memory);
+        })
+        .catch(() => undefined);
 
-    // 7. Fetch Analytics
-    fetch('/api/ai-os/analytics/metrics')
-      .then(res => res.json())
-      .then(data => {
-        if (data) setAnalytics(data);
-      })
-      .catch(console.error);
+      void apiFetchRaw<{ matches?: CrossDatabaseMatch[] }>(`/api/ai-os/recommendations/${encodedId}`)
+        .then((data) => {
+          if (data.matches) setMatches(data.matches);
+        })
+        .catch(() => undefined);
 
-    // Seed welcome message
+      void apiFetchRaw<{ plans?: AIActionPlan[] }>(`/api/ai-os/action-plans/${encodedId}`)
+        .then((data) => {
+          if (data.plans) setActionPlans(data.plans);
+        })
+        .catch(() => undefined);
+    }
+
+    if (isAdmin) {
+      void apiFetchRaw<{ pipeline?: KnowledgePipelineItem[] }>('/api/ai-os/knowledge/pipeline')
+        .then((data) => {
+          if (data.pipeline) setPipelineDocs(data.pipeline);
+        })
+        .catch(() => undefined);
+
+      void apiFetchRaw<ClosedLoopAnalyticsMetric>('/api/ai-os/analytics/metrics')
+        .then((data) => {
+          if (data) setAnalytics(data);
+        })
+        .catch(() => undefined);
+    }
+
     setDialogueMessages([
       {
         sender: 'agent',
         agentKey: 'education_advisor',
         text: `### Personal Education Operating System 2.0
-Welcome to CDES AI 2.0. I am your **Education Advisor Agent**, part of the 6-agent personal education intelligence network.
-
-Unlike single-turn conversational chatbots, I operate as your **lifelong education operating system**—maintaining continuous long-term episodic memory, verifying facts against official MoEYS and university RAG datasets, adjusting tutoring difficulty to your Zone of Proximal Development, and autonomously generating actionable career roadmaps.
-
-Select any of the 6 specialized agents or choose a suggested inquiry below to begin.`,
+Welcome to CDES AI 2.0. Select any specialized agent or choose a suggested inquiry below to begin.`,
         timestamp: 'Just now',
-        sources: [
-          { title: 'MoEYS Bac II Official Grade 12 Syllabus (2026)', category: 'Curriculum', source: 'MoEYS DGSE', score: 0.96 },
-          { title: 'ITC Polytechnic Foundation vs CADT Software Curriculum Matrix', category: 'Higher Ed', source: 'Academic Council', score: 0.92 }
-        ],
-        memoryApplied: ['Target: Grade A in Bac II Math & Physics', 'Aspiration: CADT / ITC Engineering', 'Pacing: Deliberate Reflective'],
         followUps: [
           'How do I plan my Grade 12 study timeline for a Grade A in Bac II?',
           'What are the core differences between ITC Tronc Commun and CADT Foundation?',
@@ -193,10 +179,10 @@ Select any of the 6 specialized agents or choose a suggested inquiry below to be
         ]
       }
     ]);
-  }, [studentId]);
+  }, [authenticated, effectiveStudentId, isAdmin]);
 
   // Handle Chat Submit
-  const handleSendMessage = async (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string): Promise<void> => {
     const message = textToSend || chatInput;
     if (!message.trim() || isChatLoading) return;
 
@@ -211,24 +197,29 @@ Select any of the 6 specialized agents or choose a suggested inquiry below to be
     setIsChatLoading(true);
 
     try {
-      const res = await fetch('/api/ai-os/chat', {
+      const data = await apiFetchRaw<{
+        agentKey?: AgentKey;
+        responseMarkdown?: string;
+        sourcesRetrieved?: Array<{ title: string; category: string; source: string; score: number }>;
+        memoryAnchorsApplied?: string[];
+        suggestedFollowUps?: string[];
+        actionRecommended?: { type: string; title: string; payload: Record<string, unknown> };
+        safetyAudit?: SafetyAuditResult;
+      }>('/api/ai-os/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          studentId,
+          studentId: effectiveStudentId,
           agentKey: selectedAgentKey,
           message
         })
       });
-
-      const data = await res.json();
 
       setDialogueMessages(prev => [
         ...prev,
         {
           sender: 'agent',
           agentKey: data.agentKey || selectedAgentKey,
-          text: data.responseMarkdown || 'I have analyzed your request based on your student memory profile.',
+          text: data.responseMarkdown || 'Unable to generate a response.',
           timestamp: 'Just now',
           sources: data.sourcesRetrieved,
           memoryApplied: data.memoryAnchorsApplied,
@@ -237,14 +228,14 @@ Select any of the 6 specialized agents or choose a suggested inquiry below to be
           safetyAudit: data.safetyAudit
         }
       ]);
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Sign in to use the Personal Education OS chat.';
       setDialogueMessages(prev => [
         ...prev,
         {
           sender: 'agent',
           agentKey: selectedAgentKey,
-          text: `### Strategic Academic Observation
-Grounded in your student profile (**Dara Chan**, Grade 12), we recommend balancing theoretical mathematical problem-solving with hands-on simulation in the CDES Virtual Lab.`,
+          text: `Unable to complete request: ${msg}`,
           timestamp: 'Just now'
         }
       ]);
@@ -254,41 +245,38 @@ Grounded in your student profile (**Dara Chan**, Grade 12), we recommend balanci
   };
 
   // Toggle Milestone
-  const handleToggleMilestone = async (planId: string, milestoneId: string) => {
+  const handleToggleMilestone = async (planId: string, milestoneId: string): Promise<void> => {
+    if (!effectiveStudentId) return;
     try {
-      const res = await fetch('/api/ai-os/action-plans/toggle-milestone', {
+      await apiFetchRaw('/api/ai-os/action-plans/toggle-milestone', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId, milestoneId, studentId })
+        body: JSON.stringify({ planId, milestoneId, studentId: effectiveStudentId })
       });
-      if (res.ok) {
-        // Refresh plans
-        const pRes = await fetch(`/api/ai-os/action-plans/${studentId}`);
-        const data = await pRes.json();
-        if (data.plans) setActionPlans(data.plans);
-      }
-    } catch (err) {
-      console.error('Failed to toggle milestone:', err);
+      const data = await apiFetchRaw<{ plans?: AIActionPlan[] }>(
+        `/api/ai-os/action-plans/${encodeURIComponent(effectiveStudentId)}`
+      );
+      if (data.plans) setActionPlans(data.plans);
+    } catch {
+      // Surface failure cleanly without breaking action-plan list
     }
   };
 
-  // Run Safety Test
-  const handleRunSafetyTest = async () => {
+  // Run Safety Test (admin-only endpoint)
+  const handleRunSafetyTest = async (): Promise<void> => {
+    if (!isAdmin) return;
     setIsSafetyTesting(true);
     try {
-      const res = await fetch('/api/ai-os/safety/test', {
+      const data = await apiFetchRaw<SafetyAuditResult>('/api/ai-os/safety/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: safetyTestPrompt,
           agentKey: selectedAgentKey,
-          studentId
+          studentId: effectiveStudentId
         })
       });
-      const data = await res.json();
       setSafetyTestResult(data);
-    } catch (err) {
-      console.error('Safety test error:', err);
+    } catch {
+      setSafetyTestResult(null);
     } finally {
       setIsSafetyTesting(false);
     }
@@ -522,7 +510,7 @@ Grounded in your student profile (**Dara Chan**, Grade 12), we recommend balanci
 
                       {/* Message Content */}
                       <div className={`prose prose-xs max-w-none ${isUser ? 'text-white prose-invert' : 'text-slate-800'}`}>
-                        <Markdown>{msg.text}</Markdown>
+                        <SafeMarkdown>{msg.text}</SafeMarkdown>
                       </div>
 
                       {/* Memory Anchors Applied */}
@@ -989,7 +977,7 @@ Grounded in your student profile (**Dara Chan**, Grade 12), we recommend balanci
             </div>
 
             <div className="prose prose-xs max-w-none text-slate-700 leading-relaxed">
-              <Markdown>{adaptiveConcept.explanations[activeExplanationMode].body}</Markdown>
+              <SafeMarkdown>{adaptiveConcept.explanations[activeExplanationMode].body}</SafeMarkdown>
             </div>
 
             <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/80 text-xs text-amber-900 font-medium">
@@ -1198,7 +1186,7 @@ Grounded in your student profile (**Dara Chan**, Grade 12), we recommend balanci
                 <p className="text-xs">{safetyTestResult.interventionExplanation}</p>
                 {safetyTestResult.neutralizedResponse && (
                   <div className="p-3 bg-white rounded-xl border border-rose-200 text-xs text-slate-800 prose prose-xs max-w-none">
-                    <Markdown>{safetyTestResult.neutralizedResponse}</Markdown>
+                    <SafeMarkdown>{safetyTestResult.neutralizedResponse}</SafeMarkdown>
                   </div>
                 )}
               </div>

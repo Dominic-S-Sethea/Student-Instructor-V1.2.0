@@ -32,6 +32,8 @@ import {
   Microscope,
   Zap,
 } from 'lucide-react';
+import { apiFetchRaw } from '../../services/apiClient';
+import { useAuth } from '../../context/AuthContext';
 
 type DataViewTab =
   | 'overview'
@@ -81,20 +83,27 @@ export const EducationDataPlatformView: React.FC = () => {
 
   // Export state
   const [exportedJson, setExportedJson] = useState<string | null>(null);
+  const { user } = useAuth();
+  const effectiveStudentId = user?.id || '';
 
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
+    const encodedId = effectiveStudentId ? encodeURIComponent(effectiveStudentId) : '';
 
     Promise.all([
-      fetch('/api/data-platform/overview').then((r) => r.json()).catch(() => null),
-      fetch('/api/data-platform/knowledge-hub').then((r) => r.json()).catch(() => null),
-      fetch('/api/data-platform/student-dossier/usr-student-01').then((r) => r.json()).catch(() => null),
-      fetch('/api/data-platform/collection-matrix').then((r) => r.json()).catch(() => null),
-      fetch('/api/data-platform/ai-pipeline/status').then((r) => r.json()).catch(() => null),
-      fetch('/api/data-platform/improvement-flywheel').then((r) => r.json()).catch(() => null),
-      fetch('/api/data-platform/governance/usr-student-01').then((r) => r.json()).catch(() => null),
-      fetch('/api/data-platform/ml/registry').then((r) => r.json()).catch(() => null),
+      apiFetchRaw<{ data?: unknown }>('/api/data-platform/overview').catch(() => null),
+      apiFetchRaw<{ data?: unknown }>('/api/data-platform/knowledge-hub').catch(() => null),
+      encodedId
+        ? apiFetchRaw<{ data?: unknown }>(`/api/data-platform/student-dossier/${encodedId}`).catch(() => null)
+        : Promise.resolve(null),
+      apiFetchRaw<{ data?: unknown }>('/api/data-platform/collection-matrix').catch(() => null),
+      apiFetchRaw<{ data?: unknown }>('/api/data-platform/ai-pipeline/status').catch(() => null),
+      apiFetchRaw<{ data?: unknown }>('/api/data-platform/improvement-flywheel').catch(() => null),
+      encodedId
+        ? apiFetchRaw<{ data?: unknown }>(`/api/data-platform/governance/${encodedId}`).catch(() => null)
+        : Promise.resolve(null),
+      apiFetchRaw<{ data?: unknown }>('/api/data-platform/ml/registry').catch(() => null),
     ])
       .then(([arch, know, stu, coll, pipe, fly, gov, ml]) => {
         if (!isMounted) return;
@@ -116,22 +125,21 @@ export const EducationDataPlatformView: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [refreshKey]);
+  }, [refreshKey, effectiveStudentId]);
 
   // Handle live pipeline test
-  const handleRunPipelineTest = async () => {
+  const handleRunPipelineTest = async (): Promise<void> => {
     setPipelineTesting(true);
     try {
-      const res = await fetch('/api/data-platform/ai-pipeline/test', {
+      const data = await apiFetchRaw<{ data?: unknown }>('/api/data-platform/ai-pipeline/test', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: testInputText,
-          student_id: 'usr-student-01',
+          student_id: effectiveStudentId || undefined,
           category: 'diagnostic_query',
+          test_type: 'dry_run',
         }),
       });
-      const data = await res.json();
       setPipelineTestResult(data?.data || null);
     } catch (e) {
       console.error('Pipeline test error:', e);
@@ -141,14 +149,13 @@ export const EducationDataPlatformView: React.FC = () => {
   };
 
   // Handle Bac II prediction
-  const handlePredictBacII = async () => {
+  const handlePredictBacII = async (): Promise<void> => {
     setPredicting(true);
     try {
-      const res = await fetch('/api/data-platform/ml/predict-bac2', {
+      const data = await apiFetchRaw<{ data?: unknown }>('/api/data-platform/ml/predict-bac2', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          student_id: 'usr-student-01',
+          student_id: effectiveStudentId || undefined,
           mock_scores: {
             math: mockMath,
             physics: mockPhysics,
@@ -157,7 +164,6 @@ export const EducationDataPlatformView: React.FC = () => {
           },
         }),
       });
-      const data = await res.json();
       setPredictionResult(data?.data || null);
     } catch (e) {
       console.error('Prediction error:', e);
@@ -167,14 +173,12 @@ export const EducationDataPlatformView: React.FC = () => {
   };
 
   // Handle University recommendation query
-  const handleGetUniversityRecs = async () => {
+  const handleGetUniversityRecs = async (): Promise<void> => {
     try {
-      const res = await fetch('/api/data-platform/ml/recommend-university', {
+      const data = await apiFetchRaw<{ data?: unknown }>('/api/data-platform/ml/recommend-university', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id: 'usr-student-01' }),
+        body: JSON.stringify({ student_id: effectiveStudentId || undefined }),
       });
-      const data = await res.json();
       setUnivRecs(data?.data || null);
     } catch (e) {
       console.error('University rec error:', e);
@@ -182,14 +186,12 @@ export const EducationDataPlatformView: React.FC = () => {
   };
 
   // Handle Career gap analysis query
-  const handleGetCareerGap = async () => {
+  const handleGetCareerGap = async (): Promise<void> => {
     try {
-      const res = await fetch('/api/data-platform/ml/career-gap', {
+      const data = await apiFetchRaw<{ data?: unknown }>('/api/data-platform/ml/career-gap', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_id: 'usr-student-01', career_id: 'car-lake-ai-systems' }),
+        body: JSON.stringify({ student_id: effectiveStudentId || undefined, career_id: 'car-lake-ai-systems' }),
       });
-      const data = await res.json();
       setCareerGapResult(data?.data || null);
     } catch (e) {
       console.error('Career gap error:', e);
@@ -197,10 +199,12 @@ export const EducationDataPlatformView: React.FC = () => {
   };
 
   // Handle Sovereign Data Export
-  const handleExportData = async () => {
+  const handleExportData = async (): Promise<void> => {
+    if (!effectiveStudentId) return;
     try {
-      const res = await fetch('/api/data-platform/governance/export/usr-student-01');
-      const data = await res.json();
+      const data = await apiFetchRaw<{ data?: unknown }>(
+        `/api/data-platform/governance/export/${encodeURIComponent(effectiveStudentId)}`
+      );
       setExportedJson(JSON.stringify(data?.data || {}, null, 2));
     } catch (e) {
       console.error('Export error:', e);

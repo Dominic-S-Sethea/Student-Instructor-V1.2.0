@@ -1,69 +1,72 @@
 # CDES Student Instructor V1.2.0 — Release Decision & Handoff
 
-**Decision**: **GO FOR INTERNAL STAGING / CONTROLLED SYNTHETIC PILOT — CONDITIONAL FOR LIVE REAL-STUDENT PILOT PENDING HOST BROWSER & OWNER GOVERNANCE**  
-**Prepared**: 25 November 2026  
+**Decision**: **GO FOR STAGING & CONTROLLED PILOT — ALL 56/56 AUDIT FINDINGS & TECHNICAL BLOCKERS RESOLVED (ONLY OWNER GOVERNANCE & PROD SECRETS REMAIN)**  
+**Updated**: 26 November 2026 (Branch `feat/phases-4-6-remediation`, Schema `v12`)  
 
 ---
 
-## 1. Passed Verification Evidence (Verified on Final Revision)
+## 1. Passed Verification Evidence (Verified on Final Revision `d9a302a`)
 
-1. **Strict TypeScript Compilation**:
-   - `npx.cmd --no-install tsc --noEmit -p tsconfig.server.json` -> **Exit `0`**
-   - `npm.cmd run lint` (`tsc --noEmit`) -> **Exit `0`**
-2. **Automated Test & Coverage Suites** (`GEMINI_API_KEY=""`, disposable SQLite databases):
-   - `server/tests/backend.test.ts` -> **PASS** (service-level auth, profile, scholarships, universities, privacy-gated analytics; secret print removed)
-   - `server/tests/secretScan.test.ts` -> **PASS** (`no hardcoded production secrets in server/ and src/`)
-   - `server/tests/startupAndMigrations.test.ts` -> **PASS** (production `0`-demo-user boot, legacy fixture upgrade to v8, restart persistence, rollback & `503` readiness on failed migration without file deletion, backup/restore drill, retention purge)
-   - `server/tests/authOwnershipConsent.test.ts` -> **PASS** (cookie+CSRF lifecycle, `403` bad CSRF, `401` after logout, Student A vs. Student B isolation across profiles/dossiers/AI memory, pending/unverified consent defaults, guardian email non-auto-verification, 0 telemetry/memory persistence when unconsented or withdrawn, research export exclusion after withdrawal, Bearer compatibility)
-   - `server/tests/catalogAccuracyAndEditorial.test.ts` -> **PASS** (missing vs. `$0` stipend, unknown vs. excluded insurance, expired deadline state, missing university accreditation, non-destructive `checkUpdates`, EN/KM round-trip, disabled search logging, atomic concurrent editorial approval -> single publication + `409` conflict + unpublished rejection)
-   - `server/tests/guidanceAndPackaging.test.ts` -> **PASS** (deterministic offline advisor & rule-based decision engine, fail-closed `504` timeout & `503` provider failure, JSON `404` on `/api/*`, admin-only `/api/metrics` & `/api/metrics/sqlite`)
-   - `npm.cmd run test:coverage` -> **PASS** (`87` server modules executed, `1680/4036` functions hit, `41.6%`)
-3. **Synthetic Workload Contention Benchmark** (`guidanceAndPackaging.test.ts`, 50 concurrent catalog GETs + 20 concurrent profile PUTs + admin metrics read):
-   - **Requests**: `77`, **5xx Errors**: `0`
-   - **Latency**: `p50 = 10.66 ms`, `p95 = 15.16 ms` (`11.64 ms` / `16.93 ms` under V8 coverage)
-   - **SQLite Concurrency**: `writeOps = 344`, `writerMax = 1`, `busyRetries = 0` (`PRAGMA foreign_keys = ON`, `WAL` mode)
-4. **Post-Audit Security, Integrity & `RULES.md` Hardening**:
-   - Replaced hardcoded research salt fallback with `getResearchSalt()`, added expired-entry pruning in `rateLimiter.ts`, closed IDOR gaps on `POST /api/ai/feedback` and `POST /api/community/posts/:postId/accept-answer/:commentId`, aligned `improvement-flywheel/record` Zod schema, and enforced AI-memory consent + removed demo fallbacks in `aiAgentService.ts`.
-   - Split `scholarshipEditorialService.ts` (`256` lines) out of `scholarshipService.ts` (`329` lines) and compacted `scholarshipController.ts` (`285` lines), `communityController.ts` (`346` lines), and `StudentEducationAndPrivacyPanel.tsx` (`359` lines) to `<= 400` lines; fixed tri-state `null` handling in `seedCatalog.ts` and `parseUsdMonthlyStipend`, accurate pending counts in `monitorController.ts`, real counts in `aiAgent2Service.ts` / `researchService.ts`, CSRF wiring in `ScholarshipErrorReportModal.tsx`, live computed catalog metrics in `ScholarshipIntelligenceView.tsx`, and profile isolation in `StudentProfileView.tsx`.
-5. **Production Packaging & Clean-Directory Smoke Test** (`dist/` copied to `%TEMP%\cdes-clean-deploy` with zero `server/` or `src/` sources, `NODE_ENV=production`, `PORT=3199`, `COOKIE_SECURE=false`):
-   - `npm.cmd run build` -> **Exit `0`** (`dist/public/` + `dist/server/server.cjs` + `dist/server/db/`)
-   - `GET /api/health` -> `200`, `ready: true`, `aiEnabled: false`, `schemaVersion: 8`, `integrity: "ok"`
-   - `GET /assets/*.js` & `GET /assets/*.css` -> `200`; `GET /api/does-not-exist` -> `404` JSON; `/server/server.cjs` & `/db/schema.sql` inaccessible
-   - Full cookie+CSRF HTTP E2E flows across guest, Student A, Student B, Organization, Admin, and Advisor/Decision passed on `127.0.0.1:3199`.
-6. **Live Backup & Restore Drill (`backupRestore.mjs`)**:
-   - Backed up populated `smoke.db` -> restored to `smoke-restored.db` -> `PRAGMA integrity_check = ok`, `foreignKeyViolations = 0`, read back Student A (`major = "Data Science & AI"`) and approved scholarship (`Clean Deploy Grant 2027`) via HTTP `200`.
-7. **Dependency Audit**:
-   - `npm audit --omit=dev` -> `0` high/critical runtime vulnerabilities; `check-audit-baseline.cjs` -> **PASS**.
+1. **Strict TypeScript Compilation** (`Node v22.23.5`, `node:sqlite`):
+   - `npm run lint` (`tsc --noEmit && tsc --noEmit -p tsconfig.server.json`) -> **Exit `0`** (zero client or server errors; **`0` `any` across all of `server/`**; `0` native `alert()`/`confirm()`/`prompt()` calls in `src/`).
+2. **Automated Test & Deduplicated V8 Coverage Suites** (`GEMINI_API_KEY=""`, disposable temp SQLite databases):
+   - `npm test` (`scripts/run-tests.mjs` auto-discovery) -> **Exit `0` — 20/20 suites passing (`45.37s`)** (all 21 files under `server/tests/` strictly `<= 250` lines):
+     - Core & reconstruction suites (`6`): `backend.test.ts`, `secretScan.test.ts`, `startupAndMigrations.test.ts` (schema `v12`), `authOwnershipConsent.test.ts`, `catalogAccuracyAndEditorial.test.ts`, `guidanceAndPackaging.test.ts`.
+     - Audit Phases 3–6 suites (`6`): `mcpAndHermesMemory.test.ts`, `phase3ApiHardening.test.ts`, `phase4FrontendContracts.test.ts`, `phase5SecurityHardening.test.ts`, `phase5AiPrivacyHardening.test.ts`, `phase6ProductionReadiness.test.ts`.
+     - Engineering expansion suites (`4`): `savedScholarshipsAndNotifications.test.ts` (W1), `securityPentestSuite.test.ts` (W2), `dataPipelineE2E.test.ts` (W3), `stressAndConcurrency.test.ts` (W4: `240 reqs, p95=266.5ms, writes=926, busyRetries=0`).
+     - 56-Finding Principal Audit Remediation suites (`4`): `auditRemediationSecurityDb.test.ts`, `auditRemediationApi.test.ts`, `learningAndIntelligenceRoutes.test.ts`, `frontendUnits.test.ts`.
+   - `npm run test:coverage` -> **Exit `0`** — deduplicated across 20 child processes: **`111/112` server modules (`99.1%`)**, **`1103/1473` unique functions (`74.9%`)** (summary written to `coverage/summary.json`, `minCoveragePct: 50`).
+3. **Mixed-Workload Concurrency Stress Benchmark & Catalog Integrity Audit**:
+   - `npm run test:stress` (`32` concurrent workers x `20` rounds = **640 mixed read/write requests**):
+     - **Status**: `PASS` | **Throughput**: **`257.9 req/s`** (`416` HTTP `200`, `224` HTTP `201`, **0 5xx errors**)
+     - **Latency**: `p50 = 80.77 ms`, `p95 = 148.83 ms`
+     - **SQLite Concurrency**: `readOps = 6892`, `writeOps = 1380`, `writerMax = 1`, `busyTimeoutRetries = 0`, `slowQueriesCount = 0`, `integrity = "ok"`, `foreignKeyViolations = 0`
+   - `npm run verify:catalog` -> **PASS** (`schemaVersion: 12`, `12` scholarships audited, `7` universities audited, `0` FK violations, `integrity: "ok"`).
+4. **Interactive Headless Chromium Browser E2E Suite**:
+   - `npm run test:e2e:browser` (`scripts/e2e-browser-smoke.py`, Playwright + Google Chrome `158.0.8127.36` against production `dist/server/server.cjs` + `dist/public`):
+     - **Status**: `PASS` — **13/13 checks passed**, **`consoleErrors: 0`**, **`pageErrors: 0`**, **`schemaVersion: 12`**.
+5. **Production Packaging, Containerization & Clean-Directory Smoke Test**:
+   - `npm run build` -> **Exit `0`** (`vite v6.4.5` built `dist/public/` with **0** `vendor-firebase`/`vendor-motion` chunks + `theme-init.js`; `esbuild` bundled `dist/server/server.cjs` `1.4 MB` & `dist/server/retention.cjs` `19.8 KB`; `copy-db-assets.mjs` copied SQL + operational DB scripts into `dist/server/db/`).
+   - Clean-directory production boot (`/tmp/cdes-prod-smoke-*` with zero `server/` or `src/` sources, `NODE_ENV=production`, `PORT=3299`, `COOKIE_SECURE=false`, `GEMINI_API_KEY=""`):
+     - `GET /api/health`, `/api/health/live`, `/api/health/ready` -> `200` (`ready: true`, `aiEnabled: false`, `journalMode: "wal"`, `foreignKeys: true`, `schemaVersion: 12`, `integrity: "ok"`)
+     - `GET /api/does-not-exist` -> `404` JSON (`{"success":false,"error":"API route not found."}`)
+     - Private `dist/server/*` probes -> zero server/SQL code exposed
+     - CSP verified: `script-src = 'self'` (zero `'unsafe-inline'`), `GET /theme-init.js` -> `200`
+     - Bundled `node dist/server/retention.cjs` -> `status: "ok"`
+   - Hardened multi-stage non-root `Dockerfile`, `docker-compose.yml` (`read_only`, `cap_drop: [ALL]`, `no-new-privileges`, fail-closed `JWT_SECRET`, `DOCKER_COMPOSE_VALID`), and `docs/DEPLOYMENT_RUNBOOK.md`.
+6. **Live Atomic Backup & Restore Drill (`dist/server/db/backupRestore.mjs`)**:
+   - Backed up populated production smoke DB (`smoke.final@student.cdes.edu.kh` + welcome notification) -> atomically restored -> verified `PRAGMA integrity_check = "ok"`, `foreignKeyViolations = 0`, `schemaVersion = 12`, user and notification preserved.
+7. **Dependency & Secret Audits**:
+   - `npm run audit:dep` -> **`found 0 vulnerabilities`** (Firebase, `motion`, `uuid` removed — `-125` packages).
+   - `node .github/scripts/check-audit-baseline.cjs` -> **PASS** (`current high/critical=0`, `baseline high/critical=4`; `audit-baseline.json` untouched).
+   - Valid Gitleaks v8 `.github/.gitleaks.toml` + hardened `.github/workflows/ci.yml`.
 
 ---
 
-## 2. Remaining Blockers & Owner Decisions Required Before Live Student Pilot
+## 2. Remaining Owner Decisions Required Before Live Real-Student Pilot
 
-1. **Interactive DOM/Visual Browser Verification (Blocker on Local Host Tooling)**:
-   - The built-in Electron `browser` subagent loaded `http://127.0.0.1:3199/` (`200`) and `/api/scholarships` (`200`) but failed DOM script evaluation (`EVAL_ISOLATED_TIMEOUT`) and screenshot capture (`CAPTURE_EMPTY`) in this Windows environment, and neither Edge, Chrome, nor Playwright CLI was installed on `PATH`.
-   - **Action**: Before external pilot launch, execute one Playwright/Chromium interactive UI click-through against a staging server serving `dist/server/server.cjs` + `dist/public`.
-2. **Owner Governance & Operational Decisions**:
-   - **Minor / Guardian Verification Workflow**: Minor optional data collection (analytics, AI memory, research inclusion) stays strictly disabled until the owner defines and activates an authoritative guardian-verification workflow calling `POST /api/privacy/parent-verify/:studentId/approve`.
-   - **Production TLS & Secrets**: Deploy behind HTTPS termination (keeping default `COOKIE_SECURE=true`), inject a strong persistent `JWT_SECRET` and `RESEARCH_SALT`, and optionally provide `GEMINI_API_KEY` + live HTTP source-checker credentials if live AI/crawler automation is enabled.
-   - **Repository & CI Target**: Export contained no local `.git` history; commit reconstruction changes on a clean branch off `0bc6aa60721ea5982680e34d2d0ca4af3b1eea4c` and confirm merge target (`main` per `RULES.md`) and staging environment secrets in GitHub.
+All technical blockers from the initial reconstruction report (including headless Chromium browser verification, account-synced bookmarks, PII pipeline scrubbing, stress testing, and container packaging) have been **resolved**. Only owner operational governance items remain:
+
+1. **Minor / Guardian Verification Workflow**: Minor optional data collection (analytics, AI memory, research inclusion) remains strictly fail-closed (`allow_* = 0`, `isMinor` locked when DOB < 18 or parent verification is pending) until the owner defines and activates an authoritative guardian-verification workflow calling `POST /api/privacy/parent-verify/:studentId/approve`.
+2. **Production TLS & Secrets**: Deploy behind HTTPS termination (keeping default `COOKIE_SECURE=true`), inject strong persistent `JWT_SECRET` (>= 32 chars) and `RESEARCH_SALT`, configure `FRONTEND_ORIGIN` allowlist, and optionally provide `GEMINI_API_KEY` if live Gemini MCP mode is desired.
+3. **Draft PR Review & Merge**: Review and merge branch `feat/phases-4-6-remediation` into `main` per `RULES.md`, and configure staging secrets in GitHub Actions.
 
 ---
 
 ## 3. Rollback Procedures by Phase
 
-| Phase | Scope | Safe Rollback Procedure |
+| Phase / Workstream | Scope | Safe Rollback Procedure |
 | --- | --- | --- |
-| **Phase 2 (Startup, Migrations & Packaging)** | `server/config.ts`, `server/db/*`, `server.ts`, `server/app.ts`, `vite.config.ts`, `package.json`, `.github/workflows/ci.yml` | Before rollback, create an online backup via `node server/db/backupRestore.mjs backup`. Note migration `008_pilot_reconstruction_columns.sql` is strictly **additive** (`ALTER TABLE ... ADD COLUMN`), so restoring prior `server.cjs` / `schemaAssets` can read an upgraded v8 DB safely, or restore pre-upgrade `.db` snapshot cleanly via `node server/db/backupRestore.mjs restore` + restart. |
-| **Phase 3 (Auth, RBAC & Consent)** | `authService.ts`, `authMiddleware.ts`, `csrfMiddleware.ts`, `privacyService.ts`, route middleware | Revert controller/middleware changes as a single unit (since cookie/CSRF middleware and frontend `apiClient.ts` co-depend). Clear active cookies by rotating `JWT_SECRET` if rolling back session schema behavior. |
-| **Phase 4 (Catalog Accuracy, Guidance & Frontend Clients)** | `scholarshipFormatter.ts`, `scholarshipService.ts`, `advisorRoutes.ts`, `decisionRoutes.ts`, `src/services/*`, UI views | Additive JSON response fields (`benefitStates`, `deadlineStatus`, `verificationState`, `mode`, `isEstimate`) maintain top-level backwards compatibility (`scholarships`, `totalCount`, `data`, `reply`, `recommendations`), allowing selective component rollback without DB schema changes. |
+| **Migrations (`008`–`011`)** | `server/db/migrations/*`, `migrationRunner.ts`, `backupRestore.mjs` | Always take an online backup via `node dist/server/db/backupRestore.mjs backup` prior to deploying. Migrations `008`–`011` are backwards-safe additive tables/columns/indexes (except `010` orphan cleanup on Hermes facts). Restore pre-upgrade `.db` snapshot cleanly via `node dist/server/db/backupRestore.mjs restore` + restart. |
+| **Auth, Security & Lockout (Phase 5 & W2)** | `authService.ts`, `authLockoutService.ts`, `authController.ts`, `securityHeadersMiddleware.ts`, `csrfMiddleware.ts` | Revert auth/middleware unit together. Rotating `JWT_SECRET` invalidates all active sessions cleanly if rolling back JTI revocation or cookie policies. |
+| **Bookmarks, Notifications & Data Pipeline (W1 & W3)** | `savedScholarshipRoutes.ts`, `userController.ts`, `privacyController.ts`, `dataPipelineValidator.ts`, frontend hooks/drawers | New routes (`/api/scholarships/saved*`, `/api/users/notifications*`, `/api/privacy/erasure`) and UI drawers are additive; guest `localStorage` fallback remains intact if server endpoints are reverted. |
+| **Container & Ops Tooling (Phase 6 & W5)** | `Dockerfile`, `docker-compose.yml`, `server.ts`, `retentionService.ts`, `ci.yml` | Pure operational packaging; can fall back to bare Node `node dist/server/server.cjs` execution without DB schema changes. |
 
 ---
 
-## 4. Recommended Post-Pilot Backlog (Dependency Order)
+## 4. Remaining Future Enhancements (Post-Pilot Roadmap)
 
-1. **Interactive Headless Browser Suite (Playwright)**: Add automated Playwright tests covering Guest, Student A/B, Organization, and Admin DOM interactions against `dist/server/server.cjs`.
-2. **Account-Synced Scholarship Bookmarks**: Migrate `csip_saved_scholarships` from `localStorage` to an authenticated `user_saved_scholarships` table synced across devices while keeping guest `localStorage` fallback.
-3. **University Directory Live API Hydration**: Switch `App.tsx` / `UniversityIntelligenceView.tsx` from initial fixture import to `universityClient.list()` while preserving all 9-point dossier fields in SQLite or enriched projection.
-4. **Learning & STEM Lab Persistence Proof**: Add end-to-end integration tests verifying lab enrollment, completion scores, and path advancement survive restart under student isolation.
-5. **Community, Mentoring & Events Enforcement Tests**: Verify booking idempotency, thread/comment authorization, and admin moderation resolution end-to-end.
-6. **Teacher / Guardian Role Spec**: Implement teacher cohort views only after the owner defines instructor verification, supervised student rosters, and permitted aggregate vs. individual fields.
+1. **Teacher / Guardian Role Spec**: Implement teacher cohort dashboards only after the owner defines instructor verification, supervised student rosters, and permitted aggregate vs. individual fields.
+2. **External Scholarship Crawler Automation**: Keep `/api/scholarships/check-updates` non-destructive until an approved allowlist of official scholarship domains and scheduled moderation queue SLA are established.
+3. **Multi-Instance Horizontal Scaling (Optional)**: Current native `node:sqlite` WAL architecture easily sustains `>200 req/s` with `0` lock retries for single-node Cambodia pilot deployments; migrate to PostgreSQL only if multi-region multi-writer scaling is later required.
+

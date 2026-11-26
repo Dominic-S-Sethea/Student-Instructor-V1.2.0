@@ -1,6 +1,7 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { authClient, AuthUser, EducationEntry, SessionState, StudentProfile } from '../services/authClient';
 import { analytics } from '../utils/analytics';
+import { clearLegacyUnscopedSavedScholarships } from '../utils/savedScholarships';
 
 interface AuthContextValue {
   authenticated: boolean;
@@ -97,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setEducation([]);
     analytics.setUserId('guest');
     analytics.clear();
+    clearLegacyUnscopedSavedScholarships();
   }, []);
 
   const setProfileData = useCallback((nextProfile: StudentProfile | null, nextEducation: EducationEntry[]) => {
@@ -104,25 +106,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setEducation(nextEducation);
   }, []);
 
-  return (
-    <AuthContext.Provider
-      value={{
-        authenticated,
-        user,
-        profile,
-        education,
-        loading,
-        error,
-        login,
-        register,
-        logout,
-        refreshSession,
-        setProfileData,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
+  const contextValue = useMemo<AuthContextValue>(
+    () => ({
+      authenticated,
+      user,
+      profile,
+      education,
+      loading,
+      error,
+      login,
+      register,
+      logout,
+      refreshSession,
+      setProfileData,
+    }),
+    [authenticated, user, profile, education, loading, error, login, register, logout, refreshSession, setProfileData]
   );
+
+  return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;
 };
 
 export function useAuth(): AuthContextValue {

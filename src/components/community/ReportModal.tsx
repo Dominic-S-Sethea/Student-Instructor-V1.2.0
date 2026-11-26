@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertCircle, X, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { communityClient } from '../../services/communityClient';
+import { useAuth } from '../../context/AuthContext';
+import { useEscapeKey } from '../../hooks/useModalAccessibility';
 
 interface Props {
   isOpen: boolean;
@@ -15,6 +17,7 @@ export const ReportModal: React.FC<Props> = ({
   defaultItemType = 'post',
   defaultItemId = 'item-general',
 }) => {
+  const { user } = useAuth();
   const [itemType, setItemType] = useState(defaultItemType);
   const [itemId, setItemId] = useState(defaultItemId);
   const [reason, setReason] = useState<string>('unsafe_contact_request');
@@ -23,9 +26,17 @@ export const ReportModal: React.FC<Props> = ({
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEscapeKey(isOpen, onClose);
+
+  useEffect(() => {
+    setItemType(defaultItemType);
+    setItemId(defaultItemId);
+    setError(null);
+  }, [defaultItemType, defaultItemId, isOpen]);
+
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!description.trim()) {
       setError('Please provide a brief description of the safety or policy concern.');
@@ -36,7 +47,7 @@ export const ReportModal: React.FC<Props> = ({
       setSubmitting(true);
       setError(null);
       await communityClient.submitReport({
-        reporter_id: 'usr-student-01',
+        reporter_id: user?.id,
         reported_item_type: itemType,
         reported_item_id: itemId || 'unspecified-item',
         reason,
@@ -45,29 +56,44 @@ export const ReportModal: React.FC<Props> = ({
       setSubmitted(true);
       setTimeout(() => {
         setSubmitted(false);
+        setDescription('');
         onClose();
       }, 2000);
-    } catch (err: any) {
-      setError(err?.message || 'Failed to submit report. Please try again.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to submit report. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="CDES Safety Desk Incident Report"
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700"
+      >
+        <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-rose-50 text-rose-600 rounded-xl">
+            <div className="p-2 bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-xl">
               <ShieldAlert className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 text-base">CDES Safety Desk & Incident Report</h3>
-              <p className="text-xs text-slate-500">All reports are confidential and reviewed by CDES safety officers.</p>
+              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">CDES Safety Desk & Incident Report</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">All reports are confidential and reviewed by CDES safety officers.</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close safety report modal"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>

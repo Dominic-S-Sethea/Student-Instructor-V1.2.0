@@ -38,6 +38,7 @@ import {
 import { initialScholarships } from '../data/scholarshipData';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import { scholarshipClient } from '../services/scholarshipClient';
 import { ScholarshipDetailModal } from './scholarships/ScholarshipDetailModal';
 import { ScholarshipDirectoryCard } from './scholarships/ScholarshipDirectoryCard';
@@ -47,29 +48,57 @@ import { ScholarshipSavedDrawer } from './scholarships/ScholarshipSavedDrawer';
 import { ScholarshipAdminModal } from './scholarships/ScholarshipAdminModal';
 import { TopUniversityDirectory } from './topUniversities/TopUniversityDirectory';
 import { allTopUniversityPrograms } from '../data/topUniversities';
+import { useSavedScholarships } from '../hooks/useSavedScholarships';
 
-export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => void }> = ({ onOpenAuthModal }) => {
+interface ScholarshipIntelligenceViewProps {
+  onOpenAuthModal?: () => void;
+  externalDirectoryView?: 'top_universities' | 'flagship';
+  externalViewNonce?: number;
+  openSavedNonce?: number;
+  onConsumeSavedNonce?: () => void;
+}
+
+export const ScholarshipIntelligenceView: React.FC<ScholarshipIntelligenceViewProps> = ({
+  onOpenAuthModal,
+  externalDirectoryView,
+  externalViewNonce,
+  openSavedNonce,
+  onConsumeSavedNonce,
+}) => {
   const { language, t } = useLanguage();
   const { authenticated, user, profile: authProfile, logout } = useAuth();
+  const { settings } = useSettings();
   const isKhmer = language === 'km';
 
   // Directory View Mode
-  const [directoryView, setDirectoryView] = useState<'top_universities' | 'flagship'>('flagship');
+  const [directoryView, setDirectoryView] = useState<'top_universities' | 'flagship'>(
+    externalDirectoryView || settings.defaultScholarshipsTab
+  );
 
   // Data state
   const [scholarships, setScholarships] = useState<ScholarshipItem[]>(initialScholarships);
+  const [catalogById, setCatalogById] = useState<Record<string, ScholarshipItem>>(() =>
+    Object.fromEntries(initialScholarships.map((item) => [item.id, item]))
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [accessNotice, setAccessNotice] = useState<string | null>(null);
 
-  // Bookmarked IDs
-  const [savedIds, setSavedIds] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem('csip_saved_scholarships');
-      return stored ? JSON.parse(stored) : ['sch-chevening-uk', 'sch-cadt-mptc'];
-    } catch {
-      return ['sch-chevening-uk', 'sch-cadt-mptc'];
-    }
+  const {
+    savedIds,
+    savedMetadataById,
+    isAccountSynced,
+    error: savedError,
+    clearError: clearSavedError,
+    toggleSaveScholarship,
+    updateSavedStatus,
+    toggleChecklistItem,
+  } = useSavedScholarships(authenticated, user?.id, (hydrated) => {
+    setCatalogById((prev) => {
+      const next = { ...prev };
+      for (const item of hydrated) next[item.id] = item;
+      return next;
+    });
   });
 
   // Filter & Search state
@@ -79,7 +108,7 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
   const [selectedField, setSelectedField] = useState<FieldOfStudy | 'all'>('all');
   const [selectedFunding, setSelectedFunding] = useState<FundingType | 'all'>('all');
   const [selectedCategory, setSelectedCategory] = useState<StudentCategory | 'all'>('all');
-  const [onlyVerified, setOnlyVerified] = useState(true);
+  const [onlyVerified, setOnlyVerified] = useState(settings.onlyVerifiedScholarshipsByDefault);
   const [sortBy, setSortBy] = useState<'latest_updated' | 'deadline_approaching' | 'fully_funded' | 'most_popular'>('latest_updated');
 
   // Modals state
@@ -90,8 +119,21 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [showFiltersMobile, setShowFiltersMobile] = useState(false);
 
-  // Fetch from API with recoverable error state
-  const fetchScholarships = async () => {
+  useEffect(() => {
+    if (externalDirectoryView && externalViewNonce) {
+      setDirectoryView(externalDirectoryView);
+    }
+  }, [externalDirectoryView, externalViewNonce]);
+
+  useEffect(() => {
+    if (openSavedNonce) {
+      setIsSavedDrawerOpen(true);
+      onConsumeSavedNonce?.();
+    }
+  }, [openSavedNonce, onConsumeSavedNonce]);
+
+  // Fetch from API with AbortController + recoverable error state
+  const fetchScholarships = async (signal?: AbortSignal): Promise<void> => {
     setIsLoading(true);
     setFetchError(null);
     try {
@@ -104,22 +146,40 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
         studentCategory: selectedCategory,
         onlyVerified,
         sortBy,
+        signal,
       });
-      if (data.success && Array.isArray(data.scholarships)) {
+      if (!signal?.aborted && data.success && Array.isArray(data.scholarships)) {
         setScholarships(data.scholarships);
+        setCatalogById((prev) => {
+          const next = { ...prev };
+          for (const item of data.scholarships) {
+            next[item.id] = item;
+          }
+          return next;
+        });
       }
     } catch (err) {
-      setFetchError(err instanceof Error ? err.message : 'Unable to load scholarships from server.');
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      if (!signal?.aborted) {
+        setFetchError(err instanceof Error ? err.message : 'Unable to load scholarships from server.');
+      }
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
+    const controller = new AbortController();
     const delayDebounce = setTimeout(() => {
-      fetchScholarships();
+      void fetchScholarships(controller.signal);
     }, 250);
-    return () => clearTimeout(delayDebounce);
+    return () => {
+      clearTimeout(delayDebounce);
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     searchQuery,
     selectedRegion,
@@ -131,22 +191,11 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
     sortBy,
   ]);
 
-  // Save bookmarked IDs to localStorage
-  const toggleSaveScholarship = (id: string) => {
-    setSavedIds((prev) => {
-      const updated = prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id];
-      try {
-        localStorage.setItem('csip_saved_scholarships', JSON.stringify(updated));
-      } catch (e) {
-        console.error(e);
-      }
-      return updated;
-    });
-  };
-
   const savedList = useMemo(() => {
-    return scholarships.filter((s) => savedIds.includes(s.id));
-  }, [scholarships, savedIds]);
+    return savedIds
+      .map((id) => catalogById[id])
+      .filter((item): item is ScholarshipItem => Boolean(item));
+  }, [catalogById, savedIds]);
 
   // Popular search chips
   const searchChips = [
@@ -296,18 +345,32 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
             </div>
           </div>
 
-          {(fetchError || accessNotice) && (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300/60 bg-slate-950/50 px-4 py-2.5 text-xs text-amber-100">
-              <span>{fetchError || accessNotice}</span>
-              {fetchError && (
-                <button
-                  type="button"
-                  onClick={() => void fetchScholarships()}
-                  className="rounded-lg bg-white/20 px-3 py-1 font-bold text-white hover:bg-white/30"
-                >
-                  Retry
-                </button>
-              )}
+          {(fetchError || savedError || accessNotice) && (
+            <div
+              role="alert"
+              className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300/60 bg-slate-950/50 px-4 py-2.5 text-xs text-amber-100"
+            >
+              <span>{fetchError || savedError || accessNotice}</span>
+              <div className="flex items-center gap-2">
+                {fetchError && (
+                  <button
+                    type="button"
+                    onClick={() => void fetchScholarships()}
+                    className="rounded-lg bg-white/20 px-3 py-1 font-bold text-white hover:bg-white/30 cursor-pointer"
+                  >
+                    Retry
+                  </button>
+                )}
+                {savedError && (
+                  <button
+                    type="button"
+                    onClick={clearSavedError}
+                    className="rounded-lg bg-white/20 px-3 py-1 font-bold text-white hover:bg-white/30 cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -738,6 +801,10 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
         isOpen={isSavedDrawerOpen}
         onClose={() => setIsSavedDrawerOpen(false)}
         savedScholarships={savedList}
+        savedMetadataById={savedMetadataById}
+        isAccountSynced={isAccountSynced}
+        onUpdateStatus={updateSavedStatus}
+        onToggleChecklistItem={toggleChecklistItem}
         onRemoveSaved={toggleSaveScholarship}
         onSelectScholarship={(sch) => {
           setSelectedScholarship(sch);

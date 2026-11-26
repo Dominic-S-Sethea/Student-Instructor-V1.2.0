@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { X, Award, CheckCircle2, Pin, Sparkles, ExternalLink } from 'lucide-react';
 import { ClientStudentAchievement } from '../../types';
+import { useAccessibleDialog } from '../../hooks/useModalAccessibility';
 
 interface AchievementDetailModalProps {
   achievement: ClientStudentAchievement | null;
@@ -15,19 +16,33 @@ export const AchievementDetailModal: React.FC<AchievementDetailModalProps> = ({
   onClose,
   onToggleWall,
 }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useAccessibleDialog(isOpen && Boolean(achievement), onClose, dialogRef);
+
   if (!isOpen || !achievement) return null;
 
   const ach = achievement.achievement;
   const isPinned = achievement.is_displayed_on_wall === 1;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden flex flex-col">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="achievement-detail-modal-title"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden flex flex-col focus:outline-hidden"
+      >
         {/* Top Banner with Achievement Theme */}
         <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-500 p-6 text-white relative flex flex-col items-center text-center">
           <button
+            type="button"
             onClick={onClose}
-            className="absolute top-4 right-4 p-1.5 text-white/80 hover:text-white rounded-lg hover:bg-black/10 transition-colors"
+            aria-label="Close achievement details"
+            className="absolute top-4 right-4 p-1.5 text-white/80 hover:text-white rounded-lg hover:bg-black/10 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -39,7 +54,7 @@ export const AchievementDetailModal: React.FC<AchievementDetailModalProps> = ({
           <span className="text-[11px] font-bold tracking-wider uppercase bg-black/20 px-3 py-1 rounded-full text-amber-100">
             {ach.category}
           </span>
-          <h3 className="text-xl font-bold mt-2">{ach.title}</h3>
+          <h3 id="achievement-detail-modal-title" className="text-xl font-bold mt-2">{ach.title}</h3>
           {ach.title_km && (
             <p className="text-sm font-serif text-amber-100 mt-0.5">{ach.title_km}</p>
           )}

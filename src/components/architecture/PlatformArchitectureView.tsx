@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetchRaw } from '../../services/apiClient';
 import {
   Layers,
   Smartphone,
@@ -122,31 +123,24 @@ export const PlatformArchitectureView: React.FC = () => {
     fetchKnowledge();
   }, []);
 
-  const fetchKnowledge = async () => {
+  const fetchKnowledge = async (): Promise<void> => {
     try {
-      const [resOverview, resContent] = await Promise.all([
-        fetch('/api/knowledge/overview'),
-        fetch('/api/knowledge/content')
+      const [dOverview, dContent] = await Promise.all([
+        apiFetchRaw<{ success?: boolean; data?: unknown }>('/api/knowledge/overview'),
+        apiFetchRaw<{ success?: boolean; data?: unknown[] }>('/api/knowledge/content'),
       ]);
-      if (resOverview.ok) {
-        const dOverview = await resOverview.json();
-        if (dOverview.success) setKnowledgeData(dOverview.data);
-      }
-      if (resContent.ok) {
-        const dContent = await resContent.json();
-        if (dContent.success) setKnowledgeContents(dContent.data);
-      }
+      if (dOverview.success) setKnowledgeData(dOverview.data);
+      if (dContent.success && Array.isArray(dContent.data)) setKnowledgeContents(dContent.data);
     } catch (e) {
       console.warn('Knowledge supply chain fetch error:', e);
     }
   };
 
-  const handleVerifySubmission = async () => {
+  const handleVerifySubmission = async (): Promise<void> => {
     try {
       setReviewAuditFeedback(null);
-      const res = await fetch('/api/knowledge/verify', {
+      const data = await apiFetchRaw<{ content: { status: string; trustScore: number } }>('/api/knowledge/verify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contentId: selectedReviewContentId,
           decision: reviewerDecision,
@@ -156,63 +150,50 @@ export const PlatformArchitectureView: React.FC = () => {
           comments: `Verified by CKO Curriculum Council: Pedagogy ${pedagogicalScore}%, Accuracy ${factualScore}%, Safety ${childSafetyScore}%.`
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        setReviewAuditFeedback(`Verification audit executed! Content status changed to "${data.content.status.toUpperCase()}" with recalculated Trust Score: ${data.content.trustScore}%`);
-        await fetchKnowledge();
-      }
-    } catch (e) {
+      setReviewAuditFeedback(`Verification audit executed! Content status changed to "${data.content.status.toUpperCase()}" with recalculated Trust Score: ${data.content.trustScore}%`);
+      await fetchKnowledge();
+    } catch {
       setReviewAuditFeedback('Verification failed. Check network or server.');
     }
   };
 
-  const handleTriggerRagSync = async (contentId: string) => {
+  const handleTriggerRagSync = async (contentId: string): Promise<void> => {
     try {
       setIsSyncingRag(true);
       setRagSyncResult(null);
-      const res = await fetch('/api/knowledge/rag-sync', {
+      const data = await apiFetchRaw<{ data: { chunkCount: number; embeddingModel: string; similaritySearchNamespace: string } }>('/api/knowledge/rag-sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contentId })
       });
-      if (res.ok) {
-        const data = await res.json();
-        setRagSyncResult(`Vector RAG upsert complete: ${data.data.chunkCount} chunks vectorized with ${data.data.embeddingModel}. Similarity cluster: ${data.data.similaritySearchNamespace}`);
-        await fetchKnowledge();
-      }
-    } catch (e) {
+      setRagSyncResult(`Vector RAG upsert complete: ${data.data.chunkCount} chunks vectorized with ${data.data.embeddingModel}. Similarity cluster: ${data.data.similaritySearchNamespace}`);
+      await fetchKnowledge();
+    } catch {
       setRagSyncResult('Failed to sync vector RAG embeddings.');
     } finally {
       setIsSyncingRag(false);
     }
   };
 
-  const fetchArchitecture = async () => {
+  const fetchArchitecture = async (): Promise<void> => {
     try {
       setLoading(true);
-      const res = await fetch('/api/platform/architecture');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setServices(data.services || []);
-          setClusterData(data.cluster || null);
-        }
+      const data = await apiFetchRaw<{ success?: boolean; services?: typeof services; cluster?: typeof clusterData }>('/api/platform/architecture');
+      if (data.success) {
+        setServices(data.services || []);
+        setClusterData(data.cluster || null);
       }
     } catch (e) {
-      console.warn('Failed to load architecture from backend, using robust fallback state:', e);
+      console.warn('Failed to load architecture from backend:', e);
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchMonitoring = async () => {
+  const fetchMonitoring = async (): Promise<void> => {
     try {
-      const res = await fetch('/api/platform/monitoring/metrics');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setMonitoringMetrics(data.metrics);
-        }
+      const data = await apiFetchRaw<{ success?: boolean; metrics?: typeof monitoringMetrics }>('/api/platform/monitoring/metrics');
+      if (data.success && data.metrics) {
+        setMonitoringMetrics(data.metrics);
       }
     } catch (e) {
       console.warn('Monitoring fetch error:', e);
@@ -229,36 +210,32 @@ export const PlatformArchitectureView: React.FC = () => {
     setOfflineMutations(prev => [newMut, ...prev]);
   };
 
-  const handleSyncOfflineQueue = async () => {
+  const handleSyncOfflineQueue = async (): Promise<void> => {
     setSyncStatus('syncing');
     try {
-      const res = await fetch('/api/platform/mobile/sync', {
+      await apiFetchRaw('/api/platform/mobile/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           deviceId: simulatedDevice === 'iphone' ? 'dev-ios-001' : 'dev-and-002',
           mutations: offlineMutations,
         }),
       });
-      if (res.ok) {
-        setTimeout(() => {
-          setOfflineMutations([]);
-          setSyncStatus('synced');
-          setTimeout(() => setSyncStatus('idle'), 2500);
-        }, 800);
-      }
+      setTimeout(() => {
+        setOfflineMutations([]);
+        setSyncStatus('synced');
+        setTimeout(() => setSyncStatus('idle'), 2500);
+      }, 800);
     } catch {
       setSyncStatus('idle');
     }
   };
 
   // Trigger child safety scan
-  const handleRunSafetyScan = async () => {
+  const handleRunSafetyScan = async (): Promise<void> => {
     setIsScanning(true);
     try {
-      const res = await fetch('/api/platform/child-safety/scan', {
+      const data = await apiFetchRaw<{ success?: boolean; scanResult?: typeof scanResult }>('/api/platform/child-safety/scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: scanInputText,
           senderAge: 24,
@@ -266,11 +243,8 @@ export const PlatformArchitectureView: React.FC = () => {
           channelType: 'community_chat',
         }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setScanResult(data.scanResult);
-        }
+      if (data.success && data.scanResult) {
+        setScanResult(data.scanResult);
       }
     } catch (err) {
       console.error(err);
@@ -280,11 +254,10 @@ export const PlatformArchitectureView: React.FC = () => {
   };
 
   // Trigger notification dispatch
-  const handleDispatchNotification = async () => {
+  const handleDispatchNotification = async (): Promise<void> => {
     try {
-      const res = await fetch('/api/platform/notifications/dispatch', {
+      const data = await apiFetchRaw<{ success?: boolean; notification?: (typeof dispatchedNotifs)[number] }>('/api/platform/notifications/dispatch', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: notifType,
           title: notifTitle,
@@ -293,11 +266,9 @@ export const PlatformArchitectureView: React.FC = () => {
           priority: 'high',
         }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setDispatchedNotifs(prev => [data.notification, ...prev]);
-        }
+      if (data.success && data.notification) {
+        const nextNotif = data.notification;
+        setDispatchedNotifs(prev => [nextNotif, ...prev]);
       }
     } catch (e) {
       console.error(e);

@@ -1,9 +1,24 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Globe, Check, ChevronDown } from 'lucide-react';
 import { useLanguage, Language } from '../context/LanguageContext';
+import { useSettings } from '../context/SettingsContext';
 
-export const LanguageSelector: React.FC<{ variant?: 'nav' | 'mobile' }> = ({ variant = 'nav' }) => {
-  const { language, setLanguage } = useLanguage();
+interface LanguageSelectorProps {
+  variant?: 'nav' | 'mobile';
+  placement?: 'down' | 'up';
+  compact?: boolean;
+}
+
+export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
+  variant = 'nav',
+  placement = 'down',
+  compact = false,
+}) => {
+  const { language } = useLanguage();
+  const { updateSettings } = useSettings();
+  const setLanguage = (lang: Language): void => {
+    updateSettings({ language: lang });
+  };
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -20,8 +35,15 @@ export const LanguageSelector: React.FC<{ variant?: 'nav' | 'mobile' }> = ({ var
         setIsOpen(false);
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   if (variant === 'mobile') {
@@ -49,13 +71,23 @@ export const LanguageSelector: React.FC<{ variant?: 'nav' | 'mobile' }> = ({ var
     );
   }
 
+  const popoverPosition =
+    placement === 'up'
+      ? compact
+        ? 'left-full bottom-0 ml-2'
+        : 'left-0 bottom-full mb-2'
+      : 'right-0 mt-2';
+
   return (
-    <div className="relative shrink-0" ref={dropdownRef}>
+    <div className={`relative ${compact ? 'shrink-0' : 'flex-1 min-w-0'}`} ref={dropdownRef}>
       <button
         id="language-selector-btn"
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+        aria-expanded={isOpen}
+        className={`flex items-center justify-center gap-1 ${
+          compact ? 'w-10 h-10 p-0' : 'w-full px-2 py-2'
+        } rounded-xl text-xs font-bold transition-all border cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900 ${
           isOpen
             ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700 text-blue-900 dark:text-blue-200'
             : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
@@ -64,16 +96,22 @@ export const LanguageSelector: React.FC<{ variant?: 'nav' | 'mobile' }> = ({ var
         aria-label="Select Language"
       >
         <Globe className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-        <span className="tracking-tight whitespace-nowrap">{current.nativeName}</span>
-        <ChevronDown
-          className={`w-3 h-3 text-slate-400 transition-transform duration-200 ${
-            isOpen ? 'rotate-180 text-blue-600 dark:text-blue-400' : ''
-          }`}
-        />
+        {!compact && (
+          <>
+            <span className="tracking-tight whitespace-nowrap truncate">{current.nativeName}</span>
+            <ChevronDown
+              className={`w-3 h-3 text-slate-400 transition-transform duration-200 shrink-0 ${
+                isOpen ? 'rotate-180 text-blue-600 dark:text-blue-400' : ''
+              }`}
+            />
+          </>
+        )}
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 z-50">
+        <div
+          className={`absolute ${popoverPosition} w-48 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 z-50`}
+        >
           <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Language / ភាសា
           </div>

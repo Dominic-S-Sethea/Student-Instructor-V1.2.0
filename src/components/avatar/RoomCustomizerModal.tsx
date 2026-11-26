@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { X, Home, Palette, Check, Sparkles, Layout } from 'lucide-react';
 import { ClientVirtualRoom } from '../../types';
+import { useAccessibleDialog } from '../../hooks/useModalAccessibility';
 
 interface RoomCustomizerModalProps {
   room: ClientVirtualRoom;
@@ -94,6 +95,9 @@ export const RoomCustomizerModal: React.FC<RoomCustomizerModalProps> = ({
   const [wallColor, setWallColor] = useState(room.wall_color);
   const [floorStyle, setFloorStyle] = useState(room.floor_style);
   const [isSaving, setIsSaving] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useAccessibleDialog(isOpen, onClose, dialogRef);
 
   if (!isOpen) return null;
 
@@ -113,8 +117,17 @@ export const RoomCustomizerModal: React.FC<RoomCustomizerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-sm animate-in fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="room-customizer-modal-title"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden focus:outline-hidden"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
           <div className="flex items-center space-x-3">
@@ -122,7 +135,7 @@ export const RoomCustomizerModal: React.FC<RoomCustomizerModalProps> = ({
               <Home className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <h3 id="room-customizer-modal-title" className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 <span>Personal Study Room Architecture</span>
                 <span className="text-xs bg-blue-100 text-blue-800 font-semibold px-2 py-0.5 rounded-full">
                   បន្ទប់សិក្សាផ្ទាល់ខ្លួន
@@ -134,8 +147,10 @@ export const RoomCustomizerModal: React.FC<RoomCustomizerModalProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+            aria-label="Close room customizer"
+            className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>

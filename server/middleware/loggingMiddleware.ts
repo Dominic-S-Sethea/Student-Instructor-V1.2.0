@@ -1,42 +1,83 @@
 // CDES Platform - Structured Logging Middleware
-// Uses console with JSON formatting for structured logging.
-// No third-party logging library dependencies required.
+// Respects process.env.LOG_LEVEL dynamically, merges multiple metadata objects,
+// and serializes Error instances cleanly without leaking stack traces in production.
 
-const isProduction = process.env.NODE_ENV === "production";
+type LogLevel = 'error' | 'warn' | 'info' | 'debug';
 
-type LogLevel = "error" | "warn" | "info" | "debug";
+const LEVEL_WEIGHT: Record<LogLevel, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3,
+};
+
+function getConfiguredLevel(): LogLevel {
+  const raw = (process.env.LOG_LEVEL || '').trim().toLowerCase();
+  if (raw === 'error' || raw === 'warn' || raw === 'info' || raw === 'debug') {
+    return raw;
+  }
+  return process.env.NODE_ENV === 'production' ? 'info' : 'debug';
+}
+
+function shouldEmit(level: LogLevel): boolean {
+  return LEVEL_WEIGHT[level] <= LEVEL_WEIGHT[getConfiguredLevel()];
+}
+
+function serializeError(err: Error): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    errorName: err.name,
+    errorMessage: err.message,
+  };
+  if (process.env.NODE_ENV !== 'production' && err.stack) {
+    out.errorStack = err.stack;
+  }
+  return out;
+}
 
 function formatLog(level: LogLevel, args: unknown[]): string {
   const timestamp = new Date().toISOString();
-  const meta =
-    (args.find((a): a is Record<string, unknown> => typeof a === "object" && a !== null)) || {};
-  const message =
-    args.find((a): a is string => typeof a === "string") || JSON.stringify(args);
+  const mergedMeta: Record<string, unknown> = {};
+  const messages: string[] = [];
+
+  for (const arg of args) {
+    if (typeof arg === 'string') {
+      messages.push(arg);
+    } else if (arg instanceof Error) {
+      Object.assign(mergedMeta, serializeError(arg));
+      if (messages.length === 0) messages.push(arg.message);
+    } else if (arg && typeof arg === 'object' && !Array.isArray(arg)) {
+      for (const [k, v] of Object.entries(arg as Record<string, unknown>)) {
+        mergedMeta[k] = v instanceof Error ? serializeError(v) : v;
+      }
+    } else if (arg !== undefined) {
+      messages.push(String(arg));
+    }
+  }
+
   return JSON.stringify({
     timestamp,
-    service: "cdes-platform",
-    ...meta,
+    service: 'cdes-platform',
+    ...mergedMeta,
     level,
-    message,
+    message: messages.join(' ') || level.toUpperCase(),
   });
 }
 
 export class Logger {
   static error(...args: unknown[]): void {
-    console.error(formatLog("error", args));
+    if (shouldEmit('error')) console.error(formatLog('error', args));
   }
   static warn(...args: unknown[]): void {
-    console.warn(formatLog("warn", args));
+    if (shouldEmit('warn')) console.warn(formatLog('warn', args));
   }
   static info(...args: unknown[]): void {
-    console.log(formatLog("info", args));
+    if (shouldEmit('info')) console.log(formatLog('info', args));
   }
   static debug(...args: unknown[]): void {
-    if (!isProduction) console.log(formatLog("debug", args));
+    if (shouldEmit('debug')) console.log(formatLog('debug', args));
   }
 }
 
-// Default logger instance
 const logger = {
   error: Logger.error.bind(Logger),
   warn: Logger.warn.bind(Logger),

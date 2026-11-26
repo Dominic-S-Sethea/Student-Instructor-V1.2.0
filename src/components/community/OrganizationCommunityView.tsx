@@ -103,11 +103,11 @@ export const OrganizationCommunityView: React.FC = () => {
                   <Mail className="w-3.5 h-3.5" /> Contact Desk
                 </a>
 
-                {org.website_url && (
+                {org.website_url && /^https?:\/\//i.test(org.website_url) && (
                   <a
                     href={org.website_url}
                     target="_blank"
-                    rel="noreferrer"
+                    rel="noopener noreferrer"
                     className="text-blue-600 hover:underline flex items-center gap-1 font-semibold"
                   >
                     <span>Website</span>

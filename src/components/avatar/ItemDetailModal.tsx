@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { X, BookOpen, Trash2, Move, Plus, Sparkles, CheckCircle2, Compass } from 'lucide-react';
 import { ClientAvatarItem, ClientRoomObject } from '../../types';
 import { RoomObjectRenderer } from './RoomObjectRenderer';
+import { useAccessibleDialog } from '../../hooks/useModalAccessibility';
 
 interface ItemDetailModalProps {
   item: ClientAvatarItem | null;
@@ -22,11 +23,23 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
   onRemove,
   onReposition,
 }) => {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useAccessibleDialog(isOpen && Boolean(item), onClose, dialogRef);
+
   if (!isOpen || !item) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="item-detail-modal-title"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col focus:outline-hidden"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
           <div className="flex items-center space-x-2">
@@ -36,8 +49,10 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
             <span className="text-xs font-semibold text-slate-500">Slot: {item.default_slot}</span>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+            aria-label="Close item details"
+            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -54,7 +69,7 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
 
           {/* Titles */}
           <div>
-            <h3 className="text-lg font-bold text-slate-800">{item.name}</h3>
+            <h3 id="item-detail-modal-title" className="text-lg font-bold text-slate-800">{item.name}</h3>
             <p className="text-xs text-slate-600 mt-1 leading-relaxed">{item.description}</p>
           </div>
 

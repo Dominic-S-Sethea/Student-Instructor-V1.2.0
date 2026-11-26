@@ -65,7 +65,7 @@ export class LearningRepository {
       LEFT JOIN categories c ON lc.category_id = c.id
       WHERE 1=1
     `;
-    const params: any[] = [];
+    const params: string[] = [];
 
     if (filters?.subject_id) {
       sql += ' AND lc.subject_id = ?';
@@ -90,7 +90,7 @@ export class LearningRepository {
 
     sql += ' ORDER BY lc.is_featured DESC, lc.created_at DESC';
 
-    const rows = this.db.prepare(sql).all(...params) as any[];
+    const rows = this.db.prepare(sql).all(...params) as unknown as Array<Record<string, unknown>>;
     return rows.map((r) => this.mapLearningContent(r));
   }
 
@@ -107,19 +107,19 @@ export class LearningRepository {
         LEFT JOIN categories c ON lc.category_id = c.id
         WHERE lc.id = ?
       `)
-      .get(id) as any;
+      .get(id) as unknown as Record<string, unknown> | undefined;
 
     if (!row) return null;
     return this.mapLearningContent(row);
   }
 
-  private mapLearningContent(r: any): any {
+  private mapLearningContent(r: Record<string, unknown>): LearningContent & { subject_name?: string; subject_color?: string } {
     return {
-      ...r,
-      simulation_config: r.simulation_config ? safeJsonParse(r.simulation_config, undefined) : undefined,
-      quiz_data: r.quiz_data ? safeJsonParse(r.quiz_data, undefined) : undefined,
-      project_brief: r.project_brief ? safeJsonParse(r.project_brief, undefined) : undefined,
-      learning_objectives: safeJsonParse(r.learning_objectives, []),
+      ...(r as unknown as LearningContent & { subject_name?: string; subject_color?: string }),
+      simulation_config: typeof r.simulation_config === 'string' ? safeJsonParse(r.simulation_config, undefined) : undefined,
+      quiz_data: typeof r.quiz_data === 'string' ? safeJsonParse(r.quiz_data, undefined) : undefined,
+      project_brief: typeof r.project_brief === 'string' ? safeJsonParse(r.project_brief, undefined) : undefined,
+      learning_objectives: safeJsonParse<string[]>(typeof r.learning_objectives === 'string' ? r.learning_objectives : null, []),
     };
   }
 
@@ -135,14 +135,14 @@ export class LearningRepository {
       FROM lab_experiments le
       JOIN subjects s ON le.subject_id = s.id
     `;
-    const params: any[] = [];
+    const params: string[] = [];
     if (subjectId) {
       sql += ' WHERE le.subject_id = ?';
       params.push(subjectId);
     }
     sql += ' ORDER BY le.created_at ASC';
 
-    const rows = this.db.prepare(sql).all(...params) as any[];
+    const rows = this.db.prepare(sql).all(...params) as unknown as Array<Record<string, unknown>>;
     return rows.map((r) => this.mapLabExperiment(r));
   }
 
@@ -157,21 +157,21 @@ export class LearningRepository {
         JOIN subjects s ON le.subject_id = s.id
         WHERE le.id = ?
       `)
-      .get(id) as any;
+      .get(id) as unknown as Record<string, unknown> | undefined;
 
     if (!row) return null;
     return this.mapLabExperiment(row);
   }
 
-  private mapLabExperiment(r: any): LabExperiment {
+  private mapLabExperiment(r: Record<string, unknown>): LabExperiment {
     return {
-      ...r,
-      learning_objectives: safeJsonParse(r.learning_objectives, []),
-      apparatus_list: safeJsonParse(r.apparatus_list, []),
-      instructions: safeJsonParse(r.instructions, []),
-      parameters_schema: safeJsonParse(r.parameters_schema, {}),
-      initial_state: safeJsonParse(r.initial_state, {}),
-      expected_outcome: safeJsonParse(r.expected_outcome, {}),
+      ...(r as unknown as LabExperiment),
+      learning_objectives: safeJsonParse<string[]>(typeof r.learning_objectives === 'string' ? r.learning_objectives : null, []),
+      apparatus_list: safeJsonParse<LabExperiment['apparatus_list']>(typeof r.apparatus_list === 'string' ? r.apparatus_list : null, []),
+      instructions: safeJsonParse<string[]>(typeof r.instructions === 'string' ? r.instructions : null, []),
+      parameters_schema: safeJsonParse<LabExperiment['parameters_schema']>(typeof r.parameters_schema === 'string' ? r.parameters_schema : null, {}),
+      initial_state: safeJsonParse<Record<string, unknown>>(typeof r.initial_state === 'string' ? r.initial_state : null, {}),
+      expected_outcome: safeJsonParse<Record<string, unknown>>(typeof r.expected_outcome === 'string' ? r.expected_outcome : null, {}),
     };
   }
 
@@ -190,13 +190,13 @@ export class LearningRepository {
         WHERE ler.student_id = ?
         ORDER BY ler.updated_at DESC
       `)
-      .all(studentId) as any[];
+      .all(studentId) as unknown as Array<Record<string, unknown>>;
 
     return rows.map((r) => ({
-      ...r,
-      actions_log: safeJsonParse(r.actions_log, []),
-      parameters_used: safeJsonParse(r.parameters_used, {}),
-      outcome_data: safeJsonParse(r.outcome_data, {}),
+      ...(r as unknown as LabExperimentResult),
+      actions_log: safeJsonParse<LabExperimentResult['actions_log']>(typeof r.actions_log === 'string' ? r.actions_log : null, []),
+      parameters_used: safeJsonParse<Record<string, unknown>>(typeof r.parameters_used === 'string' ? r.parameters_used : null, {}),
+      outcome_data: safeJsonParse<Record<string, unknown>>(typeof r.outcome_data === 'string' ? r.outcome_data : null, {}),
     }));
   }
 
@@ -204,7 +204,7 @@ export class LearningRepository {
     studentId: string;
     experimentId: string;
     actionName: string;
-    parameters?: any;
+    parameters?: Record<string, unknown>;
     observationNotes?: string;
   }): LabExperimentResult {
     const experiment = this.getLabExperimentById(params.experimentId);
@@ -212,13 +212,13 @@ export class LearningRepository {
       throw new NotFoundError('Experiment not found');
     }
     const now = new Date().toISOString();
-    let existing = this.db
-      .prepare('SELECT * FROM lab_experiment_results WHERE student_id = ? AND experiment_id = ?')
-      .get(params.studentId, params.experimentId) as any;
+    const existing = this.db
+      .prepare('SELECT id, actions_log FROM lab_experiment_results WHERE student_id = ? AND experiment_id = ?')
+      .get(params.studentId, params.experimentId) as { id: string; actions_log?: string | null } | undefined;
 
-    let actionsLog: any[] = [];
+    let actionsLog: Array<Record<string, unknown>> = [];
     if (existing) {
-      actionsLog = safeJsonParse(existing.actions_log, []);
+      actionsLog = safeJsonParse<Array<Record<string, unknown>>>(existing.actions_log, []);
       actionsLog.push({ action: params.actionName, timestamp: now, parameters: params.parameters });
 
       this.db
@@ -275,8 +275,8 @@ export class LearningRepository {
   completeLabExperiment(params: {
     studentId: string;
     experimentId: string;
-    parametersUsed: any;
-    outcomeData: any;
+    parametersUsed: Record<string, unknown>;
+    outcomeData: Record<string, unknown>;
     score: number;
     observationNotes?: string;
   }): {
@@ -290,13 +290,13 @@ export class LearningRepository {
     const experiment = this.getLabExperimentById(params.experimentId);
     if (!experiment) throw new NotFoundError('Experiment not found');
 
-    let existing = this.db
-      .prepare('SELECT * FROM lab_experiment_results WHERE student_id = ? AND experiment_id = ?')
-      .get(params.studentId, params.experimentId) as any;
+    const existing = this.db
+      .prepare('SELECT id, actions_log FROM lab_experiment_results WHERE student_id = ? AND experiment_id = ?')
+      .get(params.studentId, params.experimentId) as { id: string; actions_log?: string | null } | undefined;
 
-    let actionsLog: any[] = [];
+    let actionsLog: Array<Record<string, unknown>> = [];
     if (existing) {
-      actionsLog = safeJsonParse(existing.actions_log, []);
+      actionsLog = safeJsonParse<Array<Record<string, unknown>>>(existing.actions_log, []);
       actionsLog.push({ action: 'completed_experiment', timestamp: now, outcomeData: params.outcomeData });
 
       this.db
@@ -412,7 +412,7 @@ export class LearningRepository {
       JOIN subjects s ON la.subject_id = s.id
       WHERE 1=1
     `;
-    const params: any[] = [];
+    const params: string[] = [];
     if (subjectId) {
       sql += ' AND la.subject_id = ?';
       params.push(subjectId);
@@ -423,10 +423,10 @@ export class LearningRepository {
     }
     sql += ' ORDER BY la.created_at ASC';
 
-    const rows = this.db.prepare(sql).all(...params) as any[];
+    const rows = this.db.prepare(sql).all(...params) as unknown as Array<Record<string, unknown>>;
     return rows.map((r) => ({
-      ...r,
-      activity_data: safeJsonParse(r.activity_data, {}),
+      ...(r as unknown as LearningActivity),
+      activity_data: safeJsonParse<Record<string, unknown>>(typeof r.activity_data === 'string' ? r.activity_data : null, {}),
     }));
   }
 
@@ -441,12 +441,12 @@ export class LearningRepository {
         JOIN subjects s ON la.subject_id = s.id
         WHERE la.id = ?
       `)
-      .get(id) as any;
+      .get(id) as unknown as Record<string, unknown> | undefined;
 
     if (!row) return null;
     return {
-      ...row,
-      activity_data: safeJsonParse(row.activity_data, {}),
+      ...(row as unknown as LearningActivity),
+      activity_data: safeJsonParse<Record<string, unknown>>(typeof row.activity_data === 'string' ? row.activity_data : null, {}),
     };
   }
 
@@ -466,11 +466,11 @@ export class LearningRepository {
         JOIN subjects s ON la.subject_id = s.id
         WHERE sap.student_id = ?
       `)
-      .all(studentId) as any[];
+      .all(studentId) as unknown as Array<Record<string, unknown>>;
 
     return rows.map((r) => ({
-      ...r,
-      response_data: safeJsonParse(r.response_data, {}),
+      ...(r as unknown as StudentActivityProgress),
+      response_data: safeJsonParse<Record<string, unknown>>(typeof r.response_data === 'string' ? r.response_data : null, {}),
     }));
   }
 
@@ -478,7 +478,7 @@ export class LearningRepository {
     studentId: string;
     activityId: string;
     action: 'started' | 'hint_used' | 'completed';
-    responseData?: any;
+    responseData?: Record<string, unknown>;
     score?: number;
   }): {
     progress: StudentActivityProgress;
@@ -490,17 +490,26 @@ export class LearningRepository {
     const activity = this.getLearningActivityById(params.activityId);
     if (!activity) throw new NotFoundError('Activity not found');
 
-    let existing = this.db
-      .prepare('SELECT * FROM student_activity_progress WHERE student_id = ? AND activity_id = ?')
-      .get(params.studentId, params.activityId) as any;
+    const existing = this.db
+      .prepare('SELECT id, status, score, hint_used_count, response_data FROM student_activity_progress WHERE student_id = ? AND activity_id = ?')
+      .get(params.studentId, params.activityId) as
+      | { id: string; status: string; score: number; hint_used_count: number; response_data: unknown }
+      | undefined;
 
     let meritPointsEarned = 0;
     let unlockedBadge: string | undefined;
+    const wasAlreadyCompleted = existing?.status === 'completed';
 
     if (existing) {
       const hintCount = params.action === 'hint_used' ? existing.hint_used_count + 1 : existing.hint_used_count;
       const status = params.action === 'completed' ? 'completed' : existing.status;
       const score = params.score !== undefined ? params.score : existing.score;
+      const serializedResponseData =
+        params.responseData !== undefined
+          ? JSON.stringify(params.responseData)
+          : typeof existing.response_data === 'string'
+            ? existing.response_data
+            : JSON.stringify(existing.response_data || {});
 
       this.db
         .prepare(`
@@ -510,7 +519,7 @@ export class LearningRepository {
               attempts = attempts + 1,
               hint_used_count = ?,
               response_data = ?,
-              completed_at = CASE WHEN ? = 'completed' THEN ? ELSE completed_at END,
+              completed_at = CASE WHEN ? = 'completed' AND completed_at IS NULL THEN ? ELSE completed_at END,
               updated_at = ?
           WHERE id = ?
         `)
@@ -518,7 +527,7 @@ export class LearningRepository {
           status,
           score,
           hintCount,
-          JSON.stringify(params.responseData || existing.response_data || {}),
+          serializedResponseData,
           params.action,
           now,
           now,
@@ -549,7 +558,7 @@ export class LearningRepository {
         );
     }
 
-    if (params.action === 'completed') {
+    if (params.action === 'completed' && !wasAlreadyCompleted) {
       meritPointsEarned = activity.reward_points || 25;
       this.avatarRepo.addMeritPoints(params.studentId, meritPointsEarned);
 
@@ -615,6 +624,27 @@ export class LearningRepository {
   }
 
   getStudentLearningPaths(studentId: string): (StudentLearningPath & { path: LearningPath })[] {
+    interface JoinedStudentLearningPathRow {
+      id: string;
+      student_id: string;
+      path_id: string;
+      current_step_order: number;
+      status: StudentLearningPath['status'];
+      progress_percentage: number;
+      enrolled_at: string;
+      last_active_at: string;
+      lp_id: string;
+      lp_code: string;
+      lp_title: string;
+      lp_title_km: string;
+      lp_target_career: string;
+      lp_description: string;
+      lp_difficulty: LearningPath['difficulty'];
+      lp_estimated_weeks: number;
+      lp_icon_key: string;
+      lp_color: string;
+      lp_created_at: string;
+    }
     const rows = this.db
       .prepare(`
         SELECT 
@@ -628,9 +658,9 @@ export class LearningRepository {
         WHERE slp.student_id = ?
         ORDER BY slp.last_active_at DESC
       `)
-      .all(studentId) as any[];
+      .all(studentId) as unknown as JoinedStudentLearningPathRow[];
 
-    const stepMap = this.getStepsByPathIds(rows.map((r) => r.lp_id as string));
+    const stepMap = this.getStepsByPathIds(rows.map((r) => r.lp_id));
 
     return rows.map((r) => {
       const steps = stepMap.get(r.lp_id) || [];
@@ -669,8 +699,8 @@ export class LearningRepository {
     }
     const now = new Date().toISOString();
     const existing = this.db
-      .prepare('SELECT * FROM student_learning_paths WHERE student_id = ? AND path_id = ?')
-      .get(studentId, pathId) as any;
+      .prepare('SELECT id FROM student_learning_paths WHERE student_id = ? AND path_id = ?')
+      .get(studentId, pathId) as { id: string } | undefined;
 
     if (existing) {
       this.db
@@ -768,12 +798,12 @@ export class LearningRepository {
     // 1. Gather history
     const historyRows = this.db
       .prepare('SELECT * FROM student_learning_history WHERE student_id = ? ORDER BY timestamp DESC LIMIT 20')
-      .all(studentId) as any[];
+      .all(studentId) as unknown as Array<Record<string, unknown>>;
 
     const recentHistory: StudentLearningHistory[] = historyRows.map((h) => ({
-      ...h,
-      strengths_observed: safeJsonParse(h.strengths_observed, []),
-      weaknesses_observed: safeJsonParse(h.weaknesses_observed, []),
+      ...(h as unknown as StudentLearningHistory),
+      strengths_observed: safeJsonParse<string[]>(typeof h.strengths_observed === 'string' ? h.strengths_observed : null, []),
+      weaknesses_observed: safeJsonParse<string[]>(typeof h.weaknesses_observed === 'string' ? h.weaknesses_observed : null, []),
     }));
 
     // 2. Count metrics
@@ -841,7 +871,9 @@ export class LearningRepository {
     studentId: string,
     badgeCode: string
   ): { unlocked: boolean; title: string; itemRewardName?: string } {
-    const ach = this.db.prepare('SELECT * FROM achievements WHERE code = ?').get(badgeCode) as any;
+    const ach = this.db.prepare('SELECT id, title, item_reward_id FROM achievements WHERE code = ?').get(badgeCode) as
+      | { id: string; title: string; item_reward_id?: string | null }
+      | undefined;
     if (!ach) return { unlocked: false, title: '' };
 
     const existingUnlock = this.db

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { analytics } from '../utils/analytics';
 
 export type Language = 'en' | 'km';
@@ -182,6 +182,27 @@ const translations: Record<Language, Translations> = {
     'cmp.fullRide': '100% Full Scholarship',
     'cmp.accreditation': 'Accreditation Body',
 
+    'uni.allProfiles': 'All University Profiles',
+    'uni.compareMatrix': 'Side-by-Side Comparison Matrix',
+    'uni.scholarshipsFilter': 'Full Scholarships Available',
+    'roi.title': 'Tuition & Salary ROI Calculator',
+
+    // Comparison Matrix
+    'matrix.title': 'University Decision Comparison Matrix',
+    'matrix.subtitle': 'Direct side-by-side evaluation across profile score weights, tuition, curriculum style, and graduate ROI',
+    'matrix.selectToCompare': 'Select to Compare:',
+    'matrix.dataReliability': 'Data Reliability',
+    'matrix.overallScore': 'Overall Profile Score',
+    'matrix.scoreBreakdown': 'Score Breakdown (30/20/20/30)',
+    'matrix.tuition': 'Annual & Total Tuition',
+    'matrix.curriculumModel': 'Curriculum Model',
+    'matrix.theoryPractice': 'Theory vs Real Practice',
+    'matrix.salaryPlacement': 'Starting Salary & 6mo Placement',
+    'matrix.scholarships': 'Full Scholarships Available',
+    'matrix.bestFitFor': 'Best Fit For',
+    'matrix.notRecommended': 'Not Recommended For',
+    'matrix.decisionActions': 'Decision Actions',
+
     // Common Buttons
     'btn.save': 'Save',
     'btn.close': 'Close',
@@ -364,6 +385,27 @@ const translations: Record<Language, Translations> = {
     'cmp.fullRide': 'អាហារូបករណ៍ ១០០%',
     'cmp.accreditation': 'ស្ថាប័នទទួលស្គាល់គុណភាព',
 
+    'uni.allProfiles': 'កម្រងព័ត៌មានសាកលវិទ្យាល័យទាំងអស់',
+    'uni.compareMatrix': 'តារាងប្រៀបធៀបសាកលវិទ្យាល័យទន្ទឹមគ្នា',
+    'uni.scholarshipsFilter': 'មានអាហារូបករណ៍ពេញថ្លៃ',
+    'roi.title': 'ម៉ាស៊ីនគណនាថ្លៃសិក្សា និងផលចំណេញ (ROI)',
+
+    // Comparison Matrix
+    'matrix.title': 'តារាងប្រៀបធៀបសាកលវិទ្យាល័យ',
+    'matrix.subtitle': 'ប្រៀបធៀបពិន្ទុវាយតម្លៃ ថ្លៃសិក្សា រចនាសម្ព័ន្ធកម្មវិធីសិក្សា និងការប៉ាន់ប្រមាណផលចំណេញទន្ទឹមគ្នា',
+    'matrix.selectToCompare': 'ជ្រើសរើសដើម្បីប្រៀបធៀប៖',
+    'matrix.dataReliability': 'ភាពជឿជាក់ទិន្នន័យ',
+    'matrix.overallScore': 'ពិន្ទុវាយតម្លៃរួម',
+    'matrix.scoreBreakdown': 'ពិន្ទុលម្អិត (៣០/២០/២០/៣០)',
+    'matrix.tuition': 'ថ្លៃសិក្សាប្រចាំឆ្នាំ និងសរុប',
+    'matrix.curriculumModel': 'គំរូកម្មវិធីសិក្សា',
+    'matrix.theoryPractice': 'ទ្រឹស្តី ធៀបនឹង ការអនុវត្ត',
+    'matrix.salaryPlacement': 'ការប៉ាន់ប្រមាណប្រាក់ខែ និងអត្រាការងារ',
+    'matrix.scholarships': 'អាហារូបករណ៍ពេញថ្លៃ',
+    'matrix.bestFitFor': 'សាកសមបំផុតសម្រាប់',
+    'matrix.notRecommended': 'មិនណែនាំសម្រាប់',
+    'matrix.decisionActions': 'សកម្មភាពបន្ទាប់',
+
     // Common Buttons
     'btn.save': 'រក្សាទុក',
     'btn.close': 'បិទ',
@@ -401,7 +443,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     document.documentElement.lang = language;
   }, [language]);
 
-  const setLanguage = (lang: Language): void => {
+  const setLanguage = useCallback((lang: Language): void => {
     setLanguageState(lang);
     try {
       localStorage.setItem('preferred_language', lang);
@@ -409,25 +451,29 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // Ignore storage access errors
     }
     analytics.track('change_language', { language: lang });
-  };
+  }, []);
 
-  const t = (key: string, fallback?: string): string => {
-    const currentDict = translations[language];
-    if (currentDict && currentDict[key]) {
-      return currentDict[key];
-    }
-    // Fallback to English
-    if (translations.en[key]) {
-      return translations.en[key];
-    }
-    return fallback || key;
-  };
-
-  return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
-      {children}
-    </LanguageContext.Provider>
+  const t = useCallback(
+    (key: string, fallback?: string): string => {
+      const currentDict = translations[language];
+      if (currentDict && currentDict[key]) {
+        return currentDict[key];
+      }
+      // Fallback to English
+      if (translations.en[key]) {
+        return translations.en[key];
+      }
+      return fallback || key;
+    },
+    [language]
   );
+
+  const value = useMemo<LanguageContextType>(
+    () => ({ language, setLanguage, t }),
+    [language, setLanguage, t]
+  );
+
+  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
 };
 
 export const useLanguage = () => useContext(LanguageContext);

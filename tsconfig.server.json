@@ -13,6 +13,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["server", "shared", "server/tests", "server/db", "server/services", "server/repositories", "server/controllers"],
-  "exclude": ["node_modules", "dist", "server/data"]
+  "include": ["server.ts", "server", "shared", "scripts/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }

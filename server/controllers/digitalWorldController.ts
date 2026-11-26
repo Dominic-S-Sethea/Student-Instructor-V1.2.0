@@ -2,9 +2,11 @@ import crypto from 'node:crypto';
 import { Router, Request, Response } from 'express';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { PrivacyService } from '../services/privacyService';
+import { aiSafetyService } from '../services/aiSafetyService';
 import { AnalyticsRepository } from '../repositories/analyticsRepository';
 import { validate } from '../middleware/validationMiddleware';
 import { DigitalWorldChatSchema } from '../validators/apiSchemas';
+import { GameTelemetrySchema } from '../validators/domainSchemas';
 import { safeErrorMessage } from '../utils/httpErrors';
 
 const router = Router();
@@ -524,13 +526,29 @@ router.get('/games', (_req: Request, res: Response) => {
 router.post('/companion/chat', authenticateToken, validate(DigitalWorldChatSchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const { message } = req.body as { message: string };
-    const companionState = getOrCreateUserCompanion(req.user!.userId);
+    const actingUserId = req.user!.userId;
+    const inputCheck = aiSafetyService.inspectInput(message);
+    if (!inputCheck.isSafe) {
+      const guardedReply = inputCheck.guidanceNote || 'Let us focus on safe, constructive study planning.';
+      return res.json({
+        success: true,
+        persisted: false,
+        data: {
+          reply: guardedReply,
+          companionState: cloneDefaultCompanion(),
+        },
+      });
+    }
+
+    const sanitizedUserMessage = aiSafetyService.sanitizeOutput(message).sanitizedText;
+    const memoryAllowed = privacyService.canUseAIMemory(actingUserId);
+    const companionState = memoryAllowed ? getOrCreateUserCompanion(actingUserId) : cloneDefaultCompanion();
 
     const studentMsgId = `msg-${crypto.randomUUID()}`;
     companionState.dialogueHistory.push({
       id: studentMsgId,
       speaker: 'student',
-      text: message,
+      text: sanitizedUserMessage,
       timestamp: new Date().toISOString(),
     });
 
@@ -538,7 +556,7 @@ router.post('/companion/chat', authenticateToken, validate(DigitalWorldChatSchem
     let replyText = 'I hear your determination! Let us break this down into first principles. What is the fundamental constraint we must satisfy?';
     let emotionalTone = 'encouraging';
 
-    const lower = message.toLowerCase();
+    const lower = sanitizedUserMessage.toLowerCase();
     if (lower.includes('scholarship') || lower.includes('cadt') || lower.includes('university')) {
       replyText = 'Securing a top scholarship is a marathon, not a sprint. Your Grade 12 calculus and English readiness are key. Would you like to review the Techo Digital admission criteria at the Career Center?';
       emotionalTone = 'visionary';
@@ -562,14 +580,17 @@ router.post('/companion/chat', authenticateToken, validate(DigitalWorldChatSchem
       companionState.dialogueHistory.splice(0, companionState.dialogueHistory.length - MAX_DIALOGUE_HISTORY);
     }
 
-    companionState.affinityXp += 25;
-    if (companionState.affinityXp >= 1000) {
-      companionState.affinityLevel += 1;
-      companionState.affinityXp = 0;
+    if (memoryAllowed) {
+      companionState.affinityXp += 25;
+      if (companionState.affinityXp >= 1000) {
+        companionState.affinityLevel += 1;
+        companionState.affinityXp = 0;
+      }
     }
 
     return res.json({
       success: true,
+      persisted: memoryAllowed,
       data: {
         reply: replyText,
         companionState,
@@ -584,7 +605,7 @@ router.post('/companion/chat', authenticateToken, validate(DigitalWorldChatSchem
  * POST /api/digital-world/game-telemetry
  * Telemetry endpoint recording educational simulation events into SQLite when analytics consent is active.
  */
-router.post('/game-telemetry', authenticateToken, (req: AuthenticatedRequest, res: Response) => {
+router.post('/game-telemetry', authenticateToken, validate(GameTelemetrySchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const actingStudentId = req.user!.userId;
     const {

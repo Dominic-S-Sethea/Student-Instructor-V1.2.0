@@ -463,21 +463,27 @@ router.get('/categories', (_req: Request, res: Response): void => {
   });
 });
 
+const feedbackVotesByUser = new Map<string, boolean>();
+const MAX_FEEDBACK_VOTE_KEYS = 1_000;
+
 /**
  * @route GET /api/knowledge/content
- * @desc Filter knowledge articles by category, status, and target grade
+ * @desc Filter knowledge articles by category, status, and target grade (non-admins only see published)
  */
 router.get('/content', (req: Request, res: Response): void => {
   try {
     const { category, status, language, grade } = req.query;
+    const isAdmin = (req as { user?: { role?: string } }).user?.role === 'admin';
 
     let results = [...knowledgeRepository];
+    if (!isAdmin) {
+      results = results.filter((c) => c.status === 'published');
+    } else if (status) {
+      results = results.filter((c) => c.status === status);
+    }
 
     if (category) {
       results = results.filter((c) => c.categoryId === category || c.slug === category);
-    }
-    if (status) {
-      results = results.filter((c) => c.status === status);
     }
     if (language) {
       results = results.filter((c) => c.language === language || c.language === 'bilingual');
@@ -502,6 +508,8 @@ router.get('/content', (req: Request, res: Response): void => {
  */
 router.post('/content', authenticateToken, validate(KnowledgeContentCreateSchema, 'body'), (req: Request, res: Response): void => {
   try {
+    const actor = (req as { user?: { userId: string; role: string } }).user;
+    const isAdmin = actor?.role === 'admin';
     const {
       categoryId,
       authorId,
@@ -517,11 +525,14 @@ router.post('/content', authenticateToken, validate(KnowledgeContentCreateSchema
     } = req.body;
 
     const shortId = crypto.randomUUID().slice(0, 12);
+    const resolvedAuthorId = isAdmin && authorId ? authorId : `community_${actor?.userId || 'anon'}`;
+    const resolvedSourceId = isAdmin && sourceId ? sourceId : 'src_community_draft';
+
     const newContent: KnowledgeContent = {
       id: `kn_${shortId}`,
       categoryId: categoryId || 'cat_decision',
-      authorId: authorId || 'auth_cadt_dean',
-      sourceId: sourceId || 'src_moeys_official',
+      authorId: resolvedAuthorId,
+      sourceId: resolvedSourceId,
       titleEn,
       titleKm,
       slug: titleEn.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || `kn-${shortId}`,
@@ -532,7 +543,7 @@ router.post('/content', authenticateToken, validate(KnowledgeContentCreateSchema
       targetGrades,
       version: 1,
       status: 'submitted',
-      trustScore: 82.5,
+      trustScore: isAdmin ? 82.5 : 70.0,
       viewCount: 0,
       helpfulVotes: 0,
       unhelpfulVotes: 0,
@@ -579,8 +590,8 @@ router.post('/verify', authenticateToken, requireRole('admin'), validate(Knowled
       return;
     }
 
-    const author = initialAuthors.find((a) => a.id === item.authorId) || initialAuthors[0];
-    const source = initialSources.find((s) => s.id === item.sourceId) || initialSources[0];
+    const author = initialAuthors.find((a) => a.id === item.authorId) || { reputationScore: 70 };
+    const source = initialSources.find((s) => s.id === item.sourceId) || { reliabilityTier: 'tier_4_community_draft' as const };
 
     // Compute updated Trust Score
     const updatedTrust = calculateTrustScore(
@@ -596,7 +607,6 @@ router.post('/verify', authenticateToken, requireRole('admin'), validate(Knowled
 
     if (decision === 'approved') {
       item.status = 'published';
-      // Automatically trigger vector indexing timestamp
       item.embeddingId = `emb_vec_${crypto.randomUUID().slice(0, 8)}`;
       item.vectorIndexedAt = new Date().toISOString();
     } else if (decision === 'revision_requested') {
@@ -664,11 +674,12 @@ router.post('/rag-sync', authenticateToken, requireRole('admin'), validate(Knowl
 
 /**
  * @route POST /api/knowledge/feedback
- * @desc Student feedback loop: upvote/downvote and quality tracking
+ * @desc Student feedback loop: deduplicated per-user upvote/downvote
  */
 router.post('/feedback', authenticateToken, validate(KnowledgeFeedbackSchema, 'body'), (req: Request, res: Response): void => {
   try {
     const { contentId, isHelpful } = req.body;
+    const actorUserId = (req as { user?: { userId: string } }).user?.userId || 'anon';
 
     const item = knowledgeRepository.find((c) => c.id === contentId);
     if (!item) {
@@ -676,15 +687,29 @@ router.post('/feedback', authenticateToken, validate(KnowledgeFeedbackSchema, 'b
       return;
     }
 
-    if (isHelpful) {
-      item.helpfulVotes += 1;
-    } else {
-      item.unhelpfulVotes += 1;
+    const voteKey = `${actorUserId}:${item.id}`;
+    const prevVote = feedbackVotesByUser.get(voteKey);
+    if (prevVote === undefined) {
+      if (feedbackVotesByUser.size >= MAX_FEEDBACK_VOTE_KEYS) {
+        const oldest = feedbackVotesByUser.keys().next().value;
+        if (oldest !== undefined) feedbackVotesByUser.delete(oldest);
+      }
+      feedbackVotesByUser.set(voteKey, Boolean(isHelpful));
+      if (isHelpful) item.helpfulVotes += 1;
+      else item.unhelpfulVotes += 1;
+    } else if (prevVote !== Boolean(isHelpful)) {
+      feedbackVotesByUser.set(voteKey, Boolean(isHelpful));
+      if (isHelpful) {
+        item.helpfulVotes += 1;
+        item.unhelpfulVotes = Math.max(0, item.unhelpfulVotes - 1);
+      } else {
+        item.unhelpfulVotes += 1;
+        item.helpfulVotes = Math.max(0, item.helpfulVotes - 1);
+      }
     }
 
-    // Refresh trust score slightly based on student input
-    const author = initialAuthors.find((a) => a.id === item.authorId) || initialAuthors[0];
-    const source = initialSources.find((s) => s.id === item.sourceId) || initialSources[0];
+    const author = initialAuthors.find((a) => a.id === item.authorId) || { reputationScore: 70 };
+    const source = initialSources.find((s) => s.id === item.sourceId) || { reliabilityTier: 'tier_4_community_draft' as const };
 
     item.trustScore = calculateTrustScore(
       source.reliabilityTier,
@@ -696,7 +721,7 @@ router.post('/feedback', authenticateToken, validate(KnowledgeFeedbackSchema, 'b
 
     res.json({
       success: true,
-      message: 'Student feedback recorded successfully.',
+      message: prevVote === Boolean(isHelpful) ? 'Feedback already recorded.' : 'Student feedback recorded successfully.',
       data: {
         contentId: item.id,
         helpfulVotes: item.helpfulVotes,

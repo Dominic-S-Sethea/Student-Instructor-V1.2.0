@@ -2,6 +2,8 @@ import React from 'react';
 import { AlertTriangle, Bookmark, BookmarkCheck, Clock, ExternalLink, Globe2, ShieldCheck, Eye } from 'lucide-react';
 import { ScholarshipItem } from '../../types/scholarship';
 import { useLanguage } from '../../context/LanguageContext';
+import { getSafeHttpUrl } from '../../utils/safeUrl';
+import { hasActiveTextSelection } from '../../utils/textSelectionGuard';
 
 interface ScholarshipDirectoryCardProps {
   scholarship: ScholarshipItem;
@@ -10,7 +12,7 @@ interface ScholarshipDirectoryCardProps {
   onOpenDetail: (scholarship: ScholarshipItem) => void;
 }
 
-export const ScholarshipDirectoryCard: React.FC<ScholarshipDirectoryCardProps> = ({
+export const ScholarshipDirectoryCard: React.FC<ScholarshipDirectoryCardProps> = React.memo(({
   scholarship,
   isSaved,
   onToggleSave,
@@ -75,7 +77,10 @@ export const ScholarshipDirectoryCard: React.FC<ScholarshipDirectoryCardProps> =
         </div>
         <div>
           <h3
-            onClick={() => onOpenDetail(scholarship)}
+            onClick={() => {
+              if (hasActiveTextSelection()) return;
+              onOpenDetail(scholarship);
+            }}
             className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 cursor-pointer line-clamp-2 leading-snug transition-colors"
           >
             {n}
@@ -186,18 +191,22 @@ export const ScholarshipDirectoryCard: React.FC<ScholarshipDirectoryCardProps> =
             <Eye className="w-3.5 h-3.5" />
             View Dossier
           </button>
-          <a
-            href={scholarship.applicationLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
-            title="Open official application portal"
-            aria-label={`Open official portal for ${n}`}
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
+          {getSafeHttpUrl(scholarship.applicationLink) && (
+            <a
+              href={getSafeHttpUrl(scholarship.applicationLink)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+              title="Open official application portal"
+              aria-label={`Open official portal for ${n}`}
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
         </div>
       </div>
     </article>
   );
-};
+});
+
+ScholarshipDirectoryCard.displayName = 'ScholarshipDirectoryCard';

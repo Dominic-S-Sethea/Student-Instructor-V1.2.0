@@ -64,11 +64,14 @@ export class UniversityRepository {
   }
 
   public getById(id: string): (UniversityRow & { majors: MajorRow[] }) | null {
-    const u = this.db.prepare('SELECT * FROM universities WHERE id = ? OR abbr = ? COLLATE NOCASE').get(id, id) as unknown as UniversityRow | undefined;
+    const u = (
+      this.db.prepare('SELECT * FROM universities WHERE id = ?').get(id) ||
+      this.db.prepare('SELECT * FROM universities WHERE abbr = ? COLLATE NOCASE').get(id)
+    ) as unknown as UniversityRow | undefined;
     if (!u) return null;
     return {
       ...u,
-      majors: this.getMajorsByUniversityId(u.id)
+      majors: this.getMajorsByUniversityId(u.id),
     };
   }
 

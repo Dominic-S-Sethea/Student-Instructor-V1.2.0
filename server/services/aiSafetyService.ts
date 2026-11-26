@@ -38,8 +38,8 @@ export class AISafetyService {
     'you are forced to'
   ];
 
-  // PII regexes (Cambodian phone numbers, general emails)
-  private readonly phoneRegex = /(\+?855|0)[1-9][0-9]{7,8}/g;
+  // PII regexes (Cambodian phone numbers with optional spaces/hyphens, general emails)
+  private readonly phoneRegex = /(\+?855|0)[\s-]?[1-9]\d[\s-]?\d{3}[\s-]?\d{3,4}/g;
   private readonly emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 
   /**
@@ -69,20 +69,35 @@ export class AISafetyService {
   public sanitizeOutput(agentText: string): { sanitizedText: string; flags: string[] } {
     let sanitized = agentText;
     const flags: string[] = [];
+    let piiRedacted = false;
 
     // 1. PII Redaction for minor safety
-    if (this.phoneRegex.test(sanitized)) {
-      sanitized = sanitized.replace(this.phoneRegex, '[PHONE REDACTED FOR MINOR SAFETY]');
-      flags.push('minor_privacy_pii_masked');
+    const phoneRedacted = sanitized.replace(this.phoneRegex, '[PHONE REDACTED FOR MINOR SAFETY]');
+    if (phoneRedacted !== sanitized) {
+      sanitized = phoneRedacted;
+      piiRedacted = true;
     }
-    if (this.emailRegex.test(sanitized)) {
-      // Allow official contact emails like admissions@cadt.edu.kh, mask others if needed
-      sanitized = sanitized.replace(this.emailRegex, (match) => {
-        if (match.endsWith('@cadt.edu.kh') || match.endsWith('@itc.edu.kh') || match.endsWith('@cdes.edu.kh') || match.endsWith('@paragoniu.edu.kh')) {
-          return match;
-        }
-        return '[EMAIL REDACTED]';
-      });
+
+    // Allow official institutional contact emails, redact personal student/guardian emails
+    const emailRedacted = sanitized.replace(this.emailRegex, (match) => {
+      const lowerMatch = match.toLowerCase();
+      if (
+        lowerMatch.endsWith('@cadt.edu.kh') ||
+        lowerMatch.endsWith('@itc.edu.kh') ||
+        lowerMatch.endsWith('@cdes.edu.kh') ||
+        lowerMatch.endsWith('@paragoniu.edu.kh')
+      ) {
+        return match;
+      }
+      return '[EMAIL REDACTED]';
+    });
+    if (emailRedacted !== sanitized) {
+      sanitized = emailRedacted;
+      piiRedacted = true;
+    }
+
+    if (piiRedacted) {
+      flags.push('minor_privacy_pii_masked');
     }
 
     // 2. Filter permanent negative labels

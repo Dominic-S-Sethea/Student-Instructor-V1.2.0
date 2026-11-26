@@ -2,6 +2,7 @@ import { withTransaction } from '../db/connection';
 import { ScholarshipRepository, HydratedScholarshipRow, OrganizationSubmissionRow } from '../repositories/scholarshipRepository';
 import { formatScholarshipRecord, FormattedScholarship } from './scholarshipFormatter';
 import { safeJsonParse } from '../utils/safeJson';
+import { assertSafeScholarshipUrls } from '../utils/safeUrl';
 import {
   ConflictError,
   FormattedSubmission,
@@ -102,6 +103,15 @@ export class ScholarshipService {
     return this.formatScholarship(raw);
   }
 
+  public getScholarshipsByIds(ids: string[]): Map<string, FormattedScholarship> {
+    const rows = this.repo.getByIds(ids);
+    const map = new Map<string, FormattedScholarship>();
+    for (const row of rows) {
+      map.set(row.id, this.formatScholarship(row));
+    }
+    return map;
+  }
+
   public getStats(): ScholarshipStats {
     const allRows = this.repo.getAll({});
     const totalCount = allRows.length;
@@ -199,6 +209,7 @@ export class ScholarshipService {
     data: Record<string, unknown>,
     userId?: string
   ): { message: string; submission: OrganizationSubmissionRow } {
+    assertSafeScholarshipUrls(data);
     const submission = this.repo.submitOrganizationOpportunity({
       ...data,
       submitted_by_user_id: userId || null,
@@ -225,6 +236,7 @@ export class ScholarshipService {
   }
 
   public reportError(data: Record<string, unknown>): { message: string; report: FormattedErrorReport } {
+    assertSafeScholarshipUrls(data);
     const report = this.repo.submitErrorReport(data);
     return {
       message: 'Thank you for reporting! Our editorial team will review and verify this information.',
@@ -265,7 +277,8 @@ export class ScholarshipService {
     status: string,
     adminNotes?: string,
     applyCorrection: boolean = false,
-    resolverLabel: string = 'CDES Editorial Admin'
+    resolverLabel: string = 'CDES Editorial Admin',
+    changedByUserId?: string
   ): FormattedErrorReport | null {
     const resolved = withTransaction(() => {
       const updatedReport = this.repo.resolveErrorReport(id, status, resolverLabel, adminNotes);
@@ -290,11 +303,9 @@ export class ScholarshipService {
         const fieldKey = updatedReport.reported_field.trim().toLowerCase().replace(/\s+/g, '');
         const mappedField = CORRECTABLE_SCHOLARSHIP_FIELDS[fieldKey] ?? CORRECTABLE_SCHOLARSHIP_FIELDS[updatedReport.reported_field.trim().toLowerCase()];
         if (mappedField) {
-          this.repo.update(
-            updatedReport.scholarship_id,
-            { [mappedField]: updatedReport.suggested_correction.trim() },
-            resolverLabel
-          );
+          const patch = { [mappedField]: updatedReport.suggested_correction.trim() };
+          assertSafeScholarshipUrls(patch);
+          this.repo.update(updatedReport.scholarship_id, patch, changedByUserId);
         }
       }
 
@@ -338,10 +349,12 @@ export class ScholarshipService {
   }
 
   public createScholarship(data: Record<string, unknown>, changedByUserId?: string): FormattedScholarship {
+    assertSafeScholarshipUrls(data);
     return this.formatScholarship(this.repo.create(data, changedByUserId));
   }
 
   public updateScholarship(id: string, data: Record<string, unknown>, changedByUserId?: string): FormattedScholarship | null {
+    assertSafeScholarshipUrls(data);
     const updated = this.repo.update(id, data, changedByUserId);
     return updated ? this.formatScholarship(updated) : null;
   }

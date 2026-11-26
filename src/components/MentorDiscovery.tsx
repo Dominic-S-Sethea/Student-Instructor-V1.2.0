@@ -19,6 +19,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { Mentor, StudentProfile } from '../types';
+import { useEscapeKey } from '../hooks/useModalAccessibility';
 
 export interface MentorPostComment {
   id: string;
@@ -126,7 +127,7 @@ const initialCommentsData: Record<string, MentorPostComment[]> = {
       hasLiked: true,
       mentorReply: {
         mentorName: 'Dr. Sreymom Meas (UHS Alumna)',
-        mentorAvatar: 'https://images.unsplash.com/photo-1594824813589-3221b2b8e5c5?w=200&auto=format&fit=crop&q=80',
+        mentorAvatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=200&auto=format&fit=crop&q=80',
         text: 'Focus deeply on human genetics, cellular respiration/biochemistry, and endocrine regulation from the Grade 12 curriculum. Diagrams and enzyme pathways are frequently tested!',
         timestamp: '2 days ago',
       },
@@ -156,6 +157,11 @@ export const MentorDiscovery: React.FC<MentorDiscoveryProps> = ({
   const [commentsMap, setCommentsMap] = useState<Record<string, MentorPostComment[]>>(initialCommentsData);
   const [newCommentInput, setNewCommentInput] = useState('');
   const [likedPosts, setLikedPosts] = useState<Record<string, boolean>>({});
+
+  useEscapeKey(Boolean(selectedMentorForBio || selectedMentorForComments), () => {
+    setSelectedMentorForBio(null);
+    setSelectedMentorForComments(null);
+  });
 
   const roles = [
     { label: 'All Mentors', value: 'ALL' },
@@ -432,8 +438,20 @@ export const MentorDiscovery: React.FC<MentorDiscoveryProps> = ({
 
       {/* Mentor Profile & Facebook-Style Public Comment Wall Modal */}
       {currentModalMentor && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-7 space-y-6 shadow-2xl border border-stone-200 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${currentModalMentor.name} Public Comments`}
+          onClick={() => {
+            setSelectedMentorForBio(null);
+            setSelectedMentorForComments(null);
+          }}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-7 space-y-6 shadow-2xl border border-stone-200 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95"
+          >
             {/* Modal Header */}
             <div className="flex items-start justify-between border-b border-stone-100 pb-4">
               <div className="flex items-center space-x-3.5">
@@ -454,11 +472,13 @@ export const MentorDiscovery: React.FC<MentorDiscoveryProps> = ({
                 </div>
               </div>
               <button
+                type="button"
+                aria-label="Close mentor comments dialog"
                 onClick={() => {
                   setSelectedMentorForBio(null);
                   setSelectedMentorForComments(null);
                 }}
-                className="p-1 rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100"
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>

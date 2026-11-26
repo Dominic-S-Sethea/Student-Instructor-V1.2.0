@@ -34,7 +34,7 @@ export const AvatarRenderer: React.FC<AvatarRendererProps> = ({
 
   return (
     <div
-      className={`relative inline-flex flex-col items-center justify-center select-none ${className}`}
+      className={`relative inline-flex flex-col items-center justify-center ${className}`}
       style={{ width: sizePixels, height: sizePixels }}
     >
       <svg

@@ -99,7 +99,7 @@ export interface CrossDatabaseMatch {
   reasoningJustification: string;
   alignedPillars: ('goals' | 'strengths' | 'interests' | 'career')[];
   actionLinkText: string;
-  actionPayload: Record<string, any>;
+  actionPayload: Record<string, unknown>;
 }
 
 // Action Plans & Career Roadmaps

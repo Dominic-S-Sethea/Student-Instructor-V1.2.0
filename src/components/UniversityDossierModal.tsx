@@ -34,6 +34,7 @@ import { ComprehensiveUniversityProfile, UniversityGalleryImage } from '../types
 import { DataConfidenceBadge } from './DataConfidenceBadge';
 import { useDraggableScroll } from '../hooks/useDraggableScroll';
 import { UniversityDataChecklistView, BlankBadge } from './UniversityDataChecklistView';
+import { getSafeHttpUrl } from '../utils/safeUrl';
 const GoogleDriveHubModal = lazy(() =>
   import('./GoogleDriveHubModal').then((m) => ({ default: m.GoogleDriveHubModal }))
 );
@@ -143,8 +144,8 @@ export const UniversityDossierModal: React.FC<UniversityDossierModalProps> = ({
             <div
               ref={univSelectorScroll.ref}
               {...univSelectorScroll.events}
-              className={`flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 select-none w-full ${
-                univSelectorScroll.isDragging ? 'cursor-grabbing' : 'cursor-grab'
+              className={`flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 w-full ${
+                univSelectorScroll.isDragging ? 'cursor-grabbing' : ''
               }`}
             >
               {allUniversities.map((u) => {
@@ -240,7 +241,7 @@ export const UniversityDossierModal: React.FC<UniversityDossierModalProps> = ({
                   <div className="flex items-center gap-1">
                     <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                     <a
-                      href={university.website}
+                      href={getSafeHttpUrl(university.website) ?? undefined}
                       target="_blank"
                       rel="noreferrer noopener"
                       className="text-indigo-300 hover:underline inline-flex items-center gap-0.5"
@@ -305,8 +306,8 @@ export const UniversityDossierModal: React.FC<UniversityDossierModalProps> = ({
           <div
             ref={navScroll.ref}
             {...navScroll.events}
-            className={`flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1 select-none text-xs ${
-              navScroll.isDragging ? 'cursor-grabbing' : 'cursor-grab'
+            className={`flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1 text-xs ${
+              navScroll.isDragging ? 'cursor-grabbing' : ''
             }`}
           >
             {[
@@ -485,7 +486,7 @@ export const UniversityDossierModal: React.FC<UniversityDossierModalProps> = ({
                     <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
                       <span className="text-gray-500 font-medium">Official Portal:</span>
                       <a
-                        href={university.website}
+                        href={getSafeHttpUrl(university.website) ?? undefined}
                         target="_blank"
                         rel="noreferrer noopener"
                         className="font-bold text-indigo-600 hover:underline flex items-center gap-1"
@@ -1687,33 +1688,33 @@ export const UniversityDossierModal: React.FC<UniversityDossierModalProps> = ({
             <div className="space-y-4 animate-in fade-in duration-150">
               <div>
                 <h3 className="text-sm font-bold text-gray-900">
-                  Verified Graduate Outcomes & Corporate Hiring Partners
+                  Estimated Graduate Outcomes &amp; Recruiting Partners (Planning Reference)
                 </h3>
                 <p className="text-xs text-gray-500">
-                  Employment velocity, median entry-level salary, and corporate recruiting relationships.
+                  Reference estimates for employment velocity, entry-level pay, and industry hiring partners. Verify current figures directly with the institution.
                 </p>
               </div>
 
               <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200 space-y-4 text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="bg-white p-3 rounded-xl border border-gray-200">
-                    <div className="text-gray-500 font-semibold">6-Month Employment:</div>
+                    <div className="text-gray-500 font-semibold">Est. 6-Month Placement:</div>
                     <div className="text-2xl font-black text-emerald-700 mt-1">
-                      {university.employmentRate6Months}%
+                      {university.employmentRate6Months > 0 ? `${university.employmentRate6Months}%` : 'Not specified'}
                     </div>
                   </div>
 
                   <div className="bg-white p-3 rounded-xl border border-gray-200">
-                    <div className="text-gray-500 font-semibold">Average Time to Job:</div>
+                    <div className="text-gray-500 font-semibold">Est. Time to First Role:</div>
                     <div className="text-2xl font-black text-gray-900 mt-1">
-                      {university.averageTimeToJobMonths} Months
+                      {university.averageTimeToJobMonths > 0 ? `${university.averageTimeToJobMonths} Months` : 'Not specified'}
                     </div>
                   </div>
 
                   <div className="bg-white p-3 rounded-xl border border-gray-200">
-                    <div className="text-gray-500 font-semibold">Guaranteed Internship:</div>
+                    <div className="text-gray-500 font-semibold">Structured Internship Track:</div>
                     <div className="text-lg font-black text-indigo-700 mt-1">
-                      {university.hasGuaranteedInternship ? 'Yes (Structured)' : 'Supported Placement'}
+                      {university.hasGuaranteedInternship ? 'Structured Curriculum Track' : 'Supported Placement'}
                     </div>
                   </div>
                 </div>
@@ -1934,7 +1935,7 @@ export const UniversityDossierModal: React.FC<UniversityDossierModalProps> = ({
 
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
             <a
-              href={university.website}
+              href={getSafeHttpUrl(university.website) ?? undefined}
               target="_blank"
               rel="noreferrer noopener"
               className="py-2.5 px-3.5 rounded-xl border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold text-xs transition-colors flex items-center gap-1.5"

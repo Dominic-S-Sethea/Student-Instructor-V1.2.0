@@ -22,14 +22,8 @@ export default defineConfig(() => {
               if (normalized.includes('/react/') || normalized.includes('/react-dom/')) {
                 return 'vendor-react';
               }
-              if (normalized.includes('/motion/') || normalized.includes('/framer-motion/')) {
-                return 'vendor-motion';
-              }
               if (normalized.includes('/react-markdown/') || normalized.includes('/remark') || normalized.includes('/unified')) {
                 return 'vendor-markdown';
-              }
-              if (normalized.includes('/firebase/') || normalized.includes('/@firebase/')) {
-                return 'vendor-firebase';
               }
               if (normalized.includes('/lucide-react/')) {
                 return 'vendor-icons';

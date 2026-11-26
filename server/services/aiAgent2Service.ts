@@ -1,5 +1,7 @@
+import crypto from 'node:crypto';
 import { getDatabase } from '../db/connection';
 import { PrivacyService } from './privacyService';
+import { safeJsonParse } from '../utils/safeJson';
 import {
   AgentKey,
   MultiAgentMetadata,
@@ -155,26 +157,42 @@ export class AIAgent2Service {
     }
 
     const db = getDatabase();
-    const row = db.prepare('SELECT * FROM student_longterm_memory_profiles WHERE student_id = ?').get(studentId) as any;
+    const row = db
+      .prepare('SELECT * FROM student_longterm_memory_profiles WHERE student_id = ?')
+      .get(studentId) as Record<string, unknown> | undefined;
 
     if (row) {
-      try {
-        return {
-          studentId: row.student_id,
-          identity: JSON.parse(row.identity_context || '{}'),
-          goals: JSON.parse(row.goals_context || '{}'),
-          interests: JSON.parse(row.interests_context || '[]'),
-          strengths: JSON.parse(row.strengths_context || '[]'),
-          weaknesses: JSON.parse(row.weaknesses_context || '[]'),
-          learningPatterns: JSON.parse(row.learning_patterns || '{}'),
-          achievements: JSON.parse(row.achievements_context || '[]'),
-          memoryConfidenceScore: row.memory_confidence_score || 88.0,
-          lastReflectionAt: row.last_reflection_at || new Date().toISOString(),
-          updatedAt: row.updated_at || new Date().toISOString()
-        };
-      } catch (err) {
-        console.error('Error parsing memory json:', err);
-      }
+      return {
+        studentId: String(row.student_id),
+        identity: safeJsonParse(typeof row.identity_context === 'string' ? row.identity_context : null, {
+          fullName: '',
+          educationTier: '',
+          schoolName: '',
+          primaryLanguage: 'km' as const,
+          learningDisposition: '',
+          socioGeographicContext: '',
+        }),
+        goals: safeJsonParse(typeof row.goals_context === 'string' ? row.goals_context : null, {
+          shortTermExamTarget: '',
+          longTermUniversityAspiration: '',
+          targetCareerDomain: '',
+          scholarshipAspiration: '',
+        }),
+        interests: safeJsonParse(typeof row.interests_context === 'string' ? row.interests_context : null, []),
+        strengths: safeJsonParse(typeof row.strengths_context === 'string' ? row.strengths_context : null, []),
+        weaknesses: safeJsonParse(typeof row.weaknesses_context === 'string' ? row.weaknesses_context : null, []),
+        learningPatterns: safeJsonParse(typeof row.learning_patterns === 'string' ? row.learning_patterns : null, {
+          pacingVelocity: 'deliberate_reflective' as const,
+          peakFocusHour: '',
+          preferredExplanationStyle: 'visual' as const,
+          gritPersistenceRating: 0,
+          errorRecoverySpeedSeconds: 0,
+        }),
+        achievements: safeJsonParse(typeof row.achievements_context === 'string' ? row.achievements_context : null, []),
+        memoryConfidenceScore: Number(row.memory_confidence_score) || 88.0,
+        lastReflectionAt: typeof row.last_reflection_at === 'string' ? row.last_reflection_at : new Date().toISOString(),
+        updatedAt: typeof row.updated_at === 'string' ? row.updated_at : new Date().toISOString(),
+      };
     }
 
     // Build neutral initial memory from real student_profiles row without writing synthetic demo records on GET
@@ -228,9 +246,9 @@ export class AIAgent2Service {
     };
   }
 
-  public saveLongTermMemory(memory: StudentLongTermMemory): void {
+  public saveLongTermMemory(memory: StudentLongTermMemory): boolean {
     if (!this.privacy.canUseAIMemory(memory.studentId)) {
-      return;
+      return false;
     }
     const db = getDatabase();
     const now = new Date().toISOString();
@@ -260,10 +278,11 @@ export class AIAgent2Service {
       JSON.stringify(memory.weaknesses),
       JSON.stringify(memory.learningPatterns),
       JSON.stringify(memory.achievements),
-      memory.memoryConfidenceScore,
-      memory.lastReflectionAt,
+      memory.memoryConfidenceScore ?? 0,
+      memory.lastReflectionAt || now,
       now
     );
+    return true;
   }
 
   /**
@@ -371,10 +390,18 @@ Your interaction has been safely processed within the sandboxed CDES learning en
     };
   }
 
+  private redactAuditPrompt(prompt: string): string {
+    return prompt
+      .replace(/(\+?855|0)[\s-]?[1-9]\d[\s-]?\d{3}[\s-]?\d{3,4}/g, '[PHONE REDACTED]')
+      .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[EMAIL REDACTED]')
+      .replace(/(t\.me\/|telegram\.me\/|telegram:\s*@?|@)[a-zA-Z0-9_]{4,}/gi, '[HANDLE REDACTED]')
+      .substring(0, 160);
+  }
+
   private logSafetyAudit(studentId: string, agentKey: string, prompt: string, policy: string, risk: string, action: string, explanation: string) {
     try {
       const db = getDatabase();
-      const id = `safe-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const id = `safe-${crypto.randomUUID()}`;
       db.prepare(`
         INSERT INTO ai_safety_guardrail_audits (
           id, student_id, session_id, agent_key, user_prompt_snippet,
@@ -385,7 +412,7 @@ Your interaction has been safely processed within the sandboxed CDES learning en
         studentId,
         `sess-${studentId}`,
         agentKey,
-        prompt.substring(0, 160),
+        this.redactAuditPrompt(prompt),
         policy,
         risk,
         action,
@@ -411,7 +438,7 @@ Your interaction has been safely processed within the sandboxed CDES learning en
     sourcesRetrieved: Array<{ title: string; category: string; source: string; score: number }>;
     memoryAnchorsApplied: string[];
     suggestedFollowUps: string[];
-    actionRecommended?: { type: string; title: string; payload: Record<string, any> };
+    actionRecommended?: { type: string; title: string; payload: Record<string, unknown> };
     safetyAudit: SafetyAuditResult;
   }> {
     // Step A: Safety Interceptor
@@ -440,7 +467,7 @@ Your interaction has been safely processed within the sandboxed CDES learning en
       `Preferred Style: ${memory.learningPatterns.preferredExplanationStyle}`
     ];
     let suggestedFollowUps: string[] = [];
-    let actionRecommended: { type: string; title: string; payload: Record<string, any> } | undefined = undefined;
+    let actionRecommended: { type: string; title: string; payload: Record<string, unknown> } | undefined = undefined;
 
     switch (agentKey) {
       case 'education_advisor':
@@ -678,40 +705,57 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
    */
   public getActionPlans(studentId: string): AIActionPlan[] {
     const db = getDatabase();
-    const rows = db.prepare('SELECT * FROM ai_action_plans WHERE student_id = ? ORDER BY created_at DESC').all(studentId) as any[];
+    const rows = db
+      .prepare('SELECT * FROM ai_action_plans WHERE student_id = ? ORDER BY created_at DESC LIMIT 50')
+      .all(studentId) as Array<Record<string, unknown>>;
 
     if (rows && rows.length > 0) {
-      return rows.map(r => {
-        const milestones = db.prepare('SELECT * FROM ai_action_milestones WHERE plan_id = ? ORDER BY milestone_order ASC').all(r.id) as any[];
+      const planIds = rows.map((r) => String(r.id));
+      const placeholders = planIds.map(() => '?').join(', ');
+      const allMilestones = db
+        .prepare(`SELECT * FROM ai_action_milestones WHERE plan_id IN (${placeholders}) ORDER BY milestone_order ASC`)
+        .all(...planIds) as Array<Record<string, unknown>>;
+      const byPlan = new Map<string, Array<Record<string, unknown>>>();
+      for (const m of allMilestones) {
+        const key = String(m.plan_id);
+        const list = byPlan.get(key) || [];
+        list.push(m);
+        byPlan.set(key, list);
+      }
+
+      return rows.map((r) => {
+        const milestones = byPlan.get(String(r.id)) || [];
         return {
-          id: r.id,
-          studentId: r.student_id,
-          planType: r.plan_type,
-          title: r.title,
-          targetObjective: r.target_objective,
-          timeframeWeeks: r.timeframe_weeks,
-          progressPercentage: r.progress_percentage,
-          status: r.status,
-          milestones: (milestones || []).map(m => ({
-            id: m.id,
-            order: m.milestone_order,
-            title: m.title,
-            description: m.description,
-            targetTimeline: m.target_date || 'Within 2 weeks',
+          id: String(r.id),
+          studentId: String(r.student_id),
+          planType: String(r.plan_type) as AIActionPlan['planType'],
+          title: String(r.title),
+          targetObjective: String(r.target_objective || ''),
+          timeframeWeeks: Number(r.timeframe_weeks) || 0,
+          progressPercentage: Number(r.progress_percentage) || 0,
+          status: String(r.status || 'active') as AIActionPlan['status'],
+          milestones: milestones.map((m) => ({
+            id: String(m.id),
+            order: Number(m.milestone_order) || 0,
+            title: String(m.title),
+            description: String(m.description || ''),
+            targetTimeline: typeof m.target_date === 'string' && m.target_date ? m.target_date : 'Within 2 weeks',
             isCompleted: Boolean(m.is_completed),
-            linkedEntityType: m.linked_entity_type,
-            linkedEntityId: m.linked_entity_id
+            linkedEntityType: (m.linked_entity_type as ActionMilestone['linkedEntityType']) || undefined,
+            linkedEntityId: typeof m.linked_entity_id === 'string' ? m.linked_entity_id : undefined,
           })),
-          createdAt: r.created_at,
-          updatedAt: r.updated_at
+          createdAt: String(r.created_at),
+          updatedAt: String(r.updated_at),
         };
       });
     }
 
     // Initialize 2 default action plans: 1 Learning Plan + 1 Career Roadmap
+    const bac2PlanId = `plan-bac2-sprint-${studentId}`;
+    const careerPlanId = `plan-career-cloud-${studentId}`;
     const initialPlans: AIActionPlan[] = [
       {
-        id: `plan-bac2-sprint-${studentId}`,
+        id: bac2PlanId,
         studentId,
         planType: 'learning_plan',
         title: '12-Week Bac II Grade-A Examination Sprint',
@@ -721,7 +765,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
         status: 'active',
         milestones: [
           {
-            id: 'm-1',
+            id: `${bac2PlanId}-m1`,
             order: 1,
             title: 'Diagnostic Mastery Baseline across Math, Physics, Chemistry',
             description: 'Complete 3 standardized 2024 Bac II past exam papers under timed examination conditions.',
@@ -731,7 +775,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             linkedEntityId: 'diag-bac2-01'
           },
           {
-            id: 'm-2',
+            id: `${bac2PlanId}-m2`,
             order: 2,
             title: 'Calculus Limit Theorems & 3D Vector Geometry Mastery',
             description: 'Solve 60 high-difficulty calculus proofs; eliminate recurring sign errors in integration.',
@@ -741,7 +785,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             linkedEntityId: 'math-calc-grade12'
           },
           {
-            id: 'm-3',
+            id: `${bac2PlanId}-m3`,
             order: 3,
             title: 'Virtual STEM Laboratory: Electromagnetic & Kinematics Mastery',
             description: 'Run virtual experiments on projectile drag and magnetic induction in CDES Virtual Lab.',
@@ -751,7 +795,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             linkedEntityId: 'exp-phys-em-01'
           },
           {
-            id: 'm-4',
+            id: `${bac2PlanId}-m4`,
             order: 4,
             title: 'Full National Simulation & Timed Mock Exam Review',
             description: 'Participate in national digital mock exam run by CDES and receive AI misconception breakdown.',
@@ -761,7 +805,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             linkedEntityId: 'mock-national-01'
           },
           {
-            id: 'm-5',
+            id: `${bac2PlanId}-m5`,
             order: 5,
             title: 'Final Revision & Metacognitive Peak Focus Conditioning',
             description: 'Light active recall flashcards, sleep rhythm stabilization, and formula synthesis cheatsheets.',
@@ -773,7 +817,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
         updatedAt: new Date().toISOString()
       },
       {
-        id: `plan-career-cloud-${studentId}`,
+        id: careerPlanId,
         studentId,
         planType: 'career_roadmap',
         title: '5-Year Journey: High School Scholar to Cloud Infrastructure Architect',
@@ -783,7 +827,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
         status: 'active',
         milestones: [
           {
-            id: 'cr-1',
+            id: `${careerPlanId}-cr1`,
             order: 1,
             title: 'High School Distinction & MPTC Techo Scholarship Win',
             description: 'Graduate Bac II with distinction and secure 100% full-tuition scholarship to CADT or ITC.',
@@ -791,7 +835,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             isCompleted: true
           },
           {
-            id: 'cr-2',
+            id: `${careerPlanId}-cr2`,
             order: 2,
             title: 'Foundation Year: Data Structures, Algorithms & Linux Core',
             description: 'Master C/C++, algorithmic Big-O optimization, and Linux shell systems programming.',
@@ -799,7 +843,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             isCompleted: false
           },
           {
-            id: 'cr-3',
+            id: `${careerPlanId}-cr3`,
             order: 3,
             title: 'Makerspace Capstone: Distributed Microservices System',
             description: 'Build open-source distributed event queue and present at Cambodia Digital Tech Expo.',
@@ -807,7 +851,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             isCompleted: false
           },
           {
-            id: 'cr-4',
+            id: `${careerPlanId}-cr4`,
             order: 4,
             title: 'Industry Internship at Top Tier Telecom/Bank in Phnom Penh',
             description: 'Complete 6-month enterprise infrastructure internship at Smart Axiata or ABA Bank.',
@@ -815,7 +859,7 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
             isCompleted: false
           },
           {
-            id: 'cr-5',
+            id: `${careerPlanId}-cr5`,
             order: 5,
             title: 'Professional Cloud Certification & Junior Architect Role',
             description: 'Pass AWS/GCP Certified Solutions Architect Associate exam and join enterprise engineering team.',
@@ -828,9 +872,11 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
       }
     ];
 
-    // Persist defaults to database
-    for (const plan of initialPlans) {
-      this.saveActionPlan(plan);
+    // Persist defaults only when AI memory/personalization consent is granted
+    if (this.privacy.canUseAIMemory(studentId)) {
+      for (const plan of initialPlans) {
+        this.saveActionPlan(plan);
+      }
     }
 
     return initialPlans;
@@ -886,20 +932,37 @@ Regarding your inquiry and interest in **${memory.interests[1]?.topic || 'Khmer 
 
   public toggleMilestone(planId: string, milestoneId: string, studentId: string): boolean {
     const db = getDatabase();
-    const row = db.prepare('SELECT is_completed FROM ai_action_milestones WHERE id = ? AND plan_id = ?').get(milestoneId, planId) as any;
+    const row = db
+      .prepare(`
+        SELECT m.is_completed
+        FROM ai_action_milestones m
+        JOIN ai_action_plans p ON p.id = m.plan_id
+        WHERE m.id = ? AND m.plan_id = ? AND p.student_id = ?
+      `)
+      .get(milestoneId, planId, studentId) as { is_completed: number } | undefined;
     if (!row) return false;
 
     const newCompleted = row.is_completed ? 0 : 1;
     const completedAt = newCompleted ? new Date().toISOString() : null;
 
-    db.prepare('UPDATE ai_action_milestones SET is_completed = ?, completed_at = ? WHERE id = ?').run(newCompleted, completedAt, milestoneId);
+    db.prepare('UPDATE ai_action_milestones SET is_completed = ?, completed_at = ? WHERE id = ? AND plan_id = ?').run(
+      newCompleted,
+      completedAt,
+      milestoneId,
+      planId
+    );
 
     // Recalculate plan percentage
-    const allM = db.prepare('SELECT is_completed FROM ai_action_milestones WHERE plan_id = ?').all(planId) as any[];
+    const allM = db.prepare('SELECT is_completed FROM ai_action_milestones WHERE plan_id = ?').all(planId) as Array<{ is_completed: number }>;
     if (allM.length > 0) {
-      const completedCount = allM.filter(m => m.is_completed === 1).length;
+      const completedCount = allM.filter((m) => m.is_completed === 1).length;
       const pct = Math.round((completedCount / allM.length) * 100);
-      db.prepare('UPDATE ai_action_plans SET progress_percentage = ?, updated_at = ? WHERE id = ?').run(pct, new Date().toISOString(), planId);
+      db.prepare('UPDATE ai_action_plans SET progress_percentage = ?, updated_at = ? WHERE id = ? AND student_id = ?').run(
+        pct,
+        new Date().toISOString(),
+        planId,
+        studentId
+      );
     }
 
     if (newCompleted) {
@@ -1013,8 +1076,22 @@ This is precisely a quadratic parabola $y = Ax - Bx^2$ where $B > 0$. Maximizing
    * 8. Knowledge Ingestion, Verification & RAG Pipeline (Task 8)
    */
   public getKnowledgePipeline(): KnowledgePipelineItem[] {
+    interface KnowledgePipelineRow {
+      id: string;
+      document_title: string;
+      curriculum_domain: KnowledgePipelineItem['curriculumDomain'];
+      source_agency: KnowledgePipelineItem['sourceAgency'];
+      verification_status: KnowledgePipelineItem['verificationStatus'];
+      embedding_model: string;
+      chunk_count: number;
+      confidence_score: number;
+      last_verified_at: string;
+      ingested_at: string;
+    }
     const db = getDatabase();
-    const rows = db.prepare('SELECT * FROM knowledge_pipeline_documents ORDER BY ingested_at DESC').all() as any[];
+    const rows = db
+      .prepare('SELECT * FROM knowledge_pipeline_documents ORDER BY ingested_at DESC')
+      .all() as unknown as KnowledgePipelineRow[];
 
     if (rows && rows.length > 0) {
       return rows.map(r => ({
@@ -1153,13 +1230,23 @@ This is precisely a quadratic parabola $y = Ax - Bx^2$ where $B > 0$. Maximizing
   }
 
   public getClosedLoopMetrics(studentId?: string): ClosedLoopAnalyticsMetric {
+    interface ClosedLoopEventRow {
+      id: string;
+      timestamp: string;
+      agent_key: AgentKey;
+      event_stage: string;
+    }
     const db = getDatabase();
-    let rows: any[] = [];
+    let rows: ClosedLoopEventRow[] = [];
     try {
       if (studentId) {
-        rows = db.prepare('SELECT * FROM ai_interaction_analytics_events WHERE student_id = ? ORDER BY timestamp DESC LIMIT 100').all(studentId) as any[];
+        rows = db
+          .prepare('SELECT id, timestamp, agent_key, event_stage FROM ai_interaction_analytics_events WHERE student_id = ? ORDER BY timestamp DESC LIMIT 100')
+          .all(studentId) as unknown as ClosedLoopEventRow[];
       } else {
-        rows = db.prepare('SELECT * FROM ai_interaction_analytics_events ORDER BY timestamp DESC LIMIT 100').all() as any[];
+        rows = db
+          .prepare('SELECT id, timestamp, agent_key, event_stage FROM ai_interaction_analytics_events ORDER BY timestamp DESC LIMIT 100')
+          .all() as unknown as ClosedLoopEventRow[];
       }
     } catch {
       // ignore

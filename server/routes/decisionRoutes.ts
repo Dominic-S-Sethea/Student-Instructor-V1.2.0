@@ -3,24 +3,33 @@ import { AnalyticsRepository } from '../repositories/analyticsRepository';
 import { PrivacyService } from '../services/privacyService';
 import { hermesMemoryService } from '../services/hermesMemoryService';
 import { optionalAuth, AuthenticatedRequest } from '../middleware/authMiddleware';
+import { rateLimiter } from '../middleware/rateLimiter';
+import { validate } from '../middleware/validationMiddleware';
+import { DecisionEvaluateSchema } from '../validators/domainSchemas';
+
+const decisionLimiter = rateLimiter(60_000, 30, 'Too many major-fit evaluations. Please wait a minute.');
 
 export function createDecisionRouter(): Router {
   const router = Router();
   const analyticsRepo = new AnalyticsRepository();
   const privacyService = new PrivacyService();
 
-  router.post('/evaluate', optionalAuth, (req: AuthenticatedRequest, res: Response): void => {
+  router.post('/evaluate', optionalAuth, decisionLimiter, validate(DecisionEvaluateSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
     const body = (req.body || {}) as {
       interests?: string[];
       mathAbility?: string;
       strengths?: string[];
       budgetTier?: string;
+      workStyle?: string;
+      careerGoal?: string;
     };
 
     const interests = Array.isArray(body.interests) ? body.interests : [];
     const strengths = Array.isArray(body.strengths) ? body.strengths : [];
     const mathAbility = body.mathAbility || '';
     const budgetTier = body.budgetTier || '';
+    const workStyle = typeof body.workStyle === 'string' ? body.workStyle : '';
+    const careerGoal = typeof body.careerGoal === 'string' ? body.careerGoal : '';
 
     const hatesMath = mathAbility === 'hates_math';
     const lovesCoding = interests.includes('Technology') || strengths.includes('Logic');
@@ -52,6 +61,13 @@ export function createDecisionRouter(): Router {
       topMajor = 'Accounting & Finance (ACCA Track)';
       alternativeMajor = 'International Business & FinTech';
       fitReason = 'Business and communication strengths align with finance and management tracks.';
+    }
+
+    const styleHints: string[] = [];
+    if (workStyle) styleHints.push(`study style (${workStyle.replace(/_/g, ' ')})`);
+    if (careerGoal) styleHints.push(`career goal (${careerGoal.replace(/_/g, ' ')})`);
+    if (styleHints.length > 0) {
+      fitReason = `${fitReason} Considered ${styleHints.join(' and ')}.`;
     }
 
     const recommendedUniversities: Array<Record<string, unknown>> = [];

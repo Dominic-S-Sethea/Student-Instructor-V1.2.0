@@ -16,12 +16,14 @@ import {
 } from 'lucide-react';
 import { ClientMentorProfile, ClientMentorshipSession } from '../../types';
 import { communityClient } from '../../services/communityClient';
+import { useAuth } from '../../context/AuthContext';
 
 interface Props {
   onOpenReportModal: (itemType: string, itemId: string) => void;
 }
 
 export const MentorCenterView: React.FC<Props> = ({ onOpenReportModal }) => {
+  const { authenticated, user, profile } = useAuth();
   const [mentors, setMentors] = useState<ClientMentorProfile[]>([]);
   const [sessions, setSessions] = useState<ClientMentorshipSession[]>([]);
   const [selectedBadge, setSelectedBadge] = useState<string>('ALL');
@@ -36,38 +38,44 @@ export const MentorCenterView: React.FC<Props> = ({ onOpenReportModal }) => {
   const [bookingNotes, setBookingNotes] = useState('');
   const [submittingBooking, setSubmittingBooking] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
-  const studentId = 'usr-student-01';
-  const studentName = 'Dara Chan';
+  const studentId = user?.id || '';
+  const studentName = profile?.name || user?.email?.split('@')[0] || 'Student';
 
   useEffect(() => {
-    loadMentorsAndSessions();
-  }, [selectedBadge]);
+    void loadMentorsAndSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBadge, authenticated, studentId]);
 
-  const loadMentorsAndSessions = async () => {
+  const loadMentorsAndSessions = async (): Promise<void> => {
     try {
       setLoading(true);
       const [mentorsData, aiRecs, studentSessions] = await Promise.all([
         communityClient.getMentors(selectedBadge !== 'ALL' ? selectedBadge : undefined),
-        communityClient.getAIMRecommendations(studentId),
-        communityClient.getStudentSessions(studentId)
+        authenticated && studentId
+          ? communityClient.getAIMRecommendations(studentId).catch(() => ({ communities: [], mentors: [] }))
+          : Promise.resolve({ communities: [], mentors: [] }),
+        authenticated && studentId
+          ? communityClient.getStudentSessions(studentId).catch(() => [])
+          : Promise.resolve([]),
       ]);
-      const aiRecsData = aiRecs as { mentors: { id: string; matchScore?: number; matchReason?: string }[] };
 
-      // Merge AI scores
       const mScores = new Map<string, { score: number; reason: string }>();
-      aiRecs.mentors.forEach(m => {
+      aiRecs.mentors.forEach((m) => {
         mScores.set(m.id, { score: m.matchScore || 85, reason: m.matchReason || '' });
       });
 
-      const merged = mentorsData.map(m => {
-        const aiInfo = mScores.get(m.id);
-        return {
-          ...m,
-          matchScore: aiInfo?.score,
-          matchReason: aiInfo?.reason
-        };
-      }).sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
+      const merged = mentorsData
+        .map((m) => {
+          const aiInfo = mScores.get(m.id);
+          return {
+            ...m,
+            matchScore: aiInfo?.score,
+            matchReason: aiInfo?.reason,
+          };
+        })
+        .sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
 
       setMentors(merged);
       setSessions(studentSessions);
@@ -78,12 +86,13 @@ export const MentorCenterView: React.FC<Props> = ({ onOpenReportModal }) => {
     }
   };
 
-  const handleBookSubmit = async (e: React.FormEvent) => {
+  const handleBookSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!selectedMentor) return;
 
     try {
       setSubmittingBooking(true);
+      setBookingError(null);
       const newSession = await communityClient.bookMentor({
         mentor_id: selectedMentor.id,
         student_id: studentId,
@@ -92,7 +101,7 @@ export const MentorCenterView: React.FC<Props> = ({ onOpenReportModal }) => {
         session_type: bookingTopic,
         scheduled_date: bookingDate,
         scheduled_time: bookingTime,
-        student_notes: bookingNotes
+        student_notes: bookingNotes,
       });
 
       setSessions([newSession, ...sessions]);
@@ -102,8 +111,8 @@ export const MentorCenterView: React.FC<Props> = ({ onOpenReportModal }) => {
         setSelectedMentor(null);
         setActiveTab('my_sessions');
       }, 1800);
-    } catch (err: any) {
-      alert(err.message || 'Failed to book session');
+    } catch (err) {
+      setBookingError(err instanceof Error ? err.message : 'Failed to book session');
     } finally {
       setSubmittingBooking(false);
     }
@@ -348,14 +357,16 @@ export const MentorCenterView: React.FC<Props> = ({ onOpenReportModal }) => {
                 </div>
 
                 <div className="flex items-center gap-2 self-end md:self-center">
-                  <a
-                    href={sess.meeting_link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
-                  >
-                    <Video className="w-3.5 h-3.5" /> Join Virtual Room
-                  </a>
+                  {sess.meeting_link && /^https?:\/\//i.test(sess.meeting_link) && (
+                    <a
+                      href={sess.meeting_link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition"
+                    >
+                      <Video className="w-3.5 h-3.5" /> Join Virtual Room
+                    </a>
+                  )}
                   <button
                     onClick={() => onOpenReportModal('mentor', sess.mentor_id)}
                     className="p-2 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded-lg text-xs"
@@ -460,6 +471,15 @@ export const MentorCenterView: React.FC<Props> = ({ onOpenReportModal }) => {
                     className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
+                {bookingError && (
+                  <div
+                    role="alert"
+                    className="p-2.5 bg-rose-50 text-rose-700 rounded-xl text-xs border border-rose-200"
+                  >
+                    {bookingError}
+                  </div>
+                )}
 
                 <div className="p-2.5 bg-blue-50 text-blue-800 rounded-xl text-[11px] flex items-center gap-2 border border-blue-200">
                   <ShieldCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />

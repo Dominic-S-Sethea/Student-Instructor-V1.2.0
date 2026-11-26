@@ -5,6 +5,24 @@
  */
 
 import { getDatabase } from '../db/connection';
+import { safeJsonParse } from '../utils/safeJson';
+
+interface TeacherClassRow {
+  id: string;
+  class_name: string;
+  grade_level: string;
+  subject: string;
+  school_name: string;
+  province: string;
+  student_count: number;
+  average_mastery_percentage: number;
+  learning_velocity_index: number;
+  top_misconceptions: string | null;
+  recommended_interventions: string | null;
+  students_needing_scaffolding: number;
+  students_accelerating: number;
+  updated_at: string;
+}
 
 export interface TeacherClassCohort {
   id: string;
@@ -28,37 +46,7 @@ export class TeacherIntelligenceService {
     return getDatabase();
   }
 
-  public getClassCohorts(): TeacherClassCohort[] {
-    const rows = this.db.prepare(`
-      SELECT * FROM teacher_class_analytics
-      ORDER BY average_mastery_percentage DESC
-    `).all() as any[];
-
-    return rows.map(r => ({
-      id: r.id,
-      className: r.class_name,
-      gradeLevel: r.grade_level,
-      subject: r.subject,
-      schoolName: r.school_name,
-      province: r.province,
-      studentCount: r.student_count,
-      averageMasteryPercentage: r.average_mastery_percentage,
-      learningVelocityIndex: r.learning_velocity_index,
-      topMisconceptions: JSON.parse(r.top_misconceptions || '[]'),
-      recommendedInterventions: JSON.parse(r.recommended_interventions || '[]'),
-      studentsNeedingScaffolding: r.students_needing_scaffolding,
-      studentsAccelerating: r.students_accelerating,
-      updatedAt: r.updated_at,
-    }));
-  }
-
-  public getClassCohortById(id: string): TeacherClassCohort | null {
-    const r = this.db.prepare(`
-      SELECT * FROM teacher_class_analytics WHERE id = ?
-    `).get(id) as any;
-
-    if (!r) return null;
-
+  private mapRow(r: TeacherClassRow): TeacherClassCohort {
     return {
       id: r.id,
       className: r.class_name,
@@ -69,12 +57,31 @@ export class TeacherIntelligenceService {
       studentCount: r.student_count,
       averageMasteryPercentage: r.average_mastery_percentage,
       learningVelocityIndex: r.learning_velocity_index,
-      topMisconceptions: JSON.parse(r.top_misconceptions || '[]'),
-      recommendedInterventions: JSON.parse(r.recommended_interventions || '[]'),
+      topMisconceptions: safeJsonParse(r.top_misconceptions, []),
+      recommendedInterventions: safeJsonParse(r.recommended_interventions, []),
       studentsNeedingScaffolding: r.students_needing_scaffolding,
       studentsAccelerating: r.students_accelerating,
       updatedAt: r.updated_at,
     };
+  }
+
+  public getClassCohorts(): TeacherClassCohort[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM teacher_class_analytics
+      ORDER BY average_mastery_percentage DESC
+      LIMIT 200
+    `).all() as unknown as TeacherClassRow[];
+
+    return rows.map((r) => this.mapRow(r));
+  }
+
+  public getClassCohortById(id: string): TeacherClassCohort | null {
+    const r = this.db.prepare(`
+      SELECT * FROM teacher_class_analytics WHERE id = ?
+    `).get(id) as TeacherClassRow | undefined;
+
+    if (!r) return null;
+    return this.mapRow(r);
   }
 
   public generateInterventionPlan(classId: string) {

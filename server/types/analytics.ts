@@ -70,7 +70,7 @@ export interface IngestionEventPayload {
   failureReason?: string;
   timeTaken?: number;
   // Generic metadata
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 // ==========================================
@@ -128,7 +128,7 @@ export interface LearningPreferences {
   primaryStyle: 'visual' | 'textual' | 'interactive' | 'simulation' | 'balanced';
   pacing: 'accelerated' | 'moderate' | 'deliberate' | 'deep_dive';
   sessionLengthPreferenceMinutes: number;
-  peakLearningHours: 'morning' | 'afternoon' | 'evening' | 'late_night';
+  peakLearningHours: 'morning' | 'afternoon' | 'evening' | 'late_night' | 'unspecified';
   visualPreferenceRatio: number; // 0 to 1
   interactivePreferenceRatio: number; // 0 to 1
 }

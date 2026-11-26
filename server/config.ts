@@ -41,7 +41,7 @@ export function isCookieSecure(): boolean {
   const override = (process.env.COOKIE_SECURE || '').trim().toLowerCase();
   if (override === 'false') return false;
   if (override === 'true') return true;
-  return process.env.NODE_ENV === 'production';
+  return process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'staging';
 }
 
 let envLoaded = false;

@@ -20,13 +20,13 @@ export type TabView =
   | 'mentors'
   | 'opportunities'
   | 'profile'
+  | 'settings'
   | 'stem-discovery'
   | 'events'
   | 'community'
   | 'research-lab'
   | 'platform-architecture'
   | 'data-strategy'
-  | 'messages'
   | 'become-mentor';
 
 export interface TelemetryEvent {
@@ -401,6 +401,7 @@ export interface NotificationItem {
   timestamp: string;
   type: 'booking' | 'meetup' | 'opportunity' | 'system' | 'session';
   isRead: boolean;
+  actionTab?: string | null;
 }
 
 // ----------------------------------------------------

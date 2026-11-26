@@ -231,7 +231,7 @@ export const initialMentors: Mentor[] = [
   {
     id: 'men-004',
     name: 'Dr. Sreymom Meas',
-    avatar: 'https://images.unsplash.com/photo-1594824813589-3221b2b8e5c5?w=200&auto=format&fit=crop&q=80',
+    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=200&auto=format&fit=crop&q=80',
     title: 'Resident Doctor & UHS Alumna',
     companyOrOrg: 'Calmette Hospital / UHS',
     university: 'University of Health Sciences (UHS)',
@@ -553,7 +553,7 @@ export const initialMajorInsights: UniversityMajorInsight[] = [
     seniorStudentReview: {
       reviewerName: 'Dr. Sreymom Meas',
       reviewerYear: 'UHS Alumna',
-      avatar: 'https://images.unsplash.com/photo-1594824813589-3221b2b8e5c5?w=200&auto=format&fit=crop&q=80',
+      avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=200&auto=format&fit=crop&q=80',
       quote: 'Medical school is a life calling, not just a university degree. You need patience and empathy above all.',
       pros: [
         'The highest medical credential in Cambodia with clinical rotations at premier national hospitals',

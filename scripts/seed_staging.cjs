@@ -1,11 +1,11 @@
-// server/data/seed_staging.cjs
+// scripts/seed_staging.cjs
 // Seeds 10,000 student profiles + representative telemetry into a staging DB.
 // Staging-only. Does NOT change git, does NOT run migrations, does NOT touch production.
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
-const ROOT = path.resolve(__dirname, '..', '..');
+const ROOT = path.resolve(__dirname, '..');
 const DB_PATH = process.env.DATABASE_PATH || path.join(ROOT, 'server', 'data', 'cdes_platform.staging.db');
 const db = new DatabaseSync(DB_PATH);
 db.exec('PRAGMA journal_mode=WAL;');

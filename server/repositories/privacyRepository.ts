@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { getDatabase } from '../db/connection';
+import { getDatabase, withTransaction } from '../db/connection';
 import { getResearchSalt } from '../config';
 import {
   StudentPrivacyConsent,
@@ -98,8 +98,7 @@ export class PrivacyRepository {
     const consentStatus: ConsentStatus = data.consentStatus ?? (existing?.consentStatus || 'pending');
     const withdrawnAt = data.withdrawnAt !== undefined ? data.withdrawnAt : (existing?.withdrawnAt || null);
 
-    this.db.exec('BEGIN IMMEDIATE;');
-    try {
+    withTransaction(() => {
       this.db
         .prepare(
           `INSERT INTO student_privacy_consents (
@@ -183,16 +182,7 @@ export class PrivacyRepository {
             );
         }
       }
-
-      this.db.exec('COMMIT;');
-    } catch (err) {
-      try {
-        this.db.exec('ROLLBACK;');
-      } catch {
-        // ignore
-      }
-      throw err;
-    }
+    });
 
     return this.getConsent(data.studentId)!;
   }

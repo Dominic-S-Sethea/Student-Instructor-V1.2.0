@@ -1,5 +1,21 @@
 import type { ComprehensiveUniversityProfile } from '../types';
 import type { LiveUniversityRecord } from '../services/universityClient';
+import { resolvePublicAssetUrl } from './assetUrl';
+
+export function normalizeUniversityMedia(
+  list: ComprehensiveUniversityProfile[],
+): ComprehensiveUniversityProfile[] {
+  return list.map((u) => ({
+    ...u,
+    logo: resolvePublicAssetUrl(u.logo),
+    coverImage: resolvePublicAssetUrl(u.coverImage),
+    photos: u.photos?.map((photo) => resolvePublicAssetUrl(photo)),
+    gallery: u.gallery?.map((item) => ({
+      ...item,
+      url: resolvePublicAssetUrl(item.url),
+    })),
+  }));
+}
 
 function mapAccreditationStatus(
   rawStatus: string | undefined,
@@ -32,8 +48,8 @@ function buildFallbackUniversity(live: LiveUniversityRecord): ComprehensiveUnive
     type: live.type,
     foundedYear: live.foundedYear || 2000,
     website: live.website || '',
-    logo: live.logo || '',
-    coverImage: live.coverImage || '',
+    logo: resolvePublicAssetUrl(live.logo || ''),
+    coverImage: resolvePublicAssetUrl(live.coverImage || ''),
     profileScore: live.profileScore,
     accreditation: {
       governmentRecognition: live.accreditation?.agency || 'Not specified',
@@ -120,7 +136,7 @@ export function mergeLiveUniversities(
   liveRecords: LiveUniversityRecord[]
 ): ComprehensiveUniversityProfile[] {
   if (!Array.isArray(liveRecords) || liveRecords.length === 0) {
-    return baseline;
+    return normalizeUniversityMedia(baseline);
   }
 
   const byId = new Map<string, ComprehensiveUniversityProfile>();
@@ -184,5 +200,5 @@ export function mergeLiveUniversities(
     }
   }
 
-  return merged;
+  return normalizeUniversityMedia(merged);
 }

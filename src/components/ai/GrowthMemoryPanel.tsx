@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Brain, Lock, Plus, Search, Sparkles, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useLanguage } from '../../context/LanguageContext';
 import {
   memoryClient,
   type HermesFactCategory,
@@ -8,6 +9,7 @@ import {
   type HermesMemorySnapshotResponse,
 } from '../../services/memoryClient';
 import { GrowthMemoryFactCard } from './GrowthMemoryFactCard';
+import { AdvisorGuestNotice } from './AdvisorGuestNotice';
 
 const CATEGORIES: Array<{ id: HermesFactCategory; label: string }> = [
   { id: 'preference', label: 'Preference' },
@@ -19,10 +21,13 @@ const CATEGORIES: Array<{ id: HermesFactCategory; label: string }> = [
   { id: 'milestone', label: 'Milestone' },
 ];
 
-export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void }> = ({
-  onNavigateTab,
-}) => {
+export const GrowthMemoryPanel: React.FC<{
+  onNavigateTab?: (tab: string) => void;
+  onOpenAuthModal?: () => void;
+}> = ({ onNavigateTab, onOpenAuthModal }) => {
   const { authenticated } = useAuth();
+  const { language } = useLanguage();
+  const isKhmer = language === 'km';
   const [snapshot, setSnapshot] = useState<HermesMemorySnapshotResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +41,8 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
   const [newFactEntities, setNewFactEntities] = useState('');
   const [editingFactId, setEditingFactId] = useState<string | null>(null);
   const [editingFactText, setEditingFactText] = useState('');
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   const loadSnapshot = useCallback(async () => {
     if (!authenticated) return;
@@ -55,6 +62,10 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
 
   useEffect(() => {
     void loadSnapshot();
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      searchAbortRef.current?.abort();
+    };
   }, [loadSnapshot]);
 
   const handleSaveDoc = async (docType: 'USER' | 'MEMORY'): Promise<void> => {
@@ -102,17 +113,28 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
     }
   };
 
-  const handleSearchFacts = async (q: string): Promise<void> => {
+  const handleSearchFacts = (q: string): void => {
     setSearchQuery(q);
     if (!authenticated || !snapshot?.enabled) return;
-    try {
-      const res = q.trim()
-        ? await memoryClient.searchFacts(q.trim())
-        : await memoryClient.getSnapshot(false);
-      setSnapshot((prev) => (prev ? { ...prev, facts: res.facts } : prev));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Fact search failed.');
-    }
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      searchAbortRef.current?.abort();
+      const controller = new AbortController();
+      searchAbortRef.current = controller;
+      const req = q.trim()
+        ? memoryClient.searchFacts(q.trim(), controller.signal)
+        : memoryClient.getSnapshot(false, controller.signal);
+      void req
+        .then((res) => {
+          if (!controller.signal.aborted) {
+            setSnapshot((prev) => (prev ? { ...prev, facts: res.facts } : prev));
+          }
+        })
+        .catch((err) => {
+          if (err instanceof DOMException && err.name === 'AbortError') return;
+          setError(err instanceof Error ? err.message : 'Fact search failed.');
+        });
+    }, 220);
   };
 
   const handleFeedback = async (
@@ -134,11 +156,13 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
     }
   };
 
+  const [confirmingClear, setConfirmingClear] = useState(false);
+
   const handleClearAll = async (): Promise<void> => {
-    if (!window.confirm('Clear your USER, MEMORY notes, and all saved facts?')) return;
     setError(null);
     try {
       await memoryClient.clearAll();
+      setConfirmingClear(false);
       setStatusNote('All Hermes Growth Memory cleared.');
       await loadSnapshot();
     } catch (err) {
@@ -147,17 +171,7 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
   };
 
   if (!authenticated) {
-    return (
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
-        <Lock className="w-8 h-8 text-blue-600 mx-auto" />
-        <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-          Sign in to enable My Growth Memory
-        </h2>
-        <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mx-auto">
-          Study Advisor remembers your study style, target universities, and Bac II milestones across sessions once you sign in and enable AI memory consent.
-        </p>
-      </div>
-    );
+    return <AdvisorGuestNotice variant="memory" isKhmer={isKhmer} onOpenAuthModal={onOpenAuthModal} />;
   }
 
   if (snapshot && !snapshot.enabled) {
@@ -203,18 +217,38 @@ export const GrowthMemoryPanel: React.FC<{ onNavigateTab?: (tab: string) => void
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => void handleClearAll()}
-          className="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-          <span>Reset My Memory</span>
-        </button>
+        {!confirmingClear ? (
+          <button
+            type="button"
+            onClick={() => setConfirmingClear(true)}
+            className="px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer self-start sm:self-auto"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Reset My Memory</span>
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 self-start sm:self-auto" role="group" aria-label="Confirm memory reset">
+            <button
+              type="button"
+              onClick={() => void handleClearAll()}
+              className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Confirm Reset</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmingClear(false)}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       {error && (
-        <div className="rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 px-4 py-2.5 text-xs text-rose-700 dark:text-rose-300">
+        <div role="alert" className="rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 px-4 py-2.5 text-xs text-rose-700 dark:text-rose-300">
           {error}
         </div>
       )}

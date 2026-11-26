@@ -1,8 +1,12 @@
-// server/data/benchmark_hot_queries.cjs
+// scripts/benchmark_hot_queries.cjs
 // Benchmarks the 5 hot per-student queries against the staging DB.
 // All SQL mirrors the repository functions in server/repositories/.
+const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
-const db = new DatabaseSync('C:/Users/sethe/GitHub/Student-Instructor-V1.2.0/server/data/cdes_platform.staging.db');
+const dbPath =
+  process.env.DATABASE_PATH ||
+  path.join(process.cwd(), 'server', 'data', 'cdes_platform.staging.db');
+const db = new DatabaseSync(dbPath);
 
 const benchStudent = 'usr-bench-0001';   // benchmark user id (conversations/recommendations)
 const benchProfile = 'stu-bench-0001';   // benchmark profile id (recommendations)

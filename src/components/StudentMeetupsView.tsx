@@ -256,16 +256,22 @@ export const StudentMeetupsView: React.FC<StudentMeetupsViewProps> = ({
                   </span>
                   <div className="flex items-center space-x-2">
                     {activeMeetup.isJoined ? (
-                      <a
-                        href={activeMeetup.meetingLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 shadow-xs flex items-center space-x-1"
-                      >
-                        <Video className="w-3.5 h-3.5" />
-                        <span>Launch Google Meet</span>
-                        <ExternalLink className="w-3 h-3 ml-0.5" />
-                      </a>
+                      activeMeetup.meetingLink && /^https?:\/\//i.test(activeMeetup.meetingLink) ? (
+                        <a
+                          href={activeMeetup.meetingLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 shadow-xs flex items-center space-x-1"
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                          <span>Launch Google Meet</span>
+                          <ExternalLink className="w-3 h-3 ml-0.5" />
+                        </a>
+                      ) : (
+                        <span className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-800 text-xs font-semibold">
+                          Joined
+                        </span>
+                      )
                     ) : (
                       <button
                         onClick={() => handleJoinClick(activeMeetup)}

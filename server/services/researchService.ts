@@ -91,19 +91,28 @@ export class ResearchService {
 
     if (experiment.results) {
       const res = experiment.results;
-      const groupsReport: Record<string, any> = {};
+      const groupsReport: ExperimentOutcomeReport['groups'] = {};
       const persistedGroups = experiment.groups || [];
-      for (const [gName, m] of Object.entries(res.groupMetrics)) {
+      const readNum = (obj: Record<string, unknown>, ...keys: string[]): number | undefined => {
+        for (const k of keys) {
+          const val = obj[k];
+          if (typeof val === 'number' && Number.isFinite(val)) return val;
+        }
+        return undefined;
+      };
+      for (const [gName, rawMetrics] of Object.entries(res.groupMetrics)) {
+        const m = (rawMetrics && typeof rawMetrics === 'object' ? rawMetrics : {}) as Record<string, unknown>;
         const matchedGroup = persistedGroups.find(
           (g) => g.groupName === gName || gName.includes(g.groupName) || g.groupName.includes(gName)
         );
+        const debugMin = readNum(m, 'avg_debug_persistence_minutes');
         groupsReport[gName] = {
           participantCount: matchedGroup?.participantCount ?? 0,
-          averageQuizScore: (m as any).post_test_mean || (m as any).initial_task_completion || (m as any).immediate_post_test || 80,
-          retentionRatePercentage: (m as any).retention_30d || (m as any).retention_60d || 78,
-          averageEngagementMinutes: (m as any).time_on_task_minutes || (m as any).voluntary_study_minutes || 32,
-          completionRatePercentage: (m as any).initial_task_completion || 88,
-          persistenceScore: (m as any).avg_debug_persistence_minutes ? Math.round((m as any).avg_debug_persistence_minutes * 4) : 82,
+          averageQuizScore: readNum(m, 'post_test_mean', 'initial_task_completion', 'immediate_post_test') ?? 80,
+          retentionRatePercentage: readNum(m, 'retention_30d', 'retention_60d') ?? 78,
+          averageEngagementMinutes: readNum(m, 'time_on_task_minutes', 'voluntary_study_minutes') ?? 32,
+          completionRatePercentage: readNum(m, 'initial_task_completion') ?? 88,
+          persistenceScore: debugMin !== undefined ? Math.round(debugMin * 4) : 82,
         };
       }
 

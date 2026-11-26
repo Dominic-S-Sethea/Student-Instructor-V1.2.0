@@ -29,6 +29,8 @@ import {
 } from '../../types/scholarship';
 import { scholarshipClient } from '../../services/scholarshipClient';
 import { apiFetchRaw } from '../../services/apiClient';
+import { useEscapeKey } from '../../hooks/useModalAccessibility';
+import { getSafeHttpUrl } from '../../utils/safeUrl';
 
 interface ScholarshipAdminModalProps {
   isOpen: boolean;
@@ -50,6 +52,8 @@ export const ScholarshipAdminModal: React.FC<ScholarshipAdminModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  useEscapeKey(isOpen, onClose);
 
   // AI Extraction state
   const [rawText, setRawText] = useState(
@@ -135,8 +139,13 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
 
   const handleResolveReport = async (repId: string, applyFix: boolean) => {
     try {
-      await scholarshipClient.resolveErrorReport(repId, applyFix ? 'Verified & Fixed' : 'Dismissed');
-      notifySuccess('Report resolved.');
+      await scholarshipClient.resolveErrorReport(
+        repId,
+        applyFix ? 'Verified & Fixed' : 'Dismissed',
+        undefined,
+        applyFix
+      );
+      notifySuccess(applyFix ? 'Report resolved and correction applied.' : 'Report dismissed.');
       void loadAdminData();
       onRefreshData();
     } catch (err) {
@@ -154,10 +163,12 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
     }
   };
 
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
   const handleDeleteScholarship = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this scholarship entry?')) return;
     try {
       await apiFetchRaw(`/api/scholarships/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      setPendingDeleteId(null);
       notifySuccess('Scholarship removed from database.');
       onRefreshData();
     } catch (err) {
@@ -197,7 +208,7 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
     setActionError(null);
     try {
       const res = await apiFetchRaw<{ success: boolean; extractedData?: Record<string, unknown>; data?: Record<string, unknown> }>(
-        '/api/scholarships/ai-extract',
+        '/api/scholarships/extract',
         { method: 'POST', body: JSON.stringify({ rawText }) }
       );
       setExtractedResult(res.extractedData || res.data || null);
@@ -232,9 +243,14 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto"
       role="dialog"
       aria-modal="true"
+      aria-label="CSIP Editorial and Verification Admin"
       id="scholarship-admin-modal"
+      onClick={onClose}
     >
-      <div className="bg-white rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 overflow-hidden my-6 max-h-[92vh] flex flex-col">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-2xl max-w-4xl w-full shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden my-6 max-h-[92vh] flex flex-col"
+      >
         {/* Header */}
         <div className="bg-slate-950 text-white p-5 px-6 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -367,15 +383,19 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
                       </div>
 
                       <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                        <a
-                          href={sub.officialWebsite}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline inline-flex items-center gap-1 font-semibold"
-                        >
-                          <span>Official Portal ({sub.officialWebsite})</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
+                        {getSafeHttpUrl(sub.officialWebsite) ? (
+                          <a
+                            href={getSafeHttpUrl(sub.officialWebsite)!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline inline-flex items-center gap-1 font-semibold"
+                          >
+                            <span>Official Portal ({sub.officialWebsite})</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 text-xs">Invalid portal URL</span>
+                        )}
 
                         {sub.status === 'Pending Admin Review' && (
                           <div className="flex items-center gap-2">
@@ -602,13 +622,34 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
                       >
                         Verify Now
                       </button>
-                      <button
-                        onClick={() => handleDeleteScholarship(sch.id)}
-                        className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
-                        title="Delete scholarship"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {pendingDeleteId === sch.id ? (
+                        <div className="inline-flex items-center gap-1" role="group" aria-label="Confirm scholarship deletion">
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteScholarship(sch.id)}
+                            className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold hover:bg-rose-700 cursor-pointer"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setPendingDeleteId(null)}
+                            className="px-2 py-1 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-semibold hover:bg-slate-200 cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setPendingDeleteId(sch.id)}
+                          className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                          title="Delete scholarship"
+                          aria-label={`Delete ${sch.name}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -661,7 +702,7 @@ Application forms must be submitted through Ministry of Education, Youth and Spo
                 />
 
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400 text-[11px]">Powered by @google/genai & gemini-3.1-flash-lite</span>
+                  <span className="text-slate-400 text-[11px]">Powered by @google/genai &amp; gemini-3.5-flash-lite</span>
                   <button
                     onClick={handleRunAiExtraction}
                     disabled={isExtracting}

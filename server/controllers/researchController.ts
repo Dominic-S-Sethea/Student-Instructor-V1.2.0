@@ -1,7 +1,9 @@
 import { Router, Response } from 'express';
 import { ResearchService, ConsentDeniedError } from '../services/researchService';
 import { authenticateToken, requireRole, AuthenticatedRequest } from '../middleware/authMiddleware';
-import { safeErrorMessage } from '../utils/httpErrors';
+import { validate } from '../middleware/validationMiddleware';
+import { ResearchExperimentCreateSchema, ResearchJoinSchema } from '../validators/domainSchemas';
+import { sendRouteError } from '../utils/httpErrors';
 
 const router = Router();
 const researchService = new ResearchService();
@@ -12,7 +14,7 @@ router.get('/experiments', (_req, res: Response): void => {
     const experiments = researchService.listExperiments();
     res.json({ success: true, data: experiments });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to list experiments', 500) });
+    sendRouteError(res, err, 'Failed to list experiments');
   }
 });
 
@@ -26,7 +28,7 @@ router.get('/experiments/:id/report', authenticateToken, requireRole('admin'), (
     }
     res.json({ success: true, data: report });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to load report', 500) });
+    sendRouteError(res, err, 'Failed to load report');
   }
 });
 
@@ -40,53 +42,59 @@ router.get('/experiments/:id', (req, res: Response): void => {
     }
     res.json({ success: true, data: experiment });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to load experiment', 500) });
+    sendRouteError(res, err, 'Failed to load experiment');
   }
 });
 
 /** POST /api/research/experiments — create experiment (admin only) */
-router.post('/experiments', authenticateToken, requireRole('admin'), (req: AuthenticatedRequest, res: Response): void => {
-  try {
-    const { name, hypothesis, description, targetMetrics, startDate, endDate } = req.body || {};
-    if (!name || !hypothesis) {
-      res.status(400).json({ success: false, error: 'Name and hypothesis are required for research experiments.' });
-      return;
+router.post(
+  '/experiments',
+  authenticateToken,
+  requireRole('admin'),
+  validate(ResearchExperimentCreateSchema, 'body'),
+  (req: AuthenticatedRequest, res: Response): void => {
+    try {
+      const { name, hypothesis, description, targetMetrics, startDate, endDate } = req.body;
+      const exp = researchService.createExperiment({
+        name,
+        hypothesis,
+        description,
+        targetMetrics,
+        startDate,
+        endDate,
+      });
+
+      res.status(201).json({ success: true, data: exp });
+    } catch (err: unknown) {
+      sendRouteError(res, err, 'Failed to create experiment');
     }
-
-    const exp = researchService.createExperiment({
-      name,
-      hypothesis,
-      description,
-      targetMetrics,
-      startDate,
-      endDate,
-    });
-
-    res.status(201).json({ success: true, data: exp });
-  } catch (err: unknown) {
-    res.status(400).json({ success: false, error: err instanceof Error ? err.message : 'Failed to create experiment' });
   }
-});
+);
 
 /** POST /api/research/experiments/:id/join — authenticated + research consent required */
-router.post('/experiments/:id/join', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
-  try {
-    const studentId = req.user!.userId;
-    const participant = researchService.enrollStudent(studentId, req.params.id, req.body?.groupName);
+router.post(
+  '/experiments/:id/join',
+  authenticateToken,
+  validate(ResearchJoinSchema, 'body'),
+  (req: AuthenticatedRequest, res: Response): void => {
+    try {
+      const studentId = req.user!.userId;
+      const participant = researchService.enrollStudent(studentId, req.params.id, req.body?.groupName);
 
-    res.json({
-      success: true,
-      message: `Enrolled student in ${participant.groupName}`,
-      data: participant,
-    });
-  } catch (err: unknown) {
-    if (err instanceof ConsentDeniedError) {
-      res.status(403).json({ success: false, code: 'CONSENT_REQUIRED', error: err.message });
-      return;
+      res.json({
+        success: true,
+        message: `Enrolled student in ${participant.groupName}`,
+        data: participant,
+      });
+    } catch (err: unknown) {
+      if (err instanceof ConsentDeniedError) {
+        res.status(403).json({ success: false, code: 'CONSENT_REQUIRED', error: err.message });
+        return;
+      }
+      sendRouteError(res, err, 'Failed to join experiment');
     }
-    res.status(400).json({ success: false, error: err instanceof Error ? err.message : 'Failed to join experiment' });
   }
-});
+);
 
 /** GET /api/research/anonymized-dataset — admin-only export restricted to consented students */
 router.get('/anonymized-dataset', authenticateToken, requireRole('admin'), (_req: AuthenticatedRequest, res: Response): void => {
@@ -103,7 +111,7 @@ router.get('/anonymized-dataset', authenticateToken, requireRole('admin'), (_req
       data: dataset,
     });
   } catch (err: unknown) {
-    res.status(500).json({ success: false, error: safeErrorMessage(err, 'Failed to export dataset', 500) });
+    sendRouteError(res, err, 'Failed to export dataset');
   }
 });
 

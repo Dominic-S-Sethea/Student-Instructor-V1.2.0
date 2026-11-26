@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { TopUniversityAidProgram } from '../../types/topUniversityScholarships';
 import { X, ExternalLink, Award, DollarSign, Calendar, CheckCircle2, GraduationCap, Lightbulb, Globe, MapPin } from 'lucide-react';
+import { useAccessibleDialog } from '../../hooks/useModalAccessibility';
 
 interface TopUniversityDossierModalProps {
   program: TopUniversityAidProgram | null;
@@ -8,22 +9,36 @@ interface TopUniversityDossierModalProps {
 }
 
 export const TopUniversityDossierModal: React.FC<TopUniversityDossierModalProps> = ({ program, onClose }) => {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useAccessibleDialog(Boolean(program), onClose, panelRef);
+
   if (!program) return null;
 
+  const officialCrestPath = `${import.meta.env.BASE_URL}crests/${program.id}.png`;
+
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6">
-      <div 
-        className="relative w-full max-w-3xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden my-8 max-h-[90vh] flex flex-col"
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${program.universityName} Scholarship Dossier`}
+      onClick={onClose}
+    >
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className="relative w-full max-w-3xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden my-8 max-h-[90vh] flex flex-col focus:outline-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with Calm Emerald Gradient Accent */}
-        <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-800 p-6 text-white relative overflow-hidden">
+        <div className="bg-gradient-to-r from-emerald-900 via-emerald-800 to-teal-800 p-6 text-white relative overflow-hidden shrink-0">
           {/* Subtle Watermark of Official Crest in Modal Header */}
           <div className="absolute right-12 -bottom-6 w-36 h-36 opacity-25 pointer-events-none select-none flex items-center justify-center">
             <img
-              src={`/crests/${program.id}.png`}
+              src={officialCrestPath}
               alt=""
               loading="lazy"
+              decoding="async"
               referrerPolicy="no-referrer"
               className="w-full h-full object-contain filter brightness-110 drop-shadow-md"
               onError={(e) => {
@@ -33,14 +48,15 @@ export const TopUniversityDossierModal: React.FC<TopUniversityDossierModalProps>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 text-white/80 hover:text-white hover:bg-black/20 rounded-full transition z-10"
+            className="absolute top-4 right-4 p-2 text-white/90 hover:text-white hover:bg-black/25 rounded-full transition z-20 cursor-pointer"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />
           </button>
 
-          <div className="flex flex-wrap items-center gap-2 mb-2 relative z-10">
+          <div className="flex flex-wrap items-center gap-2 mb-2 pr-12 relative z-10">
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-black/30 backdrop-blur-sm text-emerald-100 border border-emerald-400/30">
               {program.badge}
             </span>
@@ -55,9 +71,10 @@ export const TopUniversityDossierModal: React.FC<TopUniversityDossierModalProps>
           <div className="flex items-center gap-4 relative z-10">
             <div className="w-14 h-14 rounded-2xl bg-white/95 p-1.5 shadow-md flex items-center justify-center shrink-0 border border-white">
               <img
-                src={`/crests/${program.id}.png`}
+                src={officialCrestPath}
                 alt={`${program.universityName} Crest`}
                 loading="lazy"
+                decoding="async"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-contain"
                 onError={(e) => {
@@ -247,7 +264,7 @@ export const TopUniversityDossierModal: React.FC<TopUniversityDossierModalProps>
         </div>
 
         {/* Footer with Action Buttons */}
-        <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/70 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/70 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
             <Globe className="w-4 h-4 text-slate-400" />
             <span>Always verify specific departmental requirements on the official website.</span>

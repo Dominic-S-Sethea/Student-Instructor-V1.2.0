@@ -1,6 +1,7 @@
 import React from 'react';
 import type { NotificationItem, StudentProfile, TabView } from '../types';
-import { TopNav } from './navigation/TopNav';
+import type { SubNavAction } from './navigation/navConfig';
+import { LeftSidebarNav } from './navigation/LeftSidebarNav';
 import { MobileBottomNav } from './navigation/MobileBottomNav';
 
 export interface NavbarProps {
@@ -9,6 +10,9 @@ export interface NavbarProps {
   setCurrentTab?: (tab: TabView) => void;
   onSelectTab?: (tab: TabView) => void;
   onTabChange?: (tab: TabView) => void;
+  onSelectSubAction?: (action: SubNavAction) => void;
+  sidebarCollapsed?: boolean;
+  onToggleSidebarCollapsed?: () => void;
   studentProfile?: StudentProfile;
   studentName?: string;
   studentAvatar?: string;
@@ -32,6 +36,12 @@ export const Navbar: React.FC<NavbarProps> = ({
   setCurrentTab: propSetCurrentTab,
   onSelectTab: propOnSelectTab,
   onTabChange: propOnTabChange,
+  onSelectSubAction,
+  sidebarCollapsed = false,
+  onToggleSidebarCollapsed,
+  notifications = [],
+  onMarkNotificationRead,
+  onClearAllNotifications,
   onOpenAuthModal,
   onBack,
   onGoBack,
@@ -46,9 +56,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <>
-      <TopNav
+      <LeftSidebarNav
         currentTab={currentTab}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => onToggleSidebarCollapsed?.()}
         onSelectTab={handleSelectTab}
+        onSelectSubAction={onSelectSubAction}
+        notifications={notifications}
+        onMarkNotificationRead={onMarkNotificationRead}
+        onClearAllNotifications={onClearAllNotifications}
         onOpenAuthModal={onOpenAuthModal}
         onBack={onBack || onGoBack}
         canGoBack={canGoBack}

@@ -21,6 +21,7 @@ import {
   Award,
 } from 'lucide-react';
 import { TabView } from '../types';
+import { useEscapeKey } from '../hooks/useModalAccessibility';
 
 export interface ConferenceEvent {
   id: string;
@@ -251,7 +252,7 @@ const initialEvents: ConferenceEvent[] = [
         name: 'Dr. Sreymom Meas',
         role: 'Resident Physician & UHS Alumna',
         organization: 'Calmette Hospital & UHS',
-        avatar: 'https://images.unsplash.com/photo-1594824813589-3221b2b8e5c5?w=200&auto=format&fit=crop&q=80',
+        avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=200&auto=format&fit=crop&q=80',
       },
     ],
     agenda: [
@@ -344,6 +345,12 @@ export const ConferencesAndAMAsView: React.FC<ConferencesAndAMAsViewProps> = ({
   const [activeQAEvent, setActiveQAEvent] = useState<ConferenceEvent | null>(null);
   const [newQuestionText, setNewQuestionText] = useState('');
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
+
+  useEscapeKey(Boolean(activeModalEvent || activeTicketEvent || activeQAEvent), () => {
+    setActiveModalEvent(null);
+    setActiveTicketEvent(null);
+    setActiveQAEvent(null);
+  });
 
   const categories = [
     { label: 'All Conferences & AMAs', value: 'ALL' },
@@ -784,8 +791,17 @@ export const ConferencesAndAMAsView: React.FC<ConferencesAndAMAsViewProps> = ({
 
       {/* Full Event Details Modal */}
       {activeModalEvent && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={activeModalEvent.title}
+          onClick={() => setActiveModalEvent(null)}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95"
+          >
             <div className="flex items-start justify-between border-b border-slate-100 pb-4">
               <div className="space-y-1">
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
@@ -795,8 +811,10 @@ export const ConferencesAndAMAsView: React.FC<ConferencesAndAMAsViewProps> = ({
                 <p className="text-xs text-slate-500">Organized by {activeModalEvent.hostOrg}</p>
               </div>
               <button
+                type="button"
+                aria-label="Close event details dialog"
                 onClick={() => setActiveModalEvent(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -895,13 +913,24 @@ export const ConferencesAndAMAsView: React.FC<ConferencesAndAMAsViewProps> = ({
 
       {/* Digital Pass / Ticket Modal */}
       {activeTicketEvent && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 text-center relative overflow-hidden">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Virtual Pass for ${activeTicketEvent.title}`}
+          onClick={() => setActiveTicketEvent(null)}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 text-center relative overflow-hidden"
+          >
             <div className="absolute -top-12 -right-12 w-32 h-32 bg-blue-500/10 rounded-full blur-2xl" />
             <div className="flex justify-end">
               <button
+                type="button"
+                aria-label="Close virtual pass dialog"
                 onClick={() => setActiveTicketEvent(null)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -939,11 +968,11 @@ export const ConferencesAndAMAsView: React.FC<ConferencesAndAMAsViewProps> = ({
               </div>
             </div>
 
-            {activeTicketEvent.meetingLink && (
+            {activeTicketEvent.meetingLink && /^https?:\/\//i.test(activeTicketEvent.meetingLink) && (
               <a
                 href={activeTicketEvent.meetingLink}
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center space-x-2 transition shadow-xs"
               >
                 <Video className="w-4 h-4" />
@@ -953,8 +982,9 @@ export const ConferencesAndAMAsView: React.FC<ConferencesAndAMAsViewProps> = ({
             )}
 
             <button
+              type="button"
               onClick={() => setActiveTicketEvent(null)}
-              className="w-full py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+              className="w-full py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
             >
               Done & Add to My Passes
             </button>
@@ -964,8 +994,17 @@ export const ConferencesAndAMAsView: React.FC<ConferencesAndAMAsViewProps> = ({
 
       {/* Speaker Q&A Board Modal */}
       {activeQAEvent && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 space-y-5 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Live Q&A for ${activeQAEvent.title}`}
+          onClick={() => setActiveQAEvent(null)}
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 space-y-5 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95"
+          >
             <div className="flex items-start justify-between border-b border-slate-100 pb-3">
               <div>
                 <div className="flex items-center space-x-2">
@@ -975,8 +1014,10 @@ export const ConferencesAndAMAsView: React.FC<ConferencesAndAMAsViewProps> = ({
                 <p className="text-xs text-slate-500 mt-0.5 truncate">{activeQAEvent.title}</p>
               </div>
               <button
+                type="button"
+                aria-label="Close speaker Q&A dialog"
                 onClick={() => setActiveQAEvent(null)}
-                className="text-slate-400 hover:text-slate-600 p-1"
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>

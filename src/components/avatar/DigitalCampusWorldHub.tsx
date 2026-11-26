@@ -31,6 +31,8 @@ import {
   ArrowRight,
   ExternalLink,
 } from 'lucide-react';
+import { apiFetchRaw } from '../../services/apiClient';
+import { useAuth } from '../../context/AuthContext';
 
 interface DigitalCampusWorldHubProps {
   studentId?: string;
@@ -38,8 +40,10 @@ interface DigitalCampusWorldHubProps {
 }
 
 export const DigitalCampusWorldHub: React.FC<DigitalCampusWorldHubProps> = ({
-  studentId = 'usr-student-01',
+  studentId: propStudentId,
 }) => {
+  const { user } = useAuth();
+  const studentId = user?.id || propStudentId || '';
   // Top-level Navigation within the Digital Campus World
   const [activeHubView, setActiveHubView] = useState<'world_map' | 'simulation_games' | 'companion_mith' | 'growth_identity' | 'tech_architecture'>('world_map');
 
@@ -86,19 +90,26 @@ export const DigitalCampusWorldHub: React.FC<DigitalCampusWorldHubProps> = ({
     variableB: 12,
     resultMetrics: null,
   });
-  const [telemetryLogs, setTelemetryLogs] = useState<any[]>([]);
+  const [telemetryLogs, setTelemetryLogs] = useState<
+    Array<{
+      id: string;
+      recordedAt: string;
+      eventType: string;
+      bktInferredSkill?: string;
+      posteriorProbability?: number;
+    }>
+  >([]);
 
   // Load backend world overview
   useEffect(() => {
-    fetchWorldOverview();
+    void fetchWorldOverview();
   }, []);
 
-  const fetchWorldOverview = async () => {
+  const fetchWorldOverview = async (): Promise<void> => {
     try {
       setLoading(true);
-      const res = await fetch('/api/digital-world/overview');
-      const json = await res.json();
-      if (json.success) {
+      const json = await apiFetchRaw<{ success?: boolean; data?: typeof worldData }>('/api/digital-world/overview');
+      if (json.success && json.data) {
         setWorldData(json.data);
       }
     } catch (err) {
@@ -109,7 +120,7 @@ export const DigitalCampusWorldHub: React.FC<DigitalCampusWorldHubProps> = ({
   };
 
   // Send message to Mith
-  const handleSendMith = async (e?: React.FormEvent) => {
+  const handleSendMith = async (e?: React.FormEvent): Promise<void> => {
     if (e) e.preventDefault();
     if (!companionInput.trim()) return;
 
@@ -126,32 +137,31 @@ export const DigitalCampusWorldHub: React.FC<DigitalCampusWorldHubProps> = ({
     setIsMithTyping(true);
 
     try {
-      const res = await fetch('/api/digital-world/companion/chat', {
+      const data = await apiFetchRaw<{ success?: boolean; data?: { reply: string } }>('/api/digital-world/companion/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userText, studentId }),
       });
-      const data = await res.json();
       if (data.success && data.data) {
+        const replyText = data.data.reply;
         setCompanionMessages((prev) => [
           ...prev,
           {
             id: `mith-${Date.now()}`,
             speaker: 'mith',
-            text: data.data.reply,
+            text: replyText,
             time: 'Just now',
             tone: 'motivational',
           },
         ]);
         setMithAffinity((prev) => Math.min(1000, prev + 25));
       }
-    } catch (err) {
+    } catch {
       setCompanionMessages((prev) => [
         ...prev,
         {
           id: `mith-err-${Date.now()}`,
           speaker: 'mith',
-          text: 'The campus neural network is momentarily calibrating, but remember: every setback in learning is an opportunity for cognitive reframing.',
+          text: 'The campus companion is momentarily unavailable. Please sign in and try again.',
           time: 'Just now',
         },
       ]);
@@ -161,11 +171,17 @@ export const DigitalCampusWorldHub: React.FC<DigitalCampusWorldHubProps> = ({
   };
 
   // Run educational simulation
-  const handleRunSimulation = async () => {
+  const handleRunSimulation = async (): Promise<void> => {
     setActiveSimulationTrial((prev) => ({ ...prev, running: true, resultMetrics: null }));
 
     setTimeout(async () => {
-      let outcome: any = {};
+      let outcome: {
+        label: string;
+        primaryMetric: string;
+        efficiencyPercent: number;
+        bktProbability: number;
+        feedback: string;
+      };
       let bktSkill = 'kinematic_trajectory_calculation';
 
       if (selectedGameKey === 'animal_racing_physics') {
@@ -230,27 +246,38 @@ export const DigitalCampusWorldHub: React.FC<DigitalCampusWorldHubProps> = ({
 
       // Log to backend telemetry
       try {
-        const res = await fetch('/api/digital-world/game-telemetry', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            studentId,
-            gameKey: selectedGameKey,
-            eventType: 'solution_optimized',
-            bktInferredSkill: bktSkill,
-            trialCount: 1,
-            priorProbability: 0.72,
-            posteriorProbability: outcome.bktProbability,
-            gameStatePayload: {
-              paramA: activeSimulationTrial.variableA,
-              paramB: activeSimulationTrial.variableB,
-              outcome,
-            },
-          }),
-        });
-        const logData = await res.json();
+        const logData = await apiFetchRaw<{
+          success?: boolean;
+          data?: {
+            id: string;
+            recordedAt: string;
+            eventType: string;
+            bktInferredSkill?: string;
+            posteriorProbability?: number;
+          };
+        }>(
+          '/api/digital-world/game-telemetry',
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              studentId,
+              gameKey: selectedGameKey,
+              eventType: 'solution_optimized',
+              bktInferredSkill: bktSkill,
+              trialCount: 1,
+              priorProbability: 0.72,
+              posteriorProbability: outcome.bktProbability,
+              gameStatePayload: {
+                paramA: activeSimulationTrial.variableA,
+                paramB: activeSimulationTrial.variableB,
+                outcome,
+              },
+            }),
+          }
+        );
         if (logData.success && logData.data) {
-          setTelemetryLogs((prev) => [logData.data, ...prev.slice(0, 4)]);
+          const entry = logData.data;
+          setTelemetryLogs((prev) => [entry, ...prev.slice(0, 4)]);
         }
       } catch (err) {
         console.error('Failed to dispatch telemetry', err);

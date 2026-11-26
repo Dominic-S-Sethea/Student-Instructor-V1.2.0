@@ -8,6 +8,23 @@
  */
 
 import { getDatabase } from '../db/connection';
+import { safeJsonParse } from '../utils/safeJson';
+
+interface TeachingMethodRow {
+  id: string;
+  method_key: TeachingMethodBenchmark['methodKey'];
+  method_name: string;
+  description: string;
+  avg_engagement_minutes: number;
+  completion_rate_percentage: number;
+  normalized_gain_score: number;
+  retention_rate_30d: number;
+  persistence_index: number;
+  cognitive_load_rating: string;
+  best_fit_domains: string | null;
+  sample_students_count: number;
+  updated_at: string;
+}
 
 export interface TeachingMethodBenchmark {
   id: string;
@@ -46,9 +63,10 @@ export class TeachingMethodService {
     const rows = this.db.prepare(`
       SELECT * FROM teaching_method_benchmarks
       ORDER BY normalized_gain_score DESC
-    `).all() as any[];
+      LIMIT 100
+    `).all() as unknown as TeachingMethodRow[];
 
-    return rows.map(r => ({
+    return rows.map((r) => ({
       id: r.id,
       methodKey: r.method_key,
       methodName: r.method_name,
@@ -59,7 +77,7 @@ export class TeachingMethodService {
       retentionRate30d: r.retention_rate_30d,
       persistenceIndex: r.persistence_index,
       cognitiveLoadRating: r.cognitive_load_rating,
-      bestFitDomains: JSON.parse(r.best_fit_domains || '[]'),
+      bestFitDomains: safeJsonParse(r.best_fit_domains, []),
       sampleStudentsCount: r.sample_students_count,
       updatedAt: r.updated_at,
     }));

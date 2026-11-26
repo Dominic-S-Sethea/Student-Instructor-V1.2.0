@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { aiController } from '../controllers/aiController';
 import { authenticateToken } from '../middleware/authMiddleware';
 import { rateLimiter } from '../middleware/rateLimiter';
+import { validate } from '../middleware/validationMiddleware';
+import { LegacyAiChatSchema, LegacyKnowledgeSearchSchema } from '../validators/apiSchemas';
 import { asyncHandler } from '../utils/httpErrors';
 
 const router = Router();
@@ -16,14 +18,14 @@ router.use((_req, res, next) => {
 });
 
 // Protected Personal Education Intelligence Agent Routes
-router.post('/chat', authenticateToken, aiChatLimiter, asyncHandler((req, res) => aiController.chat(req, res)));
+router.post('/chat', authenticateToken, aiChatLimiter, validate(LegacyAiChatSchema, 'body'), asyncHandler((req, res) => aiController.chat(req, res)));
 router.post('/recommend', authenticateToken, aiRecommendLimiter, asyncHandler((req, res) => aiController.getRecommendations(req, res)));
 router.get('/student-insight', authenticateToken, asyncHandler((req, res) => aiController.getStudentInsight(req, res)));
 router.post('/feedback', authenticateToken, asyncHandler((req, res) => aiController.recordFeedback(req, res)));
 
 // Public Read-Only Knowledge Base & Semantic Vector Search
 router.get('/knowledge', asyncHandler((req, res) => aiController.getKnowledgeDocuments(req, res)));
-router.post('/knowledge/search', aiSearchLimiter, asyncHandler((req, res) => aiController.searchKnowledge(req, res)));
+router.post('/knowledge/search', aiSearchLimiter, validate(LegacyKnowledgeSearchSchema, 'body'), asyncHandler((req, res) => aiController.searchKnowledge(req, res)));
 
 // Protected Student AI Memory
 router.get('/memory', authenticateToken, asyncHandler((req, res) => aiController.getMemory(req, res)));

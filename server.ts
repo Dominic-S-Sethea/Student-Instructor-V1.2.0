@@ -2,9 +2,22 @@ import { loadConfig } from './server/config';
 import { closeDatabase } from './server/db/connection';
 import { runMigrations } from './server/db/migrate';
 import { createApp } from './server/app';
+import { getJwtSecret } from './server/services/authService';
 
 async function startServer(): Promise<void> {
   const config = loadConfig();
+
+  if (config.isProduction || config.isStaging) {
+    try {
+      getJwtSecret();
+    } catch (err: unknown) {
+      console.error(
+        `[FATAL][SECURITY] Invalid JWT_SECRET in ${config.nodeEnv}:`,
+        err instanceof Error ? err.message : err
+      );
+      process.exit(1);
+    }
+  }
 
   try {
     const result = runMigrations({
@@ -26,12 +39,14 @@ async function startServer(): Promise<void> {
     publicDistDir: config.publicDistDir,
   });
 
+  let viteServer: { close: () => Promise<void> } | null = null;
   if (!isStaticMode) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
+    viteServer = vite;
     app.use(vite.middlewares);
   }
 
@@ -39,8 +54,8 @@ async function startServer(): Promise<void> {
     console.log(`CDES Platform Server running on http://${config.host}:${config.port}`);
   });
   httpServer.requestTimeout = 45_000;
-  httpServer.headersTimeout = 15_000;
   httpServer.keepAliveTimeout = 65_000;
+  httpServer.headersTimeout = 66_000;
 
   let shuttingDown = false;
   const shutdown = (signal: string) => {
@@ -57,8 +72,16 @@ async function startServer(): Promise<void> {
     }, 10_000);
     forceTimer.unref();
 
-    httpServer.close(() => {
+    httpServer.closeIdleConnections?.();
+    httpServer.close(async () => {
       clearTimeout(forceTimer);
+      try {
+        if (viteServer) {
+          await viteServer.close();
+        }
+      } catch {
+        // ignore vite close errors during teardown
+      }
       try {
         closeDatabase();
       } catch {

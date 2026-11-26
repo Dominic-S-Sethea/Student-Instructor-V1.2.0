@@ -22,12 +22,14 @@ import {
 } from 'lucide-react';
 import { ClientCommunity, ClientCommunityPost, ClientCommunityComment } from '../../types';
 import { communityClient } from '../../services/communityClient';
+import { useAuth } from '../../context/AuthContext';
 
 interface Props {
   onOpenReportModal: (itemType: string, itemId: string) => void;
 }
 
 export const CommunityHallView: React.FC<Props> = ({ onOpenReportModal }) => {
+  const { authenticated, user, profile } = useAuth();
   const [communities, setCommunities] = useState<ClientCommunity[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [selectedCommunity, setSelectedCommunity] = useState<ClientCommunity | null>(null);
@@ -52,35 +54,37 @@ export const CommunityHallView: React.FC<Props> = ({ onOpenReportModal }) => {
   const [newCommentText, setNewCommentText] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
 
-  // User state mock
-  const currentUserId = 'usr-student-01';
-  const currentUserName = 'Dara Chan';
+  const currentUserId = user?.id || '';
+  const currentUserName = profile?.name || user?.email?.split('@')[0] || 'Student';
 
   useEffect(() => {
-    loadCommunitiesAndPosts();
-  }, [selectedCategory]);
+    void loadCommunitiesAndPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCategory, filterType, authenticated, currentUserId]);
 
-  const loadCommunitiesAndPosts = async () => {
+  const loadCommunitiesAndPosts = async (): Promise<void> => {
     try {
       setLoading(true);
       const [commsData, aiRecs, postsData] = await Promise.all([
         communityClient.getCommunities(selectedCategory),
-        communityClient.getAIMRecommendations(currentUserId),
-        communityClient.getPosts({ category: filterType !== 'ALL' ? filterType : undefined })
+        authenticated && currentUserId
+          ? communityClient.getAIMRecommendations(currentUserId).catch(() => ({ communities: [], mentors: [] }))
+          : Promise.resolve({ communities: [], mentors: [] }),
+        communityClient.getPosts({
+          communityId: selectedCommunity?.id,
+          postType: filterType !== 'ALL' ? filterType : undefined,
+        }),
       ]);
 
-      // Merge AI match scores into communities
       const commMap = new Map<string, ClientCommunity>();
-      commsData.forEach(c => commMap.set(c.id, c));
-      // Merge AI match scores into communities
-      // aiRecs is { mentors: [...] } from the API
-      (aiRecs as { mentors: { community_id?: string; id?: string; matchScore?: number; matchReason?: string }[] }).mentors.forEach(c => {
+      commsData.forEach((c) => commMap.set(c.id, c));
+      aiRecs.communities.forEach((c) => {
         const cid = c.community_id || c.id;
         if (cid && commMap.has(cid)) {
           commMap.set(cid, {
             ...commMap.get(cid)!,
             matchScore: c.matchScore || 0,
-            matchReason: c.matchReason || 'AI suggested'
+            matchReason: c.matchReason || 'Suggested for you',
           });
         }
       });
@@ -95,18 +99,22 @@ export const CommunityHallView: React.FC<Props> = ({ onOpenReportModal }) => {
     }
   };
 
-  const handleSelectCommunity = async (comm: ClientCommunity | null) => {
+  const handleSelectCommunity = async (comm: ClientCommunity | null): Promise<void> => {
     setSelectedCommunity(comm);
     setSelectedPost(null);
     try {
-      const fetchedPosts = await communityClient.getPosts({ category: comm?.id, limit: 50 });
+      const fetchedPosts = await communityClient.getPosts({
+        communityId: comm?.id,
+        postType: filterType !== 'ALL' ? filterType : undefined,
+        limit: 50,
+      });
       setPosts(fetchedPosts);
     } catch (e) {
       console.error(e);
     }
   };
 
-  const handleSelectPost = async (post: ClientCommunityPost) => {
+  const handleSelectPost = async (post: ClientCommunityPost): Promise<void> => {
     setSelectedPost(post);
     try {
       const cmts = await communityClient.getPostComments(post.id);
@@ -116,45 +124,52 @@ export const CommunityHallView: React.FC<Props> = ({ onOpenReportModal }) => {
     }
   };
 
-  const handleUpvotePost = async (postId: string, e: React.MouseEvent) => {
+  const handleUpvotePost = async (postId: string, e: React.MouseEvent): Promise<void> => {
     e.stopPropagation();
     try {
       const newCount = await communityClient.upvotePost(postId);
-      const updatedUpvotes = (p: any) => (newCount ?? 0) + p.upvotes_count + 0;
-      setPosts(prev => prev.map(p => p.id === postId ? { ...p, upvotes_count: updatedUpvotes(p) } : p));
+      setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, upvotes_count: newCount || p.upvotes_count + 1 } : p)));
       if (selectedPost && selectedPost.id === postId) {
-        setSelectedPost(prev => prev ? { ...prev, upvotes_count: updatedUpvotes(prev) } : null);
+        setSelectedPost((prev) => (prev ? { ...prev, upvotes_count: newCount || prev.upvotes_count + 1 } : null));
       }
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
     }
   };
 
-  const handleUpvoteComment = async (commentId: string) => {
+  const handleUpvoteComment = async (commentId: string): Promise<void> => {
     try {
       const newCount = await communityClient.upvoteComment(commentId);
-      setComments(prev => prev.map(c => c.id === commentId ? { ...c, upvotes_count: (newCount ?? 0) + 1 } : c));
+      setComments((prev) =>
+        prev.map((c) => (c.id === commentId ? { ...c, upvotes_count: newCount || c.upvotes_count + 1 } : c))
+      );
     } catch (e) {
       console.error(e);
     }
   };
 
-  const handleMarkAccepted = async (commentId: string) => {
+  const handleMarkAccepted = async (commentId: string): Promise<void> => {
     if (!selectedPost) return;
     try {
       await communityClient.acceptAnswer(selectedPost.id, commentId);
-      setComments(prev => prev.map(c => ({
-        ...c,
-        is_accepted_answer: c.id === commentId ? 1 : 0
-      })));
-      setSelectedPost(prev => prev ? { ...prev, is_solved: 1, solved_comment_id: commentId } : null);
+      setComments((prev) =>
+        prev.map((c) => ({
+          ...c,
+          is_accepted_answer: c.id === commentId ? 1 : 0,
+        }))
+      );
+      setSelectedPost((prev) => (prev ? { ...prev, is_solved: 1, solved_comment_id: commentId } : null));
     } catch (e) {
       console.error(e);
     }
   };
 
-  const handleCreatePostSubmit = async (e: React.FormEvent) => {
+  const handleCreatePostSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
+    if (!authenticated) {
+      setPostError('Please sign in to post in the student community.');
+      return;
+    }
     if (!newTitle.trim() || !newContent.trim()) {
       setPostError('Please enter both a title and details.');
       return;
@@ -166,23 +181,25 @@ export const CommunityHallView: React.FC<Props> = ({ onOpenReportModal }) => {
       setPostError(null);
       setSafetyNotice(null);
 
-      const tagsArray = newTags.split(',').map(t => t.trim()).filter(Boolean);
-      const result: any = await communityClient.createPost({
+      const tagsArray = newTags.split(',').map((t) => t.trim()).filter(Boolean);
+      const result = await communityClient.createPost({
         community_id: targetCommunityId,
         author_id: currentUserId,
         author_name: currentUserName,
-        author_role: 'Grade 12 STEM Scholar',
+        author_role: profile?.education_level || 'Student',
         post_type: newPostType,
         title: newTitle,
         content: newContent,
-        tags: tagsArray
+        tags: tagsArray,
       });
 
       if (result.notice) {
         setSafetyNotice(result.notice);
       }
 
-      setPosts([result.post, ...posts]);
+      if (result.post) {
+        setPosts((prev) => [result.post, ...prev]);
+      }
       setNewTitle('');
       setNewContent('');
       setNewTags('');
@@ -190,31 +207,33 @@ export const CommunityHallView: React.FC<Props> = ({ onOpenReportModal }) => {
         setShowCreatePost(false);
         setSafetyNotice(null);
       }, 1500);
-    } catch (err: any) {
-      setPostError(err.message || 'Failed to submit post');
+    } catch (err) {
+      setPostError(err instanceof Error ? err.message : 'Failed to submit post');
     } finally {
       setSubmittingPost(false);
     }
   };
 
-  const handleAddCommentSubmit = async (e: React.FormEvent) => {
+  const handleAddCommentSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!newCommentText.trim() || !selectedPost) return;
 
     try {
       setSubmittingComment(true);
-      const result: any = await communityClient.addComment(selectedPost.id, {
+      const result = await communityClient.addComment(selectedPost.id, {
         author_id: currentUserId,
         author_name: currentUserName,
         author_role: 'Student Collaborator',
-        content: newCommentText
+        content: newCommentText,
       });
 
-      setComments([...comments, result.comment]);
+      if (result.comment) {
+        setComments((prev) => [...prev, result.comment]);
+      }
       setNewCommentText('');
-      setSelectedPost(prev => prev ? { ...prev, comments_count: prev.comments_count + 1 } : null);
-    } catch (err: any) {
-      alert(err.message || 'Could not post reply');
+      setSelectedPost((prev) => (prev ? { ...prev, comments_count: prev.comments_count + 1 } : null));
+    } catch (err) {
+      setPostError(err instanceof Error ? err.message : 'Could not post reply');
     } finally {
       setSubmittingComment(false);
     }

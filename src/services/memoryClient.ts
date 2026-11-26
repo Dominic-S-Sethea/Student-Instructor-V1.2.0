@@ -51,9 +51,10 @@ export interface HermesMemorySnapshotResponse {
 }
 
 export const memoryClient = {
-  async getSnapshot(includeInactive = false): Promise<HermesMemorySnapshotResponse> {
+  async getSnapshot(includeInactive = false, signal?: AbortSignal): Promise<HermesMemorySnapshotResponse> {
     return apiFetchRaw<HermesMemorySnapshotResponse>(
-      `/api/memory${includeInactive ? '?includeInactive=true' : ''}`
+      `/api/memory${includeInactive ? '?includeInactive=true' : ''}`,
+      { signal }
     );
   },
 
@@ -75,8 +76,11 @@ export const memoryClient = {
     });
   },
 
-  async searchFacts(query: string): Promise<{ success: boolean; enabled: boolean; facts: HermesMemoryFact[] }> {
-    return apiFetchRaw(`/api/memory/facts/search?q=${encodeURIComponent(query)}`);
+  async searchFacts(
+    query: string,
+    signal?: AbortSignal
+  ): Promise<{ success: boolean; enabled: boolean; facts: HermesMemoryFact[] }> {
+    return apiFetchRaw(`/api/memory/facts/search?q=${encodeURIComponent(query)}`, { signal });
   },
 
   async feedbackFact(

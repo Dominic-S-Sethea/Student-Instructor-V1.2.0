@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -28,6 +29,7 @@ const cutoff = args.get('cutoff');
 const dbPath = args.get('db') || process.env.DATABASE_PATH || DEFAULT_DB;
 const tablesArg = args.get('tables');
 const dryRun = args.get('dry-run') === true;
+const exportJsonlDir = typeof args.get('export-jsonl') === 'string' ? args.get('export-jsonl') : null;
 
 if (!cutoff) {
   console.error('ERROR: --cutoff is required (ISO date, e.g. --cutoff 2026-10-30).');
@@ -39,7 +41,6 @@ if (isNaN(cutoffDate.getTime())) {
   process.exit(1);
 }
 const cutoffDateStr = cutoffDate.toISOString().slice(0, 10);
-const dateStr = cutoffDateStr.replace(/-/g, '_');
 
 const requestedTables = tablesArg
   ? tablesArg.split(',').map((t) => t.trim()).filter(Boolean)
@@ -52,36 +53,57 @@ for (const tbl of requestedTables) {
   }
 }
 
+function tableExists(db, table) {
+  const row = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?")
+    .get(table);
+  return Boolean(row?.name);
+}
+
 function columnExists(db, table, col) {
+  if (!tableExists(db, table)) return false;
   const rows = db.prepare(`PRAGMA table_info(${table})`).all();
   return rows.some((c) => c.name === col);
 }
 
 function runRetention(db, table) {
-  if (dryRun) {
-    console.log(`[DRY-RUN] would archive+delete rows (deleted_at date <= ${cutoffDateStr}) from ${table}`);
-    return { dryRun: true };
-  }
   if (!columnExists(db, table, 'deleted_at')) {
     console.log(`[WARN] ${table}: no deleted_at column — skipping.`);
     return null;
   }
 
-  const archiveTable = `${table}_archive_${dateStr}`;
   const hasIsDeleted = columnExists(db, table, 'is_deleted');
   const deleteCondition = hasIsDeleted
     ? 'is_deleted = 1 AND deleted_at IS NOT NULL AND date(deleted_at) <= ?'
     : 'deleted_at IS NOT NULL AND date(deleted_at) <= ?';
-  let archived = 0;
+
+  if (dryRun) {
+    const countRow = db
+      .prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${deleteCondition}`)
+      .get(cutoffDateStr);
+    const matchingRows = Number(countRow?.count ?? 0);
+    console.log(
+      `[DRY-RUN] ${table}: matching_rows=${matchingRows} (deleted_at date <= ${cutoffDateStr})`
+    );
+    return { dryRun: true, table, matchingRows };
+  }
+
+  let exported = 0;
   let removed = 0;
+  let exportFile = null;
 
   db.exec('BEGIN IMMEDIATE;');
   try {
-    db.exec(`CREATE TABLE IF NOT EXISTS ${archiveTable} AS SELECT * FROM ${table} WHERE 1=0;`);
-    const infoA = db
-      .prepare(`INSERT INTO ${archiveTable} SELECT * FROM ${table} WHERE ${deleteCondition}`)
-      .run(cutoffDateStr);
-    archived = Number(infoA.changes);
+    if (exportJsonlDir) {
+      fs.mkdirSync(exportJsonlDir, { recursive: true });
+      const rows = db.prepare(`SELECT * FROM ${table} WHERE ${deleteCondition}`).all(cutoffDateStr);
+      if (rows.length > 0) {
+        exportFile = path.join(exportJsonlDir, `${table}_${cutoffDateStr}.jsonl`);
+        const payload = rows.map((r) => JSON.stringify(r)).join('\n') + '\n';
+        fs.appendFileSync(exportFile, payload, 'utf8');
+        exported = rows.length;
+      }
+    }
 
     const infoD = db
       .prepare(`DELETE FROM ${table} WHERE ${deleteCondition}`)
@@ -93,14 +115,35 @@ function runRetention(db, table) {
     throw err;
   }
 
-  console.log(`[OK] ${table}: archived=${archived} deleted=${removed} archive_table=${archiveTable}`);
-  return { table, archived, removed, archiveTable };
+  const archiveInfo = exportFile ? ` exported=${exported} file=${exportFile}` : '';
+  console.log(`[OK] ${table}: deleted=${removed}${archiveInfo}`);
+  return { table, exported, removed, exportFile };
+}
+
+function pruneRevokedTokens(db) {
+  if (!tableExists(db, 'revoked_jwt_tokens')) return 0;
+  if (dryRun) {
+    const row = db
+      .prepare("SELECT COUNT(*) AS count FROM revoked_jwt_tokens WHERE expires_at <= datetime('now')")
+      .get();
+    console.log(`[DRY-RUN] revoked_jwt_tokens: expired_rows=${Number(row?.count ?? 0)}`);
+    return Number(row?.count ?? 0);
+  }
+  const info = db
+    .prepare("DELETE FROM revoked_jwt_tokens WHERE expires_at <= datetime('now')")
+    .run();
+  const purged = Number(info.changes);
+  if (purged > 0) {
+    console.log(`[OK] revoked_jwt_tokens: purged=${purged}`);
+  }
+  return purged;
 }
 
 function main() {
   let db;
   try {
     db = new DatabaseSync(dbPath);
+    db.exec('PRAGMA busy_timeout = 5000;');
     db.exec('PRAGMA foreign_keys = ON;');
   } catch (err) {
     console.error(`FATAL: cannot open database ${dbPath}: ${err.message}`);
@@ -122,6 +165,7 @@ function main() {
         console.error(`[ERROR] ${table}: ${err.message}`);
       }
     }
+    pruneRevokedTokens(db);
   } finally {
     db.close();
   }

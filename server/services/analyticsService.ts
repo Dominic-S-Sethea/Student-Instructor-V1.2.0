@@ -2,6 +2,7 @@ import { AnalyticsRepository } from '../repositories/analyticsRepository';
 import { LearningAnalyticsEngine } from './learningAnalyticsEngine';
 import { PrivacyService } from './privacyService';
 import { IngestionEventPayload } from '../types/analytics';
+import { scrubPipelineMetadata, validateAndScrubAnalyticsPayload } from './dataPipelineValidator';
 
 export class AnalyticsService {
   private repo: AnalyticsRepository;
@@ -29,7 +30,8 @@ export class AnalyticsService {
       };
     }
 
-    const ingested = this.repo.routeAndIngest(payload);
+    const sanitizedPayload = validateAndScrubAnalyticsPayload(payload);
+    const ingested = this.repo.routeAndIngest(sanitizedPayload);
 
     if (studentId && studentId !== 'anonymous-guest') {
       try {
@@ -67,7 +69,13 @@ export class AnalyticsService {
     if (!this.privacy.canCollectAnalytics(targetId)) {
       return { persisted: false, reason: 'consent_disabled' };
     }
-    return { persisted: true, event: this.repo.logActivityEvent(data) };
+    return {
+      persisted: true,
+      event: this.repo.logActivityEvent({
+        ...data,
+        metadata: scrubPipelineMetadata(data.metadata),
+      }),
+    };
   }
 
   public getRecentActivities(limit: number = 30) {
@@ -93,7 +101,7 @@ export class AnalyticsService {
         duration: data.duration,
         result: data.result,
         score: data.score,
-        metadata: data.metadata
+        metadata: scrubPipelineMetadata(data.metadata),
       }),
     };
   }
@@ -117,7 +125,7 @@ export class AnalyticsService {
         score: data.score,
         time_spent: data.time_spent,
         difficulty: data.difficulty,
-        metadata: data.metadata
+        metadata: scrubPipelineMetadata(data.metadata),
       }),
     };
   }

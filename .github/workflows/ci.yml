@@ -1,51 +1,24 @@
 # ============================================================================
 # CI/CD pipeline — CDES Student-Instructor-V1.2.0
-# Scaffolded to satisfy CTO_DECISIONS.md §4–§5.
 #
-# Job order & the gate state they exercise:
+# Job order & gates:
 #   1. install                 — npm ci (reproducible lockfile contract)
-#   2. lint+typecheck          — tsc --noEmit (whole project)
-#   3. build                   — vite build && esbuild server.ts → dist/server.cjs
-#   4. test                    — tsx server/tests/backend.test.ts && secretScan.test.ts
-#   5. verify-start            — npm start smoke: /api/health 200 + process stays up
-#   6. dependency-audit-gate   — npm audit hard gate (high/critical) + regression gate
-#   7. secret-scan-gate        — gitleaks (critical/high)
-#   8. staging-deploy          — mirrors prod build; npm start → /api/health (aiEnabled=false)
-#
-# ═══════════════════════════════════════════════════════════════════════════
-# WIRING NOTES
-#  • install/lint/build/test/secret-scan-gate are independent once install
-#    passes. verify-start and staging-deploy both depend on `build` and re-run
-#    the identical build so the staging artifact exactly mirrors prod.
-#  • dependency-audit:
-#      hard gate    : `npm audit --omit=dev` → with .npmrc `audit-level=high`,
-#                     any high/critical advisory exits non-zero, so the build
-#                     fails on new critical findings.
-#      regression   : `node .github/scripts/check-audit-baseline.cjs` compares the
-#                     current audit snapshot (audit-current.json, generated in
-#                     this job) against the committed versioned baseline
-#                     audit-baseline.json. More high/critical than the baseline
-#                     = NEW finding = build fails. The baseline is a snapshot of
-#                     "main" and is refreshed only on main pushes; PRs are
-#                     measured against main's committed snapshot and must not
-#                     rewrite it.
-#  * SEC-001 remediation (server/services/scholarshipService.ts fallback
-#    MY_GEMINI_API_KEY + server/middleware/authMiddleware.ts hardened Bearer
-#    token) is code state owned by Engineer task t_539d6429 / SEC-001 owner.
-#    Until then secret-scan-gate and npm test fail.
-#  * The `staging` GitHub Environment + its secrets are provisioned by the
-#    repository owner (docs/SECRETS.md §Secrets flow / §Staging environment).
-#  * `npm ci` is reproducible across Linux CI runners. Windows dev hosts may
-#    see an anti-virus momentarily holding a native .node file open during
-#    `npm ci` (EPERM) — a dev-host artefact, not a CI defect.
-# ═════════════════════════════════════════════════════════════════===========
+#   2. lint                    — npm run lint (frontend + server strict tsc)
+#   3. build                   — vite (dist/public) + esbuild (server.cjs + retention.cjs) + DB assets
+#   4. test                    — deduplicated V8 coverage (all suites) + catalog verify + stress test
+#   5. verify-start            — reuses dist artifact; verifies /api/health, /live, /ready, schema>=12
+#   6. dependency-audit-gate   — npm audit hard gate (high/critical) + baseline regression check
+#   7. secret-scan-gate        — gitleaks v8 with .github/.gitleaks.toml + SARIF upload
+#   8. docker-build            — verifies multi-stage Dockerfile builds cleanly
+#   9. staging-deploy          — reuses dist artifact; verifies staging startup & clean teardown
+# ============================================================================
 name: CI
 
 on:
   push:
-    branches: [ main, feat/ci-cd-scaffolding ]
+    branches: [ main, "feat/**" ]
   pull_request:
-    branches: [ main, feat/ci-cd-scaffolding ]
+    branches: [ main ]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -53,16 +26,11 @@ concurrency:
 
 permissions:
   contents: read
-  security-events: write   # gitleaks + SARIF upload
-  id-token: write          # optional OIDC secret-manager fetch (future)
 
 env:
   NODE_VERSION: "22"
 
 jobs:
-  # ---------------------------------------------------------------------
-  # Install: reproducible lockfile contract (package-lock=true in .npmrc)
-  # ---------------------------------------------------------------------
   install:
     name: Install · npm ci
     runs-on: ubuntu-latest
@@ -81,9 +49,6 @@ jobs:
           test -f package-lock.json
           test -d node_modules
 
-  # ---------------------------------------------------------------------
-  # Lint + typecheck (whole project, strict)
-  # ---------------------------------------------------------------------
   lint:
     name: Lint + typecheck
     runs-on: ubuntu-latest
@@ -96,12 +61,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
-      - name: tsc --noEmit
+      - name: TypeScript strict typecheck (frontend + server)
         run: npm run lint
 
-  # ---------------------------------------------------------------------
-  # Build: vite (frontend -> dist/public) + esbuild (server -> dist/server/server.cjs)
-  # ---------------------------------------------------------------------
   build:
     name: Build · vite + esbuild → dist/server/server.cjs
     runs-on: ubuntu-latest
@@ -123,11 +85,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # ---------------------------------------------------------------------
-  # Unit tests + SEC-001 hidden-secrets regression
-  # ---------------------------------------------------------------------
   test:
-    name: Unit tests + SEC-001 regression
+    name: Unit + integration + coverage + catalog + stress
     runs-on: ubuntu-latest
     needs: install
     steps:
@@ -138,14 +97,25 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
-      - name: Unit + integration + SEC-001 tests & coverage
+      - name: Run full test suite with deduplicated V8 coverage
+        env:
+          GEMINI_API_KEY: ""
+        run: npm run test:coverage
+      - name: Verify catalog integrity & stress test
+        env:
+          GEMINI_API_KEY: ""
         run: |
-          npm test
-          npm run test:coverage
+          npm run verify:catalog
+          npm run test:stress
+      - name: Upload coverage summary artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-summary
+          path: coverage/summary.json
+          if-no-files-found: ignore
+          retention-days: 14
 
-  # ---------------------------------------------------------------------
-  # verify-start: smoke-verify the `npm start` entry point
-  # ---------------------------------------------------------------------
   verify-start:
     name: Verify start script + /api/health
     runs-on: ubuntu-latest
@@ -157,16 +127,23 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: npm ci
-      - run: npm run build
-      - name: Smoke start (aiEnabled=false, migrations run)
+      - run: npm ci --omit=dev
+      - name: Download built dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Smoke start (aiEnabled=false, migrations & integrity verified)
         run: |
           export NODE_ENV=production
-          export GEMINI_API_KEY=
-          export DATABASE_PATH=/tmp/verify-start-cdes.db
-          rm -f "$DATABASE_PATH"
+          export GEMINI_API_KEY=""
+          export JWT_SECRET="ci-smoke-test-secret-key-minimum-32-chars-${{ github.run_id }}"
+          export DATABASE_PATH="/tmp/verify-start-cdes-${{ github.run_id }}.db"
+          rm -f "${DATABASE_PATH}"*
           npm start > verify-start.log 2>&1 &
           SRV=$!
+          echo "VERIFY_SRV_PID=$SRV" >> "$GITHUB_ENV"
+          echo "VERIFY_DB_PATH=$DATABASE_PATH" >> "$GITHUB_ENV"
 
           for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3000/api/health > /tmp/verify-start-health.json 2>/dev/null; then
@@ -180,12 +157,19 @@ jobs:
             sleep 1
           done
 
+          curl -fsS http://127.0.0.1:3000/api/health/live > /dev/null
+          curl -fsS http://127.0.0.1:3000/api/health/ready > /dev/null
+
           python3 - <<'PY'
           import json
           d = json.load(open('/tmp/verify-start-health.json'))
           assert d['status'] == 'ok', d
-          assert d['aiEnabled'] is False, 'staging health must report aiEnabled=false when no GEMINI key is set'
-          assert 'database' in d, d
+          assert d['ready'] is True, d
+          assert d['aiEnabled'] is False, 'health must report aiEnabled=false when GEMINI_API_KEY is unset'
+          db = d.get('database', {})
+          assert db.get('integrity') == 'ok', d
+          assert db.get('foreignKeys') is True, d
+          assert int(db.get('schemaVersion', 0)) >= 12, d
           print('health payload OK:', json.dumps(d, sort_keys=True))
           PY
 
@@ -197,12 +181,14 @@ jobs:
 
           kill "$SRV" 2>/dev/null || true
           wait "$SRV" 2>/dev/null || true
+      - name: Clean up verify-start artifacts
+        if: always()
+        run: |
+          if [ -n "${VERIFY_SRV_PID:-}" ]; then
+            kill "$VERIFY_SRV_PID" 2>/dev/null || true
+          fi
+          rm -f "${VERIFY_DB_PATH:-/tmp/verify-start-cdes}"* /tmp/verify-start-health.json
 
-  # ---------------------------------------------------------------------
-  # Dependency audit gate
-  #   hard gate   : npm audit --omit=dev (fails on high/critical; .npmrc audit-level=high)
-  #   regression  : node .github/scripts/check-audit-baseline.cjs (committed baseline)
-  # ---------------------------------------------------------------------
   dependency-audit-gate:
     name: Dependency audit (hard + regression)
     runs-on: ubuntu-latest
@@ -231,34 +217,8 @@ jobs:
           path: audit-baseline.json
           retention-days: 14
 
-  # Refresh the committed versioned baseline on "main" only.  PRs are
-  # measured against main's committed snapshot and must not rewrite it.
-  baseline-sync:
-    name: Refresh committed audit baseline (main)
-    runs-on: ubuntu-latest
-    needs: dependency-audit-gate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Fresh baseline from current audit
-        run: |
-          npm audit --omit=dev --json > audit-baseline.json || true
-      - name: Commit refreshed baseline
-        run: |
-          git config user.name "CI Bot"
-          git config user.email "ci@cdes.local"
-          git add audit-baseline.json
-          if git diff --quiet HEAD -- audit-baseline.json; then
-            echo "baseline unchanged"
-          else
-            git commit -m "ci: refresh dependency audit baseline" || echo "no changes to commit"
-          fi
-
-  # ---------------------------------------------------------------------
-  # Secret scan gate (gitleaks → SARIF for GitHub security tab)
-  # ---------------------------------------------------------------------
   secret-scan-gate:
-    name: Secret scan · gitleaks (critical/high)
+    name: Secret scan · gitleaks
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -269,10 +229,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Scan for secrets (critical/high, min-confidence 80)
+      - name: Scan for secrets with .github/.gitleaks.toml
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .github/.gitleaks.toml
       - name: Ensure SARIF file exists
         if: always()
         run: |
@@ -285,12 +246,15 @@ jobs:
         with:
           sarif_file: results.sarif
 
-  # ---------------------------------------------------------------------
-  # Staging environment: mirrors the prod build and serves /api/health.
-  # Requires repository owner to provision the `staging` GitHub Environment
-  # (docs/SECRETS.md §Staging environment).  Disposable; no DB writes,
-  # no history change.  aiEnabled=false (no GEMINI_API_KEY in staging).
-  # ---------------------------------------------------------------------
+  docker-build:
+    name: Docker · multi-stage image build
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production Docker image
+        run: docker build --target runtime -t cdes-student-instructor:ci .
+
   staging-deploy:
     name: Staging deploy · /api/health (aiEnabled=false)
     runs-on: ubuntu-latest
@@ -303,15 +267,20 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: npm ci
-      - run: npm run build
+      - run: npm ci --omit=dev
+      - name: Download built dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
       - name: Provision staging config (mirrors prod)
         run: |
           DB_PATH="/tmp/staging-cdes-${{ github.run_id }}.db"
-          rm -f "$DB_PATH"
+          rm -f "${DB_PATH}"*
           echo "NODE_ENV=staging" >> "$GITHUB_ENV"
           echo "DATABASE_PATH=$DB_PATH" >> "$GITHUB_ENV"
           echo "COOKIE_SECURE=false" >> "$GITHUB_ENV"
+          echo "JWT_SECRET=ci-staging-secret-key-minimum-32-chars-${{ github.run_id }}" >> "$GITHUB_ENV"
       - name: Start production build in staging
         run: |
           npm start > staging.log 2>&1 &
@@ -334,8 +303,12 @@ jobs:
           import json
           d = json.load(open('/tmp/staging-health.json'))
           assert d['status'] == 'ok', d
+          assert d['ready'] is True, d
           assert d['aiEnabled'] is False, d
-          assert 'database' in d, d
+          db = d.get('database', {})
+          assert db.get('integrity') == 'ok', d
+          assert db.get('foreignKeys') is True, d
+          assert int(db.get('schemaVersion', 0)) >= 12, d
           print('staging health OK:', json.dumps(d, sort_keys=True))
           PY
 
@@ -353,4 +326,4 @@ jobs:
           if [ -n "${STAGING_PID:-}" ]; then
             kill "$STAGING_PID" 2>/dev/null || true
           fi
-          rm -f /tmp/staging-cdes-*.db
+          rm -f /tmp/staging-cdes-*.db* /tmp/staging-health.json

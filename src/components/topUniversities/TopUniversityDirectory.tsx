@@ -9,6 +9,7 @@ import {
 } from '../../types/topUniversityScholarships';
 import { TopUniversityDossierModal } from './TopUniversityDossierModal';
 import { UniversityCrestWatermark } from './UniversityCrestWatermark';
+import { hasActiveTextSelection, isSelectableTextTarget } from '../../utils/textSelectionGuard';
 import {
   TopUniversityFiltersSidebar,
   TopUniversityFiltersState
@@ -105,6 +106,7 @@ export const TopUniversityDirectory: React.FC = () => {
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!tabsScrollRef.current) return;
+    if (isSelectableTextTarget(e.target)) return;
     setIsDragging(true);
     didDragRef.current = false;
     dragStartXRef.current = e.pageX - tabsScrollRef.current.offsetLeft;
@@ -429,8 +431,8 @@ export const TopUniversityDirectory: React.FC = () => {
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
             onScroll={checkScrollBounds}
-            className={`flex items-center gap-2 overflow-x-auto pb-1.5 pt-0.5 px-0.5 select-none no-scrollbar ${
-              isDragging ? 'cursor-grabbing' : 'cursor-grab'
+            className={`flex items-center gap-2 overflow-x-auto pb-1.5 pt-0.5 px-0.5 no-scrollbar ${
+              isDragging ? 'cursor-grabbing' : ''
             }`}
           >
             {regionTabs.map((reg) => {
@@ -814,7 +816,10 @@ export const TopUniversityDirectory: React.FC = () => {
               {filteredPrograms.map((program) => (
                 <div
                   key={program.id}
-                  onClick={() => setSelectedProgram(program)}
+                  onClick={() => {
+                    if (hasActiveTextSelection()) return;
+                    setSelectedProgram(program);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
@@ -824,7 +829,7 @@ export const TopUniversityDirectory: React.FC = () => {
                   role="button"
                   tabIndex={0}
                   aria-label={`Open financial aid dossier for ${program.universityName}`}
-                  className="group study-glass-card relative rounded-3xl border border-slate-200/90 dark:border-slate-700/90 hover:border-emerald-400 dark:hover:border-emerald-500 hover:-translate-y-1 active:translate-y-0 transition-all duration-200 flex flex-col justify-between overflow-hidden cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 select-none"
+                  className="group study-glass-card relative rounded-3xl border border-slate-200/90 dark:border-slate-700/90 hover:border-emerald-400 dark:hover:border-emerald-500 hover:-translate-y-1 active:translate-y-0 transition-all duration-200 flex flex-col justify-between overflow-hidden cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
                 >
                   {/* Top Specular Liquid Curvature Reflection (Light Mode subtle tint) */}
                   <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-white/70 via-white/15 to-transparent dark:from-white/5 dark:via-transparent rounded-t-3xl z-0" />
@@ -882,7 +887,7 @@ export const TopUniversityDirectory: React.FC = () => {
                     </div>
 
                     {/* Flagship Fellowship Container */}
-                    <div className="mt-3 p-3 rounded-2xl border transition-all bg-slate-50/80 dark:bg-slate-800/70 border-slate-200/80 dark:border-slate-700">
+                    <div className="mt-3 p-3 rounded-2xl border transition-all bg-slate-50/45 dark:bg-slate-800/45 border-slate-200/80 dark:border-slate-700/80">
                       <div className="text-[11px] font-extrabold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
                         Flagship Aid Program
                       </div>
@@ -926,7 +931,7 @@ export const TopUniversityDirectory: React.FC = () => {
 
                   {/* Card Footer Actions */}
                   <div className="p-3.5 sm:p-4 bg-slate-50/80 dark:bg-slate-800/70 border-t border-slate-200/80 dark:border-slate-700 flex items-center justify-between gap-2 relative z-10">
-                    <div className="px-3.5 py-2 rounded-xl text-xs font-bold text-emerald-950 dark:text-emerald-100 bg-emerald-100/90 dark:bg-emerald-700/80 hover:bg-emerald-200 dark:hover:bg-emerald-600 flex items-center gap-1.5 transition-all select-none border border-emerald-200 dark:border-emerald-600">
+                    <div className="px-3.5 py-2 rounded-xl text-xs font-bold text-emerald-950 dark:text-emerald-100 bg-emerald-100/90 dark:bg-emerald-700/80 hover:bg-emerald-200 dark:hover:bg-emerald-600 flex items-center gap-1.5 transition-all border border-emerald-200 dark:border-emerald-600">
                       <span>View Aid Dossier</span>
                       <ChevronRight className="w-4 h-4 text-emerald-700 dark:text-emerald-200 transition-transform" />
                     </div>

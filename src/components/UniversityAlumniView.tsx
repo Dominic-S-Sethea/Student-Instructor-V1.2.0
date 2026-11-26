@@ -98,11 +98,13 @@ export const UniversityAlumniView: React.FC<UniversityAlumniViewProps> = ({
                       : 'bg-white border-stone-200 hover:border-stone-300 hover:bg-stone-50'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="px-2 py-0.5 rounded bg-stone-900 text-white text-[10px] font-bold">
+                  <div className="flex items-start justify-between gap-2.5">
+                    <span className="px-2 py-0.5 rounded bg-stone-900 text-white text-[10px] font-bold shrink-0">
                       {major.universityAbbr}
                     </span>
-                    <span className="text-[11px] text-stone-500 font-medium">{major.durationYears}</span>
+                    <span className="text-[11px] text-stone-500 font-medium text-right leading-snug">
+                      {major.durationYears}
+                    </span>
                   </div>
 
                   <h2 className="font-bold text-stone-900 text-sm mt-2">

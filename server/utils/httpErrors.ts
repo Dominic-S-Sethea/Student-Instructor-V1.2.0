@@ -75,3 +75,15 @@ export function safeErrorMessage(err: unknown, fallback: string, status: number 
   }
   return err instanceof Error && err.message ? err.message : fallback;
 }
+
+/** Sends a structured JSON error using HttpError.status when known, else 500 (never silently misclassifying 5xx as 400). */
+export function sendRouteError(res: Response, err: unknown, fallback: string): void {
+  const status = err instanceof HttpError ? err.status : 500;
+  const code = err instanceof HttpError ? err.code : undefined;
+  res.status(status).json({
+    success: false,
+    ...(code ? { code } : {}),
+    error: safeErrorMessage(err, fallback, status),
+  });
+}
+

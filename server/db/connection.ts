@@ -1,6 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { TrackedDatabase, SQLiteMetrics, dbMetrics } from './metrics';
+import { TrackedDatabase, SQLiteMetrics, dbMetrics, closeExplainDb } from './metrics';
 
 export interface DatabaseReadinessState {
   ready: boolean;
@@ -100,8 +100,11 @@ export function getDatabase(): TrackedDatabase {
   return databaseInstance;
 }
 
-/** Verify live DB connectivity, integrity, FK enforcement, and schema version. */
-export function verifyDatabaseHealth(): {
+const QUICK_CHECK_TTL_MS = 15 * 60 * 1000;
+let cachedIntegrity: { value: string; checkedAtMs: number } | null = null;
+
+/** Verify live DB connectivity, FK enforcement, schema version, and cached/on-demand integrity. */
+export function verifyDatabaseHealth(options: { runQuickCheck?: boolean } = {}): {
   ok: boolean;
   journalMode: string;
   foreignKeys: boolean;
@@ -125,14 +128,37 @@ export function verifyDatabaseHealth(): {
 
     const journalRow = db.prepare('PRAGMA journal_mode').get() as { journal_mode?: string } | undefined;
     const fkRow = db.prepare('PRAGMA foreign_keys').get() as { foreign_keys?: number } | undefined;
-    const intRow = db.prepare('PRAGMA quick_check').get() as { quick_check?: string } | undefined;
+
+    const nowMs = Date.now();
+    const cacheStale = !cachedIntegrity || nowMs - cachedIntegrity.checkedAtMs > QUICK_CHECK_TTL_MS;
+    let integrity: string;
+    if (options.runQuickCheck || (cacheStale && readinessState.integrity !== 'ok')) {
+      const intRow = db.prepare('PRAGMA quick_check').get() as { quick_check?: string } | undefined;
+      integrity = intRow?.quick_check || 'unknown';
+      cachedIntegrity = { value: integrity, checkedAtMs: nowMs };
+    } else if (cachedIntegrity) {
+      integrity = cachedIntegrity.value;
+    } else {
+      integrity = readinessState.integrity;
+      if (integrity === 'ok') {
+        cachedIntegrity = { value: integrity, checkedAtMs: nowMs };
+      }
+    }
+
     let schemaVersion = readinessState.schemaVersion;
     try {
-      const verRow = db
-        .prepare('SELECT schema_version AS v FROM schema_version ORDER BY v DESC LIMIT 1')
-        .get() as { v?: number } | undefined;
-      if (verRow && typeof verRow.v === 'number') {
-        schemaVersion = verRow.v;
+      const migRow = db
+        .prepare('SELECT MAX(version) AS v FROM schema_migrations')
+        .get() as { v?: number | null } | undefined;
+      if (migRow && typeof migRow.v === 'number') {
+        schemaVersion = migRow.v;
+      } else {
+        const verRow = db
+          .prepare('SELECT schema_version AS v FROM schema_version ORDER BY v DESC LIMIT 1')
+          .get() as { v?: number } | undefined;
+        if (verRow && typeof verRow.v === 'number') {
+          schemaVersion = verRow.v;
+        }
       }
     } catch {
       schemaVersion = 0;
@@ -140,7 +166,6 @@ export function verifyDatabaseHealth(): {
 
     const journalMode = journalRow?.journal_mode || 'unknown';
     const foreignKeys = Number(fkRow?.foreign_keys || 0) === 1;
-    const integrity = intRow?.quick_check || 'unknown';
 
     return {
       ok: readinessState.ready && integrity === 'ok' && foreignKeys,
@@ -173,20 +198,45 @@ export function closeDatabase(): void {
     databaseInstance = null;
     openedDbPath = null;
   }
+  txDepth = 0;
+  cachedIntegrity = null;
+  closeExplainDb();
   dbMetrics.reset();
   resetDatabaseReadiness();
 }
 
 let savepointSeq = 0;
+let txDepth = 0;
 
 /**
- * Executes `fn` inside a SQLite SAVEPOINT transaction so both standalone and nested
- * repository writes commit or roll back atomically without nesting errors.
+ * Executes `fn` inside a SQLite transaction. Top-level calls use `BEGIN IMMEDIATE` so WAL write
+ * locks wait on `busy_timeout` instead of failing immediately on deferred lock upgrades; nested
+ * calls transparently use `SAVEPOINT`.
  */
 export function withTransaction<T>(fn: () => T): T {
   const db = getDatabase();
+  if (txDepth === 0) {
+    db.exec('BEGIN IMMEDIATE;');
+    txDepth = 1;
+    try {
+      const result = fn();
+      db.exec('COMMIT;');
+      return result;
+    } catch (err: unknown) {
+      try {
+        db.exec('ROLLBACK;');
+      } catch {
+        // ignore rollback error
+      }
+      throw err;
+    } finally {
+      txDepth = 0;
+    }
+  }
+
   const sp = `cdes_sp_${++savepointSeq}`;
   db.exec(`SAVEPOINT ${sp};`);
+  txDepth += 1;
   try {
     const result = fn();
     db.exec(`RELEASE SAVEPOINT ${sp};`);
@@ -199,6 +249,8 @@ export function withTransaction<T>(fn: () => T): T {
       // ignore rollback error
     }
     throw err;
+  } finally {
+    txDepth -= 1;
   }
 }
 

@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from './apiClient';
+import { apiFetchRaw, apiGet, apiPost } from './apiClient';
 import {
   ClientCommunity,
   ClientCommunityPost,
@@ -10,6 +10,13 @@ import {
   ClientPartnerOrg,
   ClientContent,
 } from '../types';
+
+export interface CommunityRecommendationItem {
+  id?: string;
+  community_id?: string;
+  matchScore?: number;
+  matchReason?: string;
+}
 
 class CommunityClient {
   private baseUrl = '/api/community';
@@ -37,12 +44,20 @@ class CommunityClient {
     return (await apiGet<ClientCommunity[]>(`${this.baseUrl}/student/${encodeURIComponent(studentId)}/communities`)) || [];
   }
 
-  public async getPosts(params: { limit?: number; offset?: number; category?: string }): Promise<ClientCommunityPost[]> {
+  public async getPosts(params: {
+    communityId?: string;
+    postType?: string;
+    limit?: number;
+    offset?: number;
+    category?: string;
+  }): Promise<ClientCommunityPost[]> {
     const qs = new URLSearchParams();
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined) qs.set(k, String(v));
-    });
-    return (await apiGet<ClientCommunityPost[]>(`${this.baseUrl}/posts?${qs.toString()}`)) || [];
+    if (params.communityId) qs.set('communityId', params.communityId);
+    if (params.postType) qs.set('postType', params.postType);
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params.offset !== undefined) qs.set('offset', String(params.offset));
+    const q = qs.toString();
+    return (await apiGet<ClientCommunityPost[]>(`${this.baseUrl}/posts${q ? `?${q}` : ''}`)) || [];
   }
 
   public async createPost(postData: {
@@ -55,12 +70,20 @@ class CommunityClient {
     content: string;
     category?: string;
     tags?: string[];
-  }): Promise<ClientCommunityPost> {
-    return apiPost<ClientCommunityPost>(`${this.baseUrl}/posts`, postData);
+  }): Promise<{ post: ClientCommunityPost; notice?: string }> {
+    const res = await apiFetchRaw<{ success: boolean; data: ClientCommunityPost; notice?: string }>(
+      `${this.baseUrl}/posts`,
+      { method: 'POST', body: JSON.stringify(postData) }
+    );
+    return { post: res.data, notice: res.notice };
   }
 
-  public async upvotePost(postId: string): Promise<void> {
-    await apiPost(`${this.baseUrl}/posts/${encodeURIComponent(postId)}/upvote`, {});
+  public async upvotePost(postId: string): Promise<number> {
+    const res = await apiPost<{ upvotes_count?: number; new_count?: number }>(
+      `${this.baseUrl}/posts/${encodeURIComponent(postId)}/upvote`,
+      {}
+    );
+    return res?.upvotes_count ?? res?.new_count ?? 0;
   }
 
   public async getPostComments(postId: string): Promise<ClientCommunityComment[]> {
@@ -70,13 +93,27 @@ class CommunityClient {
   public async addComment(
     postId: string,
     commentData: { content: string; parent_id?: string; author_id?: string; author_name?: string; author_role?: string }
-  ): Promise<ClientCommunityComment> {
-    return apiPost<ClientCommunityComment>(`${this.baseUrl}/posts/${encodeURIComponent(postId)}/comments`, commentData);
+  ): Promise<{ comment: ClientCommunityComment; notice?: string }> {
+    const payload = {
+      content: commentData.content,
+      parent_comment_id: commentData.parent_id,
+      author_id: commentData.author_id,
+      author_name: commentData.author_name,
+      author_role: commentData.author_role,
+    };
+    const res = await apiFetchRaw<{ success: boolean; data: ClientCommunityComment; notice?: string }>(
+      `${this.baseUrl}/posts/${encodeURIComponent(postId)}/comments`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return { comment: res.data, notice: res.notice };
   }
 
   public async upvoteComment(commentId: string): Promise<number> {
-    const res = await apiPost<{ new_count?: number }>(`${this.baseUrl}/comments/${encodeURIComponent(commentId)}/upvote`, {});
-    return res?.new_count ?? 0;
+    const res = await apiPost<{ upvotes_count?: number; new_count?: number }>(
+      `${this.baseUrl}/comments/${encodeURIComponent(commentId)}/upvote`,
+      {}
+    );
+    return res?.upvotes_count ?? res?.new_count ?? 0;
   }
 
   public async acceptAnswer(postId: string, commentId: string): Promise<void> {
@@ -120,8 +157,11 @@ class CommunityClient {
   }
 
   public async upvoteProject(projectId: string): Promise<number> {
-    const res = await apiPost<{ new_count?: number }>(`${this.baseUrl}/projects/${encodeURIComponent(projectId)}/upvote`, {});
-    return res?.new_count ?? 0;
+    const res = await apiPost<{ upvotes_count?: number; new_count?: number }>(
+      `${this.baseUrl}/projects/${encodeURIComponent(projectId)}/upvote`,
+      {}
+    );
+    return res?.upvotes_count ?? res?.new_count ?? 0;
   }
 
   public async rsvpEvent(eventId: string, options: { response: 'yes' | 'no' | 'maybe'; notes?: string }): Promise<void> {
@@ -136,8 +176,18 @@ class CommunityClient {
     return (await apiGet<ClientMentorProfile[]>(`${this.baseUrl}/mentors${category ? `?badge=${encodeURIComponent(category)}` : ''}`)) || [];
   }
 
-  public async getAIMRecommendations(studentId: string): Promise<{ mentors: { id: string; matchScore?: number; matchReason?: string }[] }> {
-    return (await apiGet<{ mentors: { id: string; matchScore?: number; matchReason?: string }[] }>(`${this.baseUrl}/ai-recommendations?studentId=${encodeURIComponent(studentId)}`)) || { mentors: [] };
+  public async getAIMRecommendations(studentId: string): Promise<{
+    communities: CommunityRecommendationItem[];
+    mentors: Array<{ id: string; matchScore?: number; matchReason?: string }>;
+  }> {
+    const res = await apiGet<{
+      communities?: CommunityRecommendationItem[];
+      mentors?: Array<{ id: string; matchScore?: number; matchReason?: string }>;
+    }>(`${this.baseUrl}/ai-recommendations?studentId=${encodeURIComponent(studentId)}`);
+    return {
+      communities: Array.isArray(res?.communities) ? res.communities : [],
+      mentors: Array.isArray(res?.mentors) ? res.mentors : [],
+    };
   }
 
   public async getStudentSessions(studentId: string): Promise<ClientMentorshipSession[]> {

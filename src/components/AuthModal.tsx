@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, LogIn, UserPlus, AlertCircle, GraduationCap, Building2, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useEscapeKey } from '../hooks/useModalAccessibility';
 
 interface AuthModalProps {
   initialMode?: 'login' | 'register';
@@ -20,6 +21,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
   const [educationLevel, setEducationLevel] = useState('Grade 12');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEscapeKey(true, onClose);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,8 +55,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
       role="dialog"
       aria-modal="true"
       aria-label={mode === 'login' ? 'Sign In' : 'Create Account'}
+      onClick={onClose}
     >
-      <div className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-2xl">
+      <div
+        className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
@@ -150,7 +157,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
 
               <div>
                 <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200" htmlFor="auth-name">
-                  {role === 'organization' ? 'Organization / Contact Name' : 'Full Name'}
+                  {role === 'organization'
+                    ? isKhmer ? 'ឈ្មោះអង្គការ / អ្នកទំនាក់ទំនង' : 'Organization / Contact Name'
+                    : isKhmer ? 'ឈ្មោះពេញ' : 'Full Name'}
                 </label>
                 <input
                   id="auth-name"
@@ -166,7 +175,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
               {role === 'student' && (
                 <div>
                   <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200" htmlFor="auth-grade">
-                    Education Level
+                    {isKhmer ? 'កម្រិតសិក្សា' : 'Education Level'}
                   </label>
                   <select
                     id="auth-grade"
@@ -186,7 +195,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
 
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200" htmlFor="auth-email">
-              Email
+              {isKhmer ? 'អ៊ីមែល' : 'Email'}
             </label>
             <input
               id="auth-email"
@@ -201,7 +210,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
 
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-700 dark:text-slate-200" htmlFor="auth-password">
-              Password {mode === 'register' && '(at least 8 characters)'}
+              {isKhmer ? 'ពាក្យសម្ងាត់' : 'Password'}{' '}
+              {mode === 'register' && (isKhmer ? '(យ៉ាងតិច ៨ តួអក្សរ)' : '(at least 8 characters)')}
             </label>
             <input
               id="auth-password"
@@ -221,15 +231,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ initialMode = 'login', onC
             className="mt-2 w-full rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-60 cursor-pointer"
           >
             {submitting
-              ? 'Please wait...'
+              ? isKhmer ? 'សូមរង់ចាំ...' : 'Please wait...'
               : mode === 'login'
-                ? 'Sign In'
-                : 'Create Account'}
+                ? isKhmer ? 'ចូលគណនី' : 'Sign In'
+                : isKhmer ? 'បង្កើតគណនី' : 'Create Account'}
           </button>
 
           <div className="flex items-center justify-center gap-1.5 pt-1 text-[11px] text-slate-500 dark:text-slate-400">
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Protected session cookies &amp; student privacy defaults</span>
+            <span>
+              {isKhmer
+                ? 'ខូឃីសម័យមានសុវត្ថិភាព និងឯកជនភាពជាលំនាំដើម'
+                : 'Protected session cookies & student privacy defaults'}
+            </span>
           </div>
         </form>
       </div>

@@ -63,6 +63,7 @@ export const GrowthMemoryFactCard: React.FC<GrowthMemoryFactCardProps> = ({
         type="button"
         onClick={() => onFeedback(fact, 'confirm')}
         title="Confirm (+trust)"
+        aria-label="Confirm fact"
         className="p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-950 text-emerald-700 dark:text-emerald-400 cursor-pointer"
       >
         <CheckCircle2 className="w-4 h-4" />
@@ -71,6 +72,7 @@ export const GrowthMemoryFactCard: React.FC<GrowthMemoryFactCardProps> = ({
         type="button"
         onClick={onStartEdit}
         title="Correct fact"
+        aria-label="Edit fact"
         className="p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-950 text-blue-700 dark:text-blue-400 cursor-pointer"
       >
         <Edit3 className="w-4 h-4" />
@@ -80,6 +82,7 @@ export const GrowthMemoryFactCard: React.FC<GrowthMemoryFactCardProps> = ({
           type="button"
           onClick={() => onFeedback(fact, 'revert')}
           title="Revert to previous version"
+          aria-label="Revert fact to previous version"
           className="p-1.5 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-950 text-amber-700 dark:text-amber-400 cursor-pointer"
         >
           <RotateCcw className="w-4 h-4" />
@@ -89,6 +92,7 @@ export const GrowthMemoryFactCard: React.FC<GrowthMemoryFactCardProps> = ({
         type="button"
         onClick={() => onFeedback(fact, 'end')}
         title="Archive / end fact"
+        aria-label="Archive fact"
         className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950 text-rose-700 dark:text-rose-400 cursor-pointer"
       >
         <XCircle className="w-4 h-4" />

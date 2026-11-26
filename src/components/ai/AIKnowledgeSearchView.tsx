@@ -15,6 +15,7 @@ import {
   Tag
 } from 'lucide-react';
 import { ClientKnowledgeDoc } from '../../types';
+import { apiFetchRaw } from '../../services/apiClient';
 
 interface SearchResultItem {
   id: string;
@@ -34,6 +35,7 @@ export const AIKnowledgeSearchView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResultItem[] | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const categories = [
     { name: 'all', label: 'All Domains', icon: Layers, count: 14 },
@@ -46,56 +48,63 @@ export const AIKnowledgeSearchView: React.FC = () => {
     { name: 'Child Development', label: 'Child Development', icon: Users, count: 2 },
   ];
 
-  const fetchDocs = async (category?: string) => {
+  const fetchDocs = async (category?: string): Promise<void> => {
     setIsLoadingDocs(true);
     try {
       const url = category && category !== 'all'
         ? `/api/ai/knowledge?category=${encodeURIComponent(category)}`
         : '/api/ai/knowledge';
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await apiFetchRaw<{ documents?: ClientKnowledgeDoc[] }>(url);
       if (data && Array.isArray(data.documents)) {
         setDocuments(data.documents);
       }
     } catch (err) {
-      console.error('Failed to load knowledge documents:', err);
+      setSearchError(err instanceof Error ? err.message : 'Failed to load knowledge documents.');
     } finally {
       setIsLoadingDocs(false);
     }
   };
 
   useEffect(() => {
-    fetchDocs(activeCategory);
+    void fetchDocs(activeCategory);
   }, [activeCategory]);
 
-  const handleVectorSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!searchQuery.trim()) return;
-
+  const executeVectorSearch = async (queryText: string, categoryFilter?: string): Promise<void> => {
+    const cleanQuery = queryText.trim();
+    if (!cleanQuery) return;
     setIsSearching(true);
+    setSearchError(null);
     try {
-      const res = await fetch('/api/ai/knowledge/search', {
+      const data = await apiFetchRaw<{ results?: SearchResultItem[] }>('/api/ai/knowledge/search', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          query: searchQuery.trim(),
-          category: activeCategory !== 'all' ? activeCategory : undefined,
+          query: cleanQuery,
+          category: categoryFilter && categoryFilter !== 'all' ? categoryFilter : undefined,
           topK: 4
         })
       });
-      const data = await res.json();
       if (data && Array.isArray(data.results)) {
         setSearchResults(data.results);
       }
     } catch (err) {
-      console.error('Vector search error:', err);
+      setSearchError(err instanceof Error ? err.message : 'Vector search failed.');
     } finally {
       setIsSearching(false);
     }
   };
 
+  const handleVectorSearch = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    await executeVectorSearch(searchQuery, activeCategory);
+  };
+
   return (
     <div className="space-y-6">
+      {searchError && (
+        <div role="alert" className="p-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-xl text-red-700 dark:text-red-300 text-xs font-medium">
+          {searchError}
+        </div>
+      )}
       {/* Search Header Banner */}
       <div className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white p-6 rounded-2xl border border-indigo-800/60 shadow-md">
         <div className="flex items-center space-x-2.5 mb-2">
@@ -109,7 +118,7 @@ export const AIKnowledgeSearchView: React.FC = () => {
         </p>
 
         {/* Vector Search Sandbox Bar */}
-        <form onSubmit={handleVectorSearch} className="mt-5 flex gap-2">
+        <form onSubmit={(e) => void handleVectorSearch(e)} className="mt-5 flex gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
@@ -144,16 +153,7 @@ export const AIKnowledgeSearchView: React.FC = () => {
               type="button"
               onClick={() => {
                 setSearchQuery(q);
-                // Trigger fetch automatically
-                fetch('/api/ai/knowledge/search', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ query: q, topK: 4 })
-                })
-                  .then(r => r.json())
-                  .then(data => {
-                    if (data?.results) setSearchResults(data.results);
-                  });
+                void executeVectorSearch(q);
               }}
               className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-indigo-100 whitespace-nowrap transition-colors"
             >

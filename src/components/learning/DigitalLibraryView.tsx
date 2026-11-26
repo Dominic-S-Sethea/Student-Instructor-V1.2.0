@@ -25,6 +25,7 @@ import {
   LearningContent,
 } from '../../../shared/types/learningTypes';
 import { learningClient } from '../../services/learningClient';
+import { useAuth } from '../../context/AuthContext';
 
 interface DigitalLibraryViewProps {
   studentId?: string;
@@ -33,13 +34,16 @@ interface DigitalLibraryViewProps {
 }
 
 export const DigitalLibraryView: React.FC<DigitalLibraryViewProps> = ({
-  studentId = 'usr-student-01',
+  studentId: propStudentId,
   onOpenLabExperiment,
   onRewardEarned,
 }) => {
+  const { user } = useAuth();
+  const studentId = user?.id || propStudentId || '';
   const [subjects, setSubjects] = useState<(Subject & { categories?: Category[] })[]>([]);
   const [contents, setContents] = useState<(LearningContent & { subject_name?: string; subject_color?: string })[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Filters
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('all');
@@ -60,9 +64,10 @@ export const DigitalLibraryView: React.FC<DigitalLibraryViewProps> = ({
   const [quizSelectedOption, setQuizSelectedOption] = useState<number | null>(null);
   const [quizSubmitted, setQuizSubmitted] = useState<boolean>(false);
 
-  const fetchCatalog = async () => {
+  const fetchCatalog = async (): Promise<void> => {
     try {
       setLoading(true);
+      setLoadError(null);
       const [subData, contentData] = await Promise.all([
         learningClient.getSubjects(studentId),
         learningClient.getContentCatalog(
@@ -79,34 +84,40 @@ export const DigitalLibraryView: React.FC<DigitalLibraryViewProps> = ({
       setSubjects(subData);
       setContents(contentData);
     } catch (err) {
-      console.error('Error fetching digital library:', err);
+      setLoadError(
+        err instanceof Error ? err.message : 'Unable to load the digital library catalog right now.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchCatalog();
+    void fetchCatalog();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSubjectId, selectedCategoryId, selectedContentType, selectedDifficulty]);
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
+  const handleSearchSubmit = (e: React.FormEvent): void => {
     e.preventDefault();
-    fetchCatalog();
-    learningClient.logAnalyticsEvent('LIBRARY_SEARCH', { query: searchQuery });
+    void fetchCatalog();
+    void learningClient.logAnalyticsEvent('LIBRARY_SEARCH', { query: searchQuery }).catch(() => undefined);
   };
 
-  const handleOpenContent = async (item: LearningContent) => {
+  const handleOpenContent = async (item: LearningContent): Promise<void> => {
     setActiveContent(item);
     setReaderCompleted(false);
     setQuizSelectedOption(null);
     setQuizSubmitted(false);
     setSimAngle(30);
 
-    // Track in database
-    await learningClient.getContentDetail(item.id, studentId);
+    try {
+      await learningClient.getContentDetail(item.id, studentId);
+    } catch {
+      // Non-blocking content view telemetry
+    }
   };
 
-  const handleCompleteContent = async () => {
+  const handleCompleteContent = async (): Promise<void> => {
     if (!activeContent || readerCompleted) return;
     setReaderCompleted(true);
 
@@ -115,10 +126,12 @@ export const DigitalLibraryView: React.FC<DigitalLibraryViewProps> = ({
       onRewardEarned(points, `Completed "${activeContent.title}"!`);
     }
 
-    learningClient.logAnalyticsEvent('CONTENT_COMPLETED', {
-      contentId: activeContent.id,
-      meritPoints: points,
-    });
+    await learningClient
+      .logAnalyticsEvent('CONTENT_COMPLETED', {
+        contentId: activeContent.id,
+        meritPoints: points,
+      })
+      .catch(() => undefined);
   };
 
   // Current categories for active subject
@@ -161,6 +174,21 @@ export const DigitalLibraryView: React.FC<DigitalLibraryViewProps> = ({
       </div>
 
       {/* Filter and Search Bar */}
+      {loadError && (
+        <div
+          role="alert"
+          className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 flex flex-wrap items-center justify-between gap-2"
+        >
+          <span>{loadError}</span>
+          <button
+            type="button"
+            onClick={() => void fetchCatalog()}
+            className="px-3 py-1 rounded-lg bg-rose-600 text-white font-semibold hover:bg-rose-700 cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-4">
         <form onSubmit={handleSearchSubmit} className="flex gap-2">
           <div className="relative flex-1">

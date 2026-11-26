@@ -1,5 +1,4 @@
 import React from 'react';
-import Markdown from 'react-markdown';
 import {
   ArrowRight,
   Bot,
@@ -13,6 +12,8 @@ import {
   Wrench,
 } from 'lucide-react';
 import type { ChatMessage } from '../../types';
+import { getSafeHttpUrl } from '../../utils/safeUrl';
+import { SafeMarkdown } from '../common/SafeMarkdown';
 
 interface AdvisorMessageBubbleProps {
   message: ChatMessage;
@@ -21,7 +22,7 @@ interface AdvisorMessageBubbleProps {
   onSelectQuestion: (q: string) => void;
 }
 
-export const AdvisorMessageBubble: React.FC<AdvisorMessageBubbleProps> = ({
+export const AdvisorMessageBubble: React.FC<AdvisorMessageBubbleProps> = React.memo(({
   message,
   isSourcesExpanded,
   onToggleSources,
@@ -51,7 +52,7 @@ export const AdvisorMessageBubble: React.FC<AdvisorMessageBubbleProps> = ({
           <div className="whitespace-pre-wrap">{message.text}</div>
         ) : (
           <div className="space-y-2 leading-relaxed [&_h3]:text-base [&_h3]:font-bold [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-blue-600 dark:[&_a]:text-blue-400 [&_a]:underline">
-            <Markdown>{message.text}</Markdown>
+            <SafeMarkdown>{message.text}</SafeMarkdown>
           </div>
         )}
 
@@ -95,44 +96,52 @@ export const AdvisorMessageBubble: React.FC<AdvisorMessageBubbleProps> = ({
             </button>
             {isSourcesExpanded && (
               <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
-                {message.retrievedSources?.map((src) => (
-                  <div key={`${src.category}-${src.id}`} className="rounded-xl bg-white dark:bg-slate-900 p-2.5 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
-                    <div>
-                      <div className="font-bold text-slate-800 dark:text-slate-100">{src.title}</div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                        {src.category} &middot; {src.source}
+                {message.retrievedSources?.map((src) => {
+                  const safeSrcUrl = getSafeHttpUrl(src.url);
+                  return (
+                    <div key={`${src.category}-${src.id}`} className="rounded-xl bg-white dark:bg-slate-900 p-2.5 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2">
+                      <div>
+                        <div className="font-bold text-slate-800 dark:text-slate-100">{src.title}</div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {src.category} &middot; {src.source}
+                        </div>
                       </div>
+                      {safeSrcUrl && (
+                        <a
+                          href={safeSrcUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label={`Open ${src.title}`}
+                          className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 shrink-0"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
                     </div>
-                    {src.url && (
-                      <a
-                        href={src.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 shrink-0"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                  </div>
-                ))}
-                {message.webSources?.map((web) => (
-                  <a
-                    key={web.url}
-                    href={web.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-xl bg-white dark:bg-slate-900 p-2.5 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 hover:border-blue-400"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Globe className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <div className="truncate">
-                        <div className="font-bold text-slate-800 dark:text-slate-100 truncate">{web.title}</div>
-                        <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{web.url}</div>
+                  );
+                })}
+                {message.webSources?.map((web) => {
+                  const safeWebUrl = getSafeHttpUrl(web.url);
+                  if (!safeWebUrl) return null;
+                  return (
+                    <a
+                      key={safeWebUrl}
+                      href={safeWebUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-xl bg-white dark:bg-slate-900 p-2.5 border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 hover:border-blue-400"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Globe className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <div className="truncate">
+                          <div className="font-bold text-slate-800 dark:text-slate-100 truncate">{web.title}</div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{safeWebUrl}</div>
+                        </div>
                       </div>
-                    </div>
-                    <ExternalLink className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  </a>
-                ))}
+                      <ExternalLink className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    </a>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -161,4 +170,6 @@ export const AdvisorMessageBubble: React.FC<AdvisorMessageBubbleProps> = ({
       </div>
     </div>
   );
-};
+});
+
+AdvisorMessageBubble.displayName = 'AdvisorMessageBubble';

@@ -1,29 +1,48 @@
 import { getDatabase } from '../db/connection';
 import { StudentIntelligenceProfile } from '../types/analytics';
+import { safeJsonParse } from '../utils/safeJson';
+
+interface IntelligenceProfileRow {
+  student_id: string;
+  learning_preferences: string | null;
+  subject_strengths: string | null;
+  subject_weaknesses: string | null;
+  interest_patterns: string | null;
+  engagement_score: number | null;
+  persistence_score: number | null;
+  problem_solving_score: number | null;
+  updated_at: string;
+}
 
 export class IntelligenceRepository {
   private get db() {
     return getDatabase();
   }
 
-  public getProfile(studentId: string): StudentIntelligenceProfile | null {
-    const row = this.db.prepare(`
-      SELECT * FROM student_intelligence_profile WHERE student_id = ?
-    `).get(studentId) as any;
-
-    if (!row) return null;
-
+  private mapRow(row: IntelligenceProfileRow): StudentIntelligenceProfile {
     return {
       studentId: row.student_id,
-      learningPreferences: JSON.parse(row.learning_preferences || '{}'),
-      subjectStrengths: JSON.parse(row.subject_strengths || '[]'),
-      subjectWeaknesses: JSON.parse(row.subject_weaknesses || '[]'),
-      interestPatterns: JSON.parse(row.interest_patterns || '[]'),
+      learningPreferences: safeJsonParse<StudentIntelligenceProfile['learningPreferences']>(
+        row.learning_preferences,
+        {} as StudentIntelligenceProfile['learningPreferences']
+      ),
+      subjectStrengths: safeJsonParse(row.subject_strengths, []),
+      subjectWeaknesses: safeJsonParse(row.subject_weaknesses, []),
+      interestPatterns: safeJsonParse(row.interest_patterns, []),
       engagementScore: Number(row.engagement_score) || 0,
       persistenceScore: Number(row.persistence_score) || 0,
       problemSolvingScore: Number(row.problem_solving_score) || 0,
-      updatedAt: row.updated_at
+      updatedAt: row.updated_at,
     };
+  }
+
+  public getProfile(studentId: string): StudentIntelligenceProfile | null {
+    const row = this.db.prepare(`
+      SELECT * FROM student_intelligence_profile WHERE student_id = ?
+    `).get(studentId) as IntelligenceProfileRow | undefined;
+
+    if (!row) return null;
+    return this.mapRow(row);
   }
 
   public upsertProfile(profile: StudentIntelligenceProfile): void {
@@ -62,21 +81,12 @@ export class IntelligenceRepository {
     );
   }
 
-  public getAllProfiles(): StudentIntelligenceProfile[] {
+  public getAllProfiles(limit: number = 500): StudentIntelligenceProfile[] {
+    const safeLimit = Math.min(Math.max(1, Math.trunc(limit)), 1000);
     const rows = this.db.prepare(`
-      SELECT * FROM student_intelligence_profile ORDER BY updated_at DESC
-    `).all() as any[];
+      SELECT * FROM student_intelligence_profile ORDER BY updated_at DESC LIMIT ?
+    `).all(safeLimit) as unknown as IntelligenceProfileRow[];
 
-    return rows.map(row => ({
-      studentId: row.student_id,
-      learningPreferences: JSON.parse(row.learning_preferences || '{}'),
-      subjectStrengths: JSON.parse(row.subject_strengths || '[]'),
-      subjectWeaknesses: JSON.parse(row.subject_weaknesses || '[]'),
-      interestPatterns: JSON.parse(row.interest_patterns || '[]'),
-      engagementScore: Number(row.engagement_score) || 0,
-      persistenceScore: Number(row.persistence_score) || 0,
-      problemSolvingScore: Number(row.problem_solving_score) || 0,
-      updatedAt: row.updated_at
-    }));
+    return rows.map((row) => this.mapRow(row));
   }
 }

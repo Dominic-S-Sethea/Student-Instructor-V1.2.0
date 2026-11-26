@@ -90,6 +90,8 @@ export const guidanceClient = {
     mathAbility: string;
     strengths: string[];
     budgetTier: string;
+    workStyle?: string;
+    careerGoal?: string;
   }): Promise<DecisionEvaluationResponse> {
     return apiFetchRaw<DecisionEvaluationResponse>('/api/decision/evaluate', {
       method: 'POST',

@@ -48,9 +48,40 @@ export class PrivacyService {
     });
   }
 
+  private isMinorByDateOfBirth(userId: string): boolean {
+    const profile = this.userRepo.getProfileByUserId(userId);
+    const dob = profile?.date_of_birth?.trim();
+    if (!dob || !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
+      return false;
+    }
+    const [yStr, mStr, dStr] = dob.split('-');
+    const year = Number(yStr);
+    const month = Number(mStr);
+    const day = Number(dStr);
+    const birthDate = new Date(Date.UTC(year, month - 1, day));
+    if (
+      Number.isNaN(birthDate.getTime()) ||
+      birthDate.getUTCFullYear() !== year ||
+      birthDate.getUTCMonth() + 1 !== month ||
+      birthDate.getUTCDate() !== day
+    ) {
+      return false;
+    }
+    const now = new Date();
+    if (birthDate.getTime() > now.getTime()) {
+      return true; // Fail closed for invalid future DOBs
+    }
+    let age = now.getUTCFullYear() - birthDate.getUTCFullYear();
+    const monthDiff = now.getUTCMonth() - birthDate.getUTCMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && now.getUTCDate() < birthDate.getUTCDate())) {
+      age -= 1;
+    }
+    return age < 18;
+  }
+
   /**
    * Updates privacy preferences with enforceable guardian-verification and withdrawal rules.
-   * Non-admin callers can never self-verify parental consent.
+   * Non-admin callers can never self-verify parental consent or bypass minor locks.
    */
   public updateConsent(
     studentId: string,
@@ -72,7 +103,17 @@ export class PrivacyService {
       });
     }
 
-    const nextIsMinor = updates.isMinor !== undefined ? updates.isMinor : current.isMinor;
+    let nextIsMinor = updates.isMinor !== undefined ? updates.isMinor : current.isMinor;
+    if (actorRole !== 'admin' && nextIsMinor === false) {
+      if (current.parentVerificationStatus === 'pending_owner_verification') {
+        nextIsMinor = true;
+        blockedReasons.push('minor_status_locked_pending_verification');
+      } else if (this.isMinorByDateOfBirth(resolvedId)) {
+        nextIsMinor = true;
+        blockedReasons.push('minor_status_locked_by_date_of_birth');
+      }
+    }
+
     const nextParentVerified =
       actorRole === 'admin' && updates.parentalConsentVerified !== undefined
         ? updates.parentalConsentVerified

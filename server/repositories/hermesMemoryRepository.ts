@@ -165,17 +165,19 @@ export class HermesMemoryRepository {
   }
 
   public incrementTurnCounter(userId: string): { turnCounter: number; nudgeInterval: number } {
-    const existingUserDoc = this.getDoc(userId, 'USER');
-    const nextTurns = (existingUserDoc?.turnCounter ?? 0) + 1;
-    const nudgeInterval = existingUserDoc?.nudgeInterval ?? 10;
-    const updated = this.upsertDoc(
-      userId,
-      'USER',
-      existingUserDoc?.content || '',
-      existingUserDoc?.charLimit || 3000,
-      { turnCounter: nextTurns, nudgeInterval }
-    );
-    return { turnCounter: updated.turnCounter, nudgeInterval: updated.nudgeInterval };
+    return withTransaction(() => {
+      const existingUserDoc = this.getDoc(userId, 'USER');
+      const nextTurns = (existingUserDoc?.turnCounter ?? 0) + 1;
+      const nudgeInterval = existingUserDoc?.nudgeInterval ?? 10;
+      const updated = this.upsertDoc(
+        userId,
+        'USER',
+        existingUserDoc?.content || '',
+        existingUserDoc?.charLimit || 3000,
+        { turnCounter: nextTurns, nudgeInterval }
+      );
+      return { turnCounter: updated.turnCounter, nudgeInterval: updated.nudgeInterval };
+    });
   }
 
   public listFacts(userId: string, includeInactive: boolean = false, limit: number = 200): HermesMemoryFact[] {
@@ -184,6 +186,33 @@ export class HermesMemoryRepository {
       : "SELECT * FROM hermes_memory_facts WHERE user_id = ? AND status = 'active' ORDER BY trust_score DESC, updated_at DESC LIMIT ?";
     const rows = this.db.prepare(sql).all(userId, limit) as unknown as FactRow[];
     return rows.map(mapFact);
+  }
+
+  public findActiveFactByNormalizedText(userId: string, cleanedText: string): HermesMemoryFact | null {
+    const row = this.db
+      .prepare("SELECT * FROM hermes_memory_facts WHERE user_id = ? AND status = 'active' AND LOWER(fact_text) = LOWER(?) LIMIT 1")
+      .get(userId, cleanedText) as unknown as FactRow | undefined;
+    return row ? mapFact(row) : null;
+  }
+
+  public enforceActiveFactCap(userId: string, maxActive: number = 200): void {
+    const countRow = this.db
+      .prepare("SELECT COUNT(*) AS c FROM hermes_memory_facts WHERE user_id = ? AND status = 'active'")
+      .get(userId) as { c: number };
+    const overflow = (countRow?.c || 0) - maxActive;
+    if (overflow <= 0) return;
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE hermes_memory_facts SET status = 'ended', updated_at = ?
+         WHERE id IN (
+           SELECT id FROM hermes_memory_facts
+           WHERE user_id = ? AND status = 'active'
+           ORDER BY trust_score ASC, updated_at ASC
+           LIMIT ?
+         )`
+      )
+      .run(now, userId, overflow);
   }
 
   public getFactById(userId: string, factId: string): HermesMemoryFact | null {

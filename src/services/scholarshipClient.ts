@@ -23,6 +23,7 @@ export const scholarshipClient = {
     studentCategory?: string;
     onlyVerified?: boolean;
     sortBy?: string;
+    signal?: AbortSignal;
   } = {}): Promise<ScholarshipCatalogResponse> {
     const query = new URLSearchParams();
     if (params.q?.trim()) query.set('q', params.q.trim());
@@ -37,7 +38,9 @@ export const scholarshipClient = {
     if (params.sortBy) query.set('sortBy', params.sortBy);
 
     const qs = query.toString();
-    return apiFetchRaw<ScholarshipCatalogResponse>(`/api/scholarships${qs ? `?${qs}` : ''}`);
+    return apiFetchRaw<ScholarshipCatalogResponse>(`/api/scholarships${qs ? `?${qs}` : ''}`, {
+      signal: params.signal,
+    });
   },
 
   async getById(id: string): Promise<ScholarshipItem> {
@@ -59,7 +62,7 @@ export const scholarshipClient = {
 
   async listSubmissions(): Promise<OrganizationSubmission[]> {
     const res = await apiFetchRaw<{ success: boolean; submissions?: OrganizationSubmission[]; data?: OrganizationSubmission[] }>(
-      '/api/scholarships/submissions/all'
+      '/api/scholarships/submissions'
     );
     return res.submissions || res.data || [];
   },
@@ -103,17 +106,29 @@ export const scholarshipClient = {
 
   async listErrorReports(): Promise<UserErrorReport[]> {
     const res = await apiFetchRaw<{ success: boolean; reports?: UserErrorReport[]; data?: UserErrorReport[] }>(
-      '/api/scholarships/reports/all'
+      '/api/scholarships/reports'
     );
     return res.reports || res.data || [];
   },
 
-  async resolveErrorReport(id: string, status: string, adminNotes?: string): Promise<UserErrorReport> {
-    const res = await apiPut<{ report?: UserErrorReport }>(`/api/scholarships/reports/${encodeURIComponent(id)}`, {
-      status,
-      adminNotes,
-    });
-    return (res as unknown as { report: UserErrorReport }).report || (res as unknown as UserErrorReport);
+  async resolveErrorReport(
+    id: string,
+    status: string,
+    adminNotes?: string,
+    applyCorrectionToScholarship: boolean = false
+  ): Promise<UserErrorReport | null> {
+    const res = await apiPut<{ report?: UserErrorReport } | UserErrorReport>(
+      `/api/scholarships/reports/${encodeURIComponent(id)}`,
+      {
+        status,
+        adminNotes,
+        applyCorrectionToScholarship,
+      }
+    );
+    if (res && typeof res === 'object' && 'report' in res && res.report) {
+      return res.report;
+    }
+    return res && typeof res === 'object' && 'id' in res ? res : null;
   },
 
   async checkUpdates(scholarshipId: string): Promise<{ message: string; scholarship: ScholarshipItem }> {

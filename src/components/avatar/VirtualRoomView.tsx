@@ -190,7 +190,7 @@ export const VirtualRoomView: React.FC<VirtualRoomViewProps> = ({
       </div>
 
       {/* 2. THE 2D VIRTUAL ROOM ENVIRONMENT CANVAS */}
-      <div className="relative w-full rounded-3xl overflow-hidden shadow-2xl border-4 border-slate-800/20 bg-slate-900 min-h-[540px] flex flex-col justify-between select-none">
+      <div className="relative w-full rounded-3xl overflow-hidden shadow-2xl border-4 border-slate-800/20 bg-slate-900 min-h-[540px] flex flex-col justify-between">
         {/* ROOM WALL (Upper 65%) */}
         <div
           className="relative w-full flex-1 flex flex-col justify-between p-4 sm:p-8 transition-colors duration-500 overflow-hidden"

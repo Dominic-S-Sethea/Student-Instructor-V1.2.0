@@ -4,12 +4,15 @@ import { z } from 'zod';
 // Authentication Schemas
 // ============================================================================
 
+const passwordByteLimit = (val: string) => Buffer.byteLength(val, 'utf8') <= 72;
+
 export const RegisterSchema = z.object({
   email: z.string().trim().email('Invalid email format').max(255),
   password: z
     .string()
     .min(8, 'Password must be at least 8 characters long.')
-    .max(128, 'Password is too long'),
+    .max(72, 'Password must be at most 72 characters.')
+    .refine(passwordByteLimit, 'Password must not exceed 72 UTF-8 bytes.'),
   role: z.enum(['student', 'organization'], {
     message: 'Role must be either "student" or "organization".',
   }),
@@ -20,7 +23,20 @@ export const RegisterSchema = z.object({
 
 export const LoginSchema = z.object({
   email: z.string().trim().email('Invalid email format').max(255),
-  password: z.string().min(1, 'Password is required').max(128),
+  password: z
+    .string()
+    .min(1, 'Password is required')
+    .max(72, 'Password must be at most 72 characters.')
+    .refine(passwordByteLimit, 'Password must not exceed 72 UTF-8 bytes.'),
+});
+
+export const ChangePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required').max(72),
+  newPassword: z
+    .string()
+    .min(8, 'New password must be at least 8 characters long.')
+    .max(72, 'Password must be at most 72 characters.')
+    .refine(passwordByteLimit, 'Password must not exceed 72 UTF-8 bytes.'),
 });
 
 // ============================================================================
@@ -169,3 +185,96 @@ export const NotificationDispatchSchema = z.object({
   priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
 });
+
+// ============================================================================
+// User Profile, Education, and Legacy AI Input Bounds
+// ============================================================================
+
+export function isValidPlausibleBirthDate(dob: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) return false;
+  const [yStr, mStr, dStr] = dob.split('-');
+  const year = Number(yStr);
+  const month = Number(mStr);
+  const day = Number(dStr);
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  if (
+    Number.isNaN(dt.getTime()) ||
+    dt.getUTCFullYear() !== year ||
+    dt.getUTCMonth() + 1 !== month ||
+    dt.getUTCDate() !== day
+  ) {
+    return false;
+  }
+  const todayUtc = new Date();
+  const minYear = 1920;
+  return year >= minYear && dt.getTime() <= todayUtc.getTime();
+}
+
+export const UserProfileUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  date_of_birth: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'date_of_birth must be YYYY-MM-DD')
+    .refine(isValidPlausibleBirthDate, 'date_of_birth must be a real calendar date between 1920-01-01 and today')
+    .nullable()
+    .optional(),
+  education_level: z.string().trim().max(100).optional(),
+  school: z.string().trim().max(200).nullable().optional(),
+  university: z.string().trim().max(200).nullable().optional(),
+  major: z.string().trim().max(200).nullable().optional(),
+  graduation_year: z.number().int().min(1980).max(2045).nullable().optional(),
+  language: z.enum(['en', 'km']).optional(),
+  location: z.string().trim().max(150).nullable().optional(),
+  target_career: z.string().trim().max(200).nullable().optional(),
+  interests: z.union([z.array(z.string().max(80)).max(25), z.string().max(1000)]).optional(),
+  favorite_subjects: z.union([z.array(z.string().max(80)).max(25), z.string().max(1000)]).optional(),
+  goals: z.string().max(1500).nullable().optional(),
+});
+
+export const UserEducationCreateSchema = z.object({
+  institution: z.string().trim().min(1, 'Institution is required.').max(200),
+  degree: z.string().trim().min(1, 'Degree is required.').max(200),
+  start_date: z.string().trim().max(40).nullish(),
+  end_date: z.string().trim().max(40).nullish(),
+  achievements: z.string().trim().max(1000).nullish(),
+});
+
+export const LegacyAiChatSchema = z.object({
+  studentId: z.string().max(120).optional(),
+  prompt: z.string().trim().min(1).max(4000).optional(),
+  message: z.string().trim().min(1).max(4000).optional(),
+  context: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const LegacyKnowledgeSearchSchema = z.object({
+  query: z.string().trim().min(1, 'query is required').max(500),
+  category: z.string().max(100).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
+export const ScholarshipExtractSchema = z.object({
+  rawText: z.string().trim().min(20, 'Please provide raw scholarship text (minimum 20 characters).').max(30000),
+  sourceUrl: z.string().trim().max(1000).optional(),
+});
+
+export const UserSettingsUpdateSchema = z
+  .object({
+    themeMode: z.enum(['light', 'dark', 'system']).optional(),
+    accentColor: z.enum(['blue', 'emerald', 'teal', 'amber', 'slate']).optional(),
+    highContrast: z.boolean().optional(),
+    reducedMotion: z.boolean().optional(),
+    layoutWidth: z.enum(['standard', 'wide', 'full']).optional(),
+    sidebarDefaultCollapsed: z.boolean().optional(),
+    cardDensity: z.enum(['comfortable', 'compact']).optional(),
+    fontFamily: z.enum(['jakarta', 'inter', 'serif', 'system', 'mono']).optional(),
+    fontScale: z.enum(['sm', 'md', 'lg', 'xl']).optional(),
+    lineSpacing: z.enum(['normal', 'relaxed']).optional(),
+    language: z.enum(['en', 'km']).optional(),
+    defaultScholarshipsTab: z.enum(['flagship', 'top_universities']).optional(),
+    onlyVerifiedScholarshipsByDefault: z.boolean().optional(),
+    deadlineReminderDays: z.union([z.literal(3), z.literal(7), z.literal(14)]).optional(),
+    advisorResponseStyle: z.enum(['balanced', 'concise', 'bilingual']).optional(),
+  })
+  .strict();
+
+

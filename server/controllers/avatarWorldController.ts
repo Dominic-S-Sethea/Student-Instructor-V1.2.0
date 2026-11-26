@@ -4,6 +4,12 @@ import { PrivacyService } from '../services/privacyService';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { validate } from '../middleware/validationMiddleware';
 import { AvatarObjectPositionSchema } from '../validators/apiSchemas';
+import {
+  AchievementWallSchema,
+  AvatarUpdateSchema,
+  PlaceRoomObjectSchema,
+  VirtualRoomUpdateSchema,
+} from '../validators/domainSchemas';
 import { HttpError, safeErrorMessage } from '../utils/httpErrors';
 
 function sendAvatarError(res: Response, error: unknown, fallback: string) {
@@ -32,7 +38,7 @@ router.get('/state', (req: AuthenticatedRequest, res: Response) => {
 });
 
 /** POST /api/avatar-world/avatar */
-router.post('/avatar', (req: AuthenticatedRequest, res: Response) => {
+router.post('/avatar', validate(AvatarUpdateSchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const studentId = req.user!.userId;
     const profile = worldService.updateAvatar(studentId, req.body);
@@ -43,7 +49,7 @@ router.post('/avatar', (req: AuthenticatedRequest, res: Response) => {
 });
 
 /** PUT /api/avatar-world/room */
-router.put('/room', (req: AuthenticatedRequest, res: Response) => {
+router.put('/room', validate(VirtualRoomUpdateSchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const studentId = req.user!.userId;
     const updatedRoom = worldService.customizeRoom(studentId, req.body);
@@ -54,28 +60,23 @@ router.put('/room', (req: AuthenticatedRequest, res: Response) => {
 });
 
 /** POST /api/avatar-world/room/objects */
-router.post('/room/objects', (req: AuthenticatedRequest, res: Response) => {
+router.post('/room/objects', validate(PlaceRoomObjectSchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const studentId = req.user!.userId;
-    const { item_id, position_x, position_y, layer, rotation } = (req.body || {}) as Record<string, unknown>;
-
-    if (!item_id || typeof item_id !== 'string') {
-      return res.status(400).json({ success: false, error: 'item_id is required' });
-    }
-
-    const posX = position_x === undefined ? 50 : Number(position_x);
-    const posY = position_y === undefined ? 50 : Number(position_y);
-    const rot = rotation === undefined ? 0 : Number(rotation);
-    if (!Number.isFinite(posX) || !Number.isFinite(posY) || !Number.isFinite(rot)) {
-      return res.status(400).json({ success: false, error: 'position_x, position_y, and rotation must be finite numbers.' });
-    }
+    const { item_id, position_x = 50, position_y = 50, layer = 'floor', rotation = 0 } = req.body as {
+      item_id: string;
+      position_x?: number;
+      position_y?: number;
+      layer?: 'floor' | 'wall' | 'desk' | 'shelf';
+      rotation?: number;
+    };
 
     const placed = worldService.placeItemInRoom(studentId, {
       item_id,
-      position_x: posX,
-      position_y: posY,
-      layer: (layer === 'wall' || layer === 'desk' || layer === 'shelf' ? layer : 'floor'),
-      rotation: rot,
+      position_x,
+      position_y,
+      layer,
+      rotation,
     });
 
     return res.json({ success: true, data: placed });
@@ -126,18 +127,19 @@ router.patch('/room/objects/:id', validate(AvatarObjectPositionSchema, 'body'), 
 });
 
 /** POST /api/avatar-world/achievements/wall */
-router.post('/achievements/wall', (req: AuthenticatedRequest, res: Response) => {
+router.post('/achievements/wall', validate(AchievementWallSchema, 'body'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const studentId = req.user!.userId;
-    const { achievement_id, display, slot_index } = (req.body || {}) as Record<string, unknown>;
-    if (!achievement_id || typeof achievement_id !== 'string') {
-      return res.status(400).json({ success: false, error: 'achievement_id is required' });
-    }
+    const { achievement_id, display, slot_index } = req.body as {
+      achievement_id: string;
+      display?: boolean;
+      slot_index?: number;
+    };
     const success = worldService.toggleWallAchievement(
       studentId,
       achievement_id,
       display !== false,
-      slot_index ? Number(slot_index) : undefined
+      slot_index
     );
     return res.json({ success });
   } catch (error: unknown) {

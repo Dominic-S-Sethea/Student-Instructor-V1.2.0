@@ -13,27 +13,31 @@ This contract documents every stable HTTP API endpoint backing the V1.2.0 Pilot 
   - Pure API callers using `Authorization: Bearer <jwt>` without a `cdes_jwt` cookie are supported during transition and exempt from CSRF headers.
   - CSRF failures return HTTP `403` with `code: "CSRF_MISSING"` or `code: "CSRF_INVALID"`.
 
-### Key Auth & Privacy Endpoints
+### Key Auth, Notifications & Privacy Endpoints
 
 | Method & Path | Permission | Request Body / Params | Key Response Fields & Status |
 | --- | --- | --- | --- |
 | `GET /api/auth/csrf` | Public | — | `200`: `{ success: true, data: { csrfToken } }` + `X-CSRF-Token` header |
-| `GET /api/auth/session` | Public | — | `200`: `{ success: true, data: { authenticated, user, profile, education, csrfToken } }` |
-| `POST /api/auth/register` | Public (+rate limit) | `{ email, password (>=8 chars), role: "student"\|"organization", name, education_level?, organization_name? }` | `201`: `{ success: true, data: { user, profile, education, csrfToken } }` + cookies; creates pending privacy defaults (`consentStatus: "pending"`, `allow*: false`) |
-| `POST /api/auth/login` | Public (+rate limit) | `{ email, password }` | `200`: sets rotated `cdes_jwt` & `cdes_csrf_secret`; `401` on invalid credentials |
-| `POST /api/auth/logout` | Public (CSRF-protected) | — | `200`: clears `cdes_jwt` and `cdes_csrf_secret` cookies even if JWT expired |
+| `GET /api/auth/session` | Public | — | `200` (`Cache-Control: no-store`): `{ success: true, data: { authenticated, user, profile, education, csrfToken } }` |
+| `POST /api/auth/register` | Public (+rate limit) | `{ email, password (>=8 chars), role: "student"\|"organization", name, education_level?, organization_name? }` | `201`: `{ success: true, data: { user, profile, education, csrfToken } }` + cookies; creates pending privacy defaults (`allow*: false`) + welcome notification |
+| `POST /api/auth/login` | Public (+rate limit + progressive lockout) | `{ email, password }` | `200`: sets rotated `cdes_jwt` (with JTI) & `cdes_csrf_secret`; `401` on invalid credentials; `429` + `Retry-After` on progressive failed-attempt lockout (emitting hashed `SECURITY_LOGIN_LOCKOUT`) |
+| `POST /api/auth/logout` | Public (CSRF-protected) | — | `200`: revokes current JWT JTI in memory and clears `cdes_jwt` & `cdes_csrf_secret` cookies |
 | `GET /api/users/profile` | Authenticated | — | `200`: `{ success: true, data: { profile, education } }`; `401` if unauthenticated |
-| `PUT /api/users/profile` | Authenticated | `{ name?, education_level?, school?, location?, major?, target_career?, interests?, ... }` | `200`: updates only `req.user.userId`'s profile (`401` if guest) |
+| `PUT /api/users/profile` | Authenticated | `{ name?, education_level?, school?, location?, major?, target_career?, interests?, date_of_birth?, ... }` | `200`: updates only `req.user.userId`'s profile (`401` if guest) |
 | `POST /api/users/education` | Authenticated | `{ institution, degree, start_date?, end_date?, achievements? }` | `201`: `{ success: true, data: EducationHistoryRecord }` |
 | `DELETE /api/users/education/:id` | Authenticated (owner) | `:id` path param | `200` or `404` if not owned by user |
+| `GET /api/users/notifications` | Authenticated | — | `200`: `{ success: true, data: { notifications: Notification[], unreadCount: number } }` |
+| `PATCH /api/users/notifications/:id/read` | Authenticated (owner) | `:id` path param | `200`: marks user-owned notification read (`404` if missing/other user) |
+| `POST /api/users/notifications/read-all` | Authenticated | — | `200`: marks all caller notifications read |
 | `GET /api/privacy/consent` | Authenticated | — | `200`: `{ studentId, isMinor, parentalConsentVerified, parentVerificationStatus, allowAnalyticsTracking, allowResearchInclusion, allowAiMemory, consentStatus, anonymizedResearchId }` |
-| `POST /api/privacy/consent` | Authenticated | `{ isMinor?, parentEmail?, allowAnalyticsTracking?, allowResearchInclusion?, allowAiMemory?, withdrawAll? }` | `200`: minors cannot enable optional flags without `parentVerificationStatus === "verified"`; `withdrawAll: true` sets `consentStatus: "withdrawn"` |
+| `POST /api/privacy/consent` | Authenticated | `{ isMinor?, parentEmail?, allowAnalyticsTracking?, allowResearchInclusion?, allowAiMemory?, withdrawAll? }` | `200`: locks `isMinor: true` when DOB < 18 or parent verification is pending; `withdrawAll: true` sets `consentStatus: "withdrawn"` |
 | `POST /api/privacy/parent-verify` | Authenticated | `{ parentEmail }` | `200`: sets `parentVerificationStatus: "pending_owner_verification"` while keeping `parentalConsentVerified: false` |
 | `POST /api/privacy/parent-verify/:studentId/approve` | `admin` | `:studentId` param | `200`: marks `parentalConsentVerified: true`, `parentVerificationStatus: "verified"` |
+| `POST /api/privacy/erasure` | Authenticated | — | `200`: atomically withdraws all consents and erases user's telemetry, AI conversations, Hermes memory, feature store, experiment participation, saved bookmarks & notifications (`deletedCounts`) |
 
 ---
 
-## 2. Scholarships & Universities Catalog Contract
+## 2. Scholarships, Saved Tracker & Universities Catalog Contract
 
 ### Accuracy, Provenance & Tri-State Fields
 - Missing funding/benefit data MUST NOT be synthesized:
@@ -41,27 +45,33 @@ This contract documents every stable HTTP API endpoint backing the V1.2.0 Pilot 
   - Explicit zero stipend -> `monthlyAllowance: "$0/month"`, `monthlyAllowanceKm: "០ ដុល្លារ/ខែ"`, `benefitStates.monthlyAllowanceKnown: true`.
   - Missing package value -> `totalEstimatedValueUSD: null`.
   - Benefits (`insurance`, `flightSupport`, `accommodation`) expose tri-state `state: "included" | "excluded" | "unknown"` and `isKnown: boolean`.
-- Deadline & Verification Provenance:
+- Deadline, URL Safety & Verification Provenance:
   - `deadlineStatus`: `"open" | "closing_soon" | "expired" | "rolling" | "unknown"`, with integer `daysRemaining: number | null`.
   - `verificationState`: `"verified" | "unverified" | "pending"`.
   - `lastVerifiedDate`: `string | null` (only populated from explicit verification records/timestamps, separate from `lastUpdatedDate`).
   - `verifierName`: `string | null` (`null` when unverified).
   - `qualityScore`: deterministic `0–100` score calculated strictly from present verified/source/funding/deadline attributes.
+  - All external scholarship URLs (`application_url`, `source_url`) are validated server-side (`http:`/`https:` only; `javascript:`, `data:`, `file:` rejected with `400`).
 - Universities:
   - Missing accreditation -> `{ status: "Not specified", statusKm: "មិនបានបញ្ជាក់", isKnown: false, agency: null }`.
 
-### Catalog & Editorial Endpoints
+### Catalog, Saved Tracker & Editorial Endpoints
 
 | Method & Path | Permission | Behavior & Error Codes |
 | --- | --- | --- |
 | `GET /api/scholarships` (alias `/search`) | Public | Filters (`q`, `region`, `degree`, `field`, `funding`, `studentCategory`, `onlyVerified`, `sortBy`). Public searches never log to `search_keywords_log`. Returns `{ success: true, totalCount, scholarships, metrics }`. |
+| `GET /api/scholarships/saved` | Authenticated | Lists caller's server-persisted bookmarks with stage, checklist, and notes (`200`). |
+| `POST /api/scholarships/saved` | Authenticated | Saves/upserts a scholarship bookmark for `req.user.userId` (`201`). |
+| `POST /api/scholarships/saved/sync` | Authenticated | Bulk-merges guest `localStorage` scholarship IDs into SQLite on login (`200`). |
+| `PATCH /api/scholarships/saved/:scholarshipId` | Authenticated (owner) | Updates application `stage` (`saved`\|`preparing`\|`submitted`\|`awarded`), `checklist`, `notes`, or `reminderDate` (`200`/`404`). |
+| `DELETE /api/scholarships/saved/:scholarshipId` | Authenticated (owner) | Removes bookmark owned by `req.user.userId` (`200`/`404`). |
 | `GET /api/scholarships/:id` | Public | Returns `{ success: true, scholarship }` or `404`. |
 | `POST /api/scholarships/submit` | `organization` or `admin` | Derives `submitted_by_user_id = req.user.userId`. Creates `'Pending Admin Review'` submission (`201`). Returns `403` for `student` or `401` for guest. |
 | `GET /api/scholarships/submissions/mine` | `organization` or `admin` | Lists submissions created by `req.user.userId`. |
 | `GET /api/scholarships/submissions/all` (aliases `/submissions`, `/admin/submissions`) | `admin` | Lists all submissions (`403` non-admin). |
 | `PUT /api/scholarships/submissions/:id` (aliases `/submissions/:id/review`, `/admin/submissions/:id/review\|approve\|reject`) | `admin` | Transactional (`BEGIN IMMEDIATE`) & idempotent: repeat approval returns `{ alreadyProcessed: true, publishedScholarship }` without duplicate insertion; opposite decision returns `409 CONFLICT`; rejection never inserts into `scholarships`. |
 | `POST /api/scholarships/report` (alias `/report-error`) | Authenticated | Submits factual error report tied to `req.user.email`. |
-| `GET /api/scholarships/reports*` / `PUT\|PATCH /api/scholarships/reports/:id` | `admin` | Lists and resolves discrepancy reports. |
+| `GET /api/scholarships/reports*` / `PUT\|PATCH /api/scholarships/reports/:id` | `admin` | Lists and resolves discrepancy reports (including `applyCorrection: true` with verified `change_history` audit trail). |
 | `POST /api/scholarships/check-updates` (aliases `/admin/check-updates`, `/:id/check-updates`) | `admin` | Non-destructive status check (`externalFetchPerformed: false`, `changesDetected: 0`); never alters deadlines or writes simulated crawler history. |
 | `GET /api/universities` & `GET /api/universities/:id` | Public | Returns `{ success: true, data, count }` / `{ success: true, data }`. |
 
@@ -71,9 +81,9 @@ This contract documents every stable HTTP API endpoint backing the V1.2.0 Pilot 
 
 | Endpoint | Permission | Modes & Error Contract |
 | --- | --- | --- |
-| `POST /api/advisor/chat` | `optionalAuth` (CSRF required for browser) | **No key / offline**: HTTP `200` with `mode: "deterministic_offline"`, `providerStatus: "disabled"`, `isEstimate: true`, `sources`, `unavailableData`. **Timeout**: HTTP `504` (`code: "PROVIDER_TIMEOUT"`). **Transport/upstream failure**: HTTP `503` (`code: "PROVIDER_UNAVAILABLE"`). Persistence to `ai_conversations` occurs only when authenticated AND `canUseAIMemory === true`. |
-| `POST /api/decision/evaluate` | `optionalAuth` (CSRF required for browser) | HTTP `200` with `mode: "rule_based"`, `isEstimate: true`, `sources`, `unavailableData`. Analytics event persisted only when authenticated AND `canCollectAnalytics === true`. |
-| `GET /api/health` | Public | `200` `{ status: "ok", ready: true, aiEnabled, database: { journalMode: "wal", foreignKeys: true, schemaVersion: 8, integrity: "ok" } }` or `503` `{ status: "error", ready: false }` on DB/migration failure. |
+| `POST /api/advisor/chat` | `optionalAuth` (CSRF required for browser) | **No key / offline**: HTTP `200` with `mode: "deterministic_offline"`, `providerStatus: "disabled"`, `isEstimate: true`, `sources`, `unavailableData`. **Timeout**: HTTP `504` (`code: "PROVIDER_TIMEOUT"`). **Transport/upstream failure**: HTTP `503` (`code: "PROVIDER_UNAVAILABLE"`). Scans `userPrompt`, `messages`, and `studentProfile`; sanitizes output PII; persists conversation ONLY if authenticated AND `canUseAIMemory`. |
+| `POST /api/decision/evaluate` | `optionalAuth` (CSRF required for browser) | HTTP `200` with `mode: "rule_based"`, `isEstimate: true`, `sources`, `unavailableData`; incorporates `workStyle` & `careerGoal`; persists telemetry ONLY if authenticated AND `canCollectAnalytics`. |
+| `GET /api/health` | Public | `200` `{ status: "ok", ready: true, aiEnabled, database: { journalMode: "wal", foreignKeys: true, schemaVersion: 11, integrity: "ok" } }` or `503` `{ status: "error", ready: false }` on DB/migration failure. |
 | `GET /api/metrics` & `GET /api/metrics/sqlite` | `admin` | `401` unauthenticated, `403` non-admin, `200` live table/row counts, SQLite metrics (`writerMax`, `busyTimeoutRetries`, `readOps`, `writeOps`), HTTP request counts & p50/p95 latency. |
 | Any unknown `/api/*` | Public | HTTP `404` JSON `{ success: false, error: "API route not found." }`. |
 

@@ -9,8 +9,9 @@ const CSRF_COOKIE_NAME = 'cdes_csrf_secret';
 const fallbackSigningKey = crypto.randomBytes(32).toString('hex');
 
 function getCsrfSigningKey(): string {
-  const jwtSecret = process.env.JWT_SECRET;
-  return jwtSecret && jwtSecret.trim() !== '' ? jwtSecret : fallbackSigningKey;
+  const jwtSecret = process.env.JWT_SECRET?.trim();
+  const baseKey = jwtSecret && jwtSecret.length > 0 ? jwtSecret : fallbackSigningKey;
+  return crypto.createHmac('sha256', baseKey).update('cdes-csrf-v1').digest('hex');
 }
 
 function getCsrfCookieOptions(maxAgeMs: number): CookieOptions {
@@ -98,12 +99,22 @@ export function validateCsrfToken(req: Request, res: Response, next: NextFunctio
   }
 
   const cookies = parseCookies(req.headers.cookie);
-  const authHeader = req.headers['authorization'];
-  const hasBearer = typeof authHeader === 'string' && authHeader.startsWith('Bearer ');
+  const authReq = req as AuthenticatedRequest;
+  const hasVerifiedBearer = Boolean(authReq.user && authReq.authSource === 'bearer');
   const hasSessionCookie = Boolean(cookies['cdes_jwt']);
 
-  if (hasBearer && !hasSessionCookie) {
+  if (hasVerifiedBearer && !hasSessionCookie) {
     next();
+    return;
+  }
+
+  const secFetchSite = typeof req.headers['sec-fetch-site'] === 'string' ? req.headers['sec-fetch-site'].toLowerCase() : '';
+  if (secFetchSite === 'cross-site') {
+    res.status(403).json({
+      success: false,
+      code: 'CSRF_CROSS_SITE_BLOCKED',
+      error: 'Cross-site state-changing request rejected.',
+    });
     return;
   }
 

@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { isSelectableTextTarget } from '../utils/textSelectionGuard';
 
 export function useDraggableScroll<T extends HTMLElement = HTMLDivElement>() {
   const ref = useRef<T | null>(null);
@@ -35,9 +36,8 @@ export function useDraggableScroll<T extends HTMLElement = HTMLDivElement>() {
   const onMouseDown = (e: React.MouseEvent) => {
     const el = ref.current;
     if (!el) return;
-    // Don't trigger drag on interactive buttons or links directly clicked
-    const target = e.target as HTMLElement;
-    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+    // Never hijack text selection or interactive controls; only drag from empty scroll track space.
+    if (isSelectableTextTarget(e.target)) return;
 
     setIsDragging(true);
     setStartX(e.pageX - el.offsetLeft);

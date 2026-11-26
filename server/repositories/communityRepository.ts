@@ -1,5 +1,10 @@
 import crypto from 'node:crypto';
 import { getDatabase, withTransaction } from '../db/connection';
+import { PrivacyService } from '../services/privacyService';
+import { safeJsonParse } from '../utils/safeJson';
+import { ConflictError, NotFoundError } from '../utils/httpErrors';
+
+const privacyService = new PrivacyService();
 
 export class CommunityRepository {
   // ==========================================
@@ -44,25 +49,30 @@ export class CommunityRepository {
     const db = getDatabase();
     const id = `cm-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
+    const safeRole = role === 'member' ? 'member' : 'member';
 
-    const insert = db.prepare(`
-      INSERT OR IGNORE INTO community_members (id, community_id, user_id, role, reputation_points, is_active, joined_at)
-      VALUES (?, ?, ?, ?, 10, 1, ?)
-    `).run(id, communityId, userId, role, now);
+    return withTransaction(() => {
+      const insert = db.prepare(`
+        INSERT OR IGNORE INTO community_members (id, community_id, user_id, role, reputation_points, is_active, joined_at)
+        VALUES (?, ?, ?, ?, 10, 1, ?)
+      `).run(id, communityId, userId, safeRole, now);
 
-    if (insert.changes > 0) {
-      db.prepare('UPDATE communities SET member_count = member_count + 1 WHERE id = ?').run(communityId);
-    }
-    return { success: true, memberId: id };
+      if (insert.changes > 0) {
+        db.prepare('UPDATE communities SET member_count = member_count + 1 WHERE id = ?').run(communityId);
+      }
+      return { success: true, memberId: id };
+    });
   }
 
   public leaveCommunity(communityId: string, userId: string) {
     const db = getDatabase();
-    const deleted = db.prepare('DELETE FROM community_members WHERE community_id = ? AND user_id = ?').run(communityId, userId);
-    if (deleted.changes > 0) {
-      db.prepare('UPDATE communities SET member_count = MAX(1, member_count - 1) WHERE id = ?').run(communityId);
-    }
-    return { success: true };
+    return withTransaction(() => {
+      const deleted = db.prepare('DELETE FROM community_members WHERE community_id = ? AND user_id = ?').run(communityId, userId);
+      if (deleted.changes > 0) {
+        db.prepare('UPDATE communities SET member_count = MAX(1, member_count - 1) WHERE id = ?').run(communityId);
+      }
+      return { success: true };
+    });
   }
 
   // ==========================================
@@ -72,7 +82,7 @@ export class CommunityRepository {
   public getCommunityPosts(communityId?: string, postType?: string) {
     const db = getDatabase();
     let query = "SELECT * FROM community_posts WHERE status = 'published'";
-    const params: any[] = [];
+    const params: string[] = [];
 
     if (communityId) {
       query += ' AND community_id = ?';
@@ -104,38 +114,60 @@ export class CommunityRepository {
     tags?: string[];
   }) {
     const db = getDatabase();
-    const id = `post-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const id = `post-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
-    db.prepare(`
-      INSERT INTO community_posts (
-        id, community_id, author_id, author_name, author_role, author_avatar,
-        post_type, title, content, tags, upvotes_count, comments_count,
-        is_pinned, is_solved, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 'published', ?, ?)
-    `).run(
-      id,
-      data.community_id,
-      data.author_id,
-      data.author_name,
-      data.author_role || 'student',
-      data.author_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-      data.post_type,
-      data.title,
-      data.content,
-      JSON.stringify(data.tags || []),
-      now,
-      now
-    );
+    withTransaction(() => {
+      db.prepare(`
+        INSERT INTO community_posts (
+          id, community_id, author_id, author_name, author_role, author_avatar,
+          post_type, title, content, tags, upvotes_count, comments_count,
+          is_pinned, is_solved, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 'published', ?, ?)
+      `).run(
+        id,
+        data.community_id,
+        data.author_id,
+        data.author_name,
+        data.author_role || 'student',
+        data.author_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
+        data.post_type,
+        data.title,
+        data.content,
+        JSON.stringify(data.tags || []),
+        now,
+        now
+      );
 
-    db.prepare('UPDATE communities SET post_count = post_count + 1 WHERE id = ?').run(data.community_id);
+      db.prepare('UPDATE communities SET post_count = post_count + 1 WHERE id = ?').run(data.community_id);
+    });
     return this.getPostById(id);
   }
 
-  public upvotePost(postId: string) {
+  public upvotePost(postId: string, userId?: string) {
     const db = getDatabase();
-    db.prepare('UPDATE community_posts SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(postId);
-    return db.prepare('SELECT upvotes_count FROM community_posts WHERE id = ?').get(postId);
+    return withTransaction(() => {
+      const existing = db.prepare('SELECT id, upvotes_count FROM community_posts WHERE id = ?').get(postId) as
+        | { id: string; upvotes_count: number }
+        | undefined;
+      if (!existing) throw new NotFoundError('Post not found.');
+      if (userId) {
+        const vote = db
+          .prepare(
+            `INSERT OR IGNORE INTO community_votes (id, entity_type, entity_id, user_id, created_at)
+             VALUES (?, 'post', ?, ?, ?)`
+          )
+          .run(`cv-${crypto.randomUUID()}`, postId, userId, new Date().toISOString());
+        if (Number(vote.changes) === 0) {
+          return { upvotes_count: existing.upvotes_count, alreadyVoted: true };
+        }
+      }
+      db.prepare('UPDATE community_posts SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(postId);
+      const updated = db.prepare('SELECT upvotes_count FROM community_posts WHERE id = ?').get(postId) as {
+        upvotes_count: number;
+      };
+      return { upvotes_count: updated.upvotes_count, alreadyVoted: false };
+    });
   }
 
   // ==========================================
@@ -187,20 +219,46 @@ export class CommunityRepository {
     return db.prepare('SELECT * FROM community_comments WHERE id = ?').get(id);
   }
 
-  public upvoteComment(commentId: string) {
+  public upvoteComment(commentId: string, userId?: string) {
     const db = getDatabase();
-    db.prepare('UPDATE community_comments SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(commentId);
-    return db.prepare('SELECT upvotes_count FROM community_comments WHERE id = ?').get(commentId);
+    return withTransaction(() => {
+      const existing = db.prepare('SELECT id, upvotes_count FROM community_comments WHERE id = ?').get(commentId) as
+        | { id: string; upvotes_count: number }
+        | undefined;
+      if (!existing) throw new NotFoundError('Comment not found.');
+      if (userId) {
+        const vote = db
+          .prepare(
+            `INSERT OR IGNORE INTO community_votes (id, entity_type, entity_id, user_id, created_at)
+             VALUES (?, 'comment', ?, ?, ?)`
+          )
+          .run(`cv-${crypto.randomUUID()}`, commentId, userId, new Date().toISOString());
+        if (Number(vote.changes) === 0) {
+          return { upvotes_count: existing.upvotes_count, alreadyVoted: true };
+        }
+      }
+      db.prepare('UPDATE community_comments SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(commentId);
+      const updated = db.prepare('SELECT upvotes_count FROM community_comments WHERE id = ?').get(commentId) as {
+        upvotes_count: number;
+      };
+      return { upvotes_count: updated.upvotes_count, alreadyVoted: false };
+    });
   }
 
   public markAcceptedAnswer(postId: string, commentId: string) {
     const db = getDatabase();
-    withTransaction(() => {
+    return withTransaction(() => {
+      const target = db
+        .prepare('SELECT id FROM community_comments WHERE id = ? AND post_id = ?')
+        .get(commentId, postId);
+      if (!target) {
+        return { success: false };
+      }
       db.prepare('UPDATE community_comments SET is_accepted_answer = 0 WHERE post_id = ?').run(postId);
-      db.prepare('UPDATE community_comments SET is_accepted_answer = 1 WHERE id = ?').run(commentId);
+      db.prepare('UPDATE community_comments SET is_accepted_answer = 1 WHERE id = ? AND post_id = ?').run(commentId, postId);
       db.prepare('UPDATE community_posts SET is_solved = 1, solved_comment_id = ? WHERE id = ?').run(commentId, postId);
+      return { success: true };
     });
-    return { success: true };
   }
 
   // ==========================================
@@ -234,29 +292,39 @@ export class CommunityRepository {
     const id = `sess-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
-    db.prepare(`
-      INSERT INTO mentorship_sessions (
-        id, mentor_id, student_id, student_name, topic, session_type,
-        scheduled_date, scheduled_time, duration_minutes, meeting_link,
-        status, student_notes, safety_logged, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 30, 'https://meet.cdes.edu.kh/session-' || ?, 'confirmed', ?, 1, ?, ?)
-    `).run(
-      id,
-      data.mentor_id,
-      data.student_id,
-      data.student_name,
-      data.topic,
-      data.session_type,
-      data.scheduled_date,
-      data.scheduled_time,
-      id,
-      data.student_notes || null,
-      now,
-      now
-    );
+    return withTransaction(() => {
+      try {
+        db.prepare(`
+          INSERT INTO mentorship_sessions (
+            id, mentor_id, student_id, student_name, topic, session_type,
+            scheduled_date, scheduled_time, duration_minutes, meeting_link,
+            status, student_notes, safety_logged, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 30, 'https://meet.cdes.edu.kh/session-' || ?, 'confirmed', ?, 1, ?, ?)
+        `).run(
+          id,
+          data.mentor_id,
+          data.student_id,
+          data.student_name,
+          data.topic,
+          data.session_type,
+          data.scheduled_date,
+          data.scheduled_time,
+          id,
+          data.student_notes || null,
+          now,
+          now
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : '';
+        if (msg.includes('UNIQUE constraint failed')) {
+          throw new ConflictError('This mentor time slot is already booked. Please choose another date or time.');
+        }
+        throw err;
+      }
 
-    db.prepare('UPDATE mentor_profiles SET total_sessions = total_sessions + 1 WHERE id = ?').run(data.mentor_id);
-    return db.prepare('SELECT * FROM mentorship_sessions WHERE id = ?').get(id);
+      db.prepare('UPDATE mentor_profiles SET total_sessions = total_sessions + 1 WHERE id = ?').run(data.mentor_id);
+      return db.prepare('SELECT * FROM mentorship_sessions WHERE id = ?').get(id);
+    });
   }
 
   public getStudentSessions(studentId: string) {
@@ -279,7 +347,7 @@ export class CommunityRepository {
   public getAllProjects(category?: string, stage?: string) {
     const db = getDatabase();
     let query = 'SELECT * FROM student_projects WHERE 1=1';
-    const params: any[] = [];
+    const params: string[] = [];
 
     if (category && category !== 'ALL') {
       query += ' AND category = ?';
@@ -290,7 +358,7 @@ export class CommunityRepository {
       params.push(stage);
     }
 
-    query += ' ORDER BY upvotes_count DESC, created_at DESC';
+    query += ' ORDER BY upvotes_count DESC, created_at DESC LIMIT 100';
     return db.prepare(query).all(...params);
   }
 
@@ -321,32 +389,70 @@ export class CommunityRepository {
     role_in_project: string;
   }) {
     const db = getDatabase();
-    const id = `pm-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const id = `pm-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
-    const insert = db.prepare(`
-      INSERT OR IGNORE INTO project_members (id, project_id, user_id, user_name, user_avatar, role_in_project, status, joined_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'accepted', ?)
-    `).run(
-      id,
-      projectId,
-      data.user_id,
-      data.user_name,
-      data.user_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
-      data.role_in_project,
-      now
-    );
+    return withTransaction(() => {
+      const project = db
+        .prepare('SELECT id, current_team_size, max_team_size FROM student_projects WHERE id = ?')
+        .get(projectId) as { id: string; current_team_size: number; max_team_size: number | null } | undefined;
+      if (!project) throw new NotFoundError('Project not found.');
 
-    if (insert.changes > 0) {
-      db.prepare('UPDATE student_projects SET current_team_size = current_team_size + 1 WHERE id = ?').run(projectId);
-    }
-    return { success: true, memberId: id };
+      const alreadyMember = db
+        .prepare('SELECT id FROM project_members WHERE project_id = ? AND user_id = ?')
+        .get(projectId, data.user_id) as { id: string } | undefined;
+      if (alreadyMember) {
+        return { success: true, memberId: alreadyMember.id, alreadyJoined: true };
+      }
+
+      if (project.max_team_size !== null && project.current_team_size >= project.max_team_size) {
+        throw new ConflictError('This project team has reached its maximum capacity.');
+      }
+
+      const insert = db.prepare(`
+        INSERT OR IGNORE INTO project_members (id, project_id, user_id, user_name, user_avatar, role_in_project, status, joined_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'accepted', ?)
+      `).run(
+        id,
+        projectId,
+        data.user_id,
+        data.user_name,
+        data.user_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200',
+        data.role_in_project,
+        now
+      );
+
+      if (insert.changes > 0) {
+        db.prepare('UPDATE student_projects SET current_team_size = current_team_size + 1 WHERE id = ?').run(projectId);
+      }
+      return { success: true, memberId: id, alreadyJoined: false };
+    });
   }
 
-  public upvoteProject(projectId: string) {
+  public upvoteProject(projectId: string, userId?: string) {
     const db = getDatabase();
-    db.prepare('UPDATE student_projects SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(projectId);
-    return db.prepare('SELECT upvotes_count FROM student_projects WHERE id = ?').get(projectId);
+    return withTransaction(() => {
+      const existing = db.prepare('SELECT id, upvotes_count FROM student_projects WHERE id = ?').get(projectId) as
+        | { id: string; upvotes_count: number }
+        | undefined;
+      if (!existing) throw new NotFoundError('Project not found.');
+      if (userId) {
+        const vote = db
+          .prepare(
+            `INSERT OR IGNORE INTO community_votes (id, entity_type, entity_id, user_id, created_at)
+             VALUES (?, 'project', ?, ?, ?)`
+          )
+          .run(`cv-${crypto.randomUUID()}`, projectId, userId, new Date().toISOString());
+        if (Number(vote.changes) === 0) {
+          return { upvotes_count: existing.upvotes_count, alreadyVoted: true };
+        }
+      }
+      db.prepare('UPDATE student_projects SET upvotes_count = upvotes_count + 1 WHERE id = ?').run(projectId);
+      const updated = db.prepare('SELECT upvotes_count FROM student_projects WHERE id = ?').get(projectId) as {
+        upvotes_count: number;
+      };
+      return { upvotes_count: updated.upvotes_count, alreadyVoted: false };
+    });
   }
 
   // ==========================================
@@ -356,7 +462,7 @@ export class CommunityRepository {
   public getAllEvents(eventType?: string, status?: string) {
     const db = getDatabase();
     let query = 'SELECT * FROM campus_events WHERE 1=1';
-    const params: any[] = [];
+    const params: string[] = [];
 
     if (eventType && eventType !== 'ALL') {
       query += ' AND event_type = ?';
@@ -367,7 +473,7 @@ export class CommunityRepository {
       params.push(status);
     }
 
-    query += ' ORDER BY start_time ASC';
+    query += ' ORDER BY start_time ASC LIMIT 100';
     return db.prepare(query).all(...params);
   }
 
@@ -378,18 +484,36 @@ export class CommunityRepository {
 
   public rsvpEvent(eventId: string, data: { user_id: string; user_name: string; user_email: string }) {
     const db = getDatabase();
-    const id = `er-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const id = `er-${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
-    const insert = db.prepare(`
-      INSERT OR IGNORE INTO event_registrations (id, event_id, user_id, user_name, user_email, rsvp_status, created_at)
-      VALUES (?, ?, ?, ?, ?, 'registered', ?)
-    `).run(id, eventId, data.user_id, data.user_name, data.user_email, now);
+    return withTransaction(() => {
+      const event = db
+        .prepare('SELECT id, current_rsvp_count, max_participants FROM campus_events WHERE id = ?')
+        .get(eventId) as { id: string; current_rsvp_count: number; max_participants: number | null } | undefined;
+      if (!event) throw new NotFoundError('Event not found.');
 
-    if (insert.changes > 0) {
-      db.prepare('UPDATE campus_events SET current_rsvp_count = current_rsvp_count + 1 WHERE id = ?').run(eventId);
-    }
-    return { success: true, registrationId: id };
+      const existingReg = db
+        .prepare('SELECT id FROM event_registrations WHERE event_id = ? AND user_id = ?')
+        .get(eventId, data.user_id) as { id: string } | undefined;
+      if (existingReg) {
+        return { success: true, registrationId: existingReg.id, alreadyRegistered: true };
+      }
+
+      if (event.max_participants !== null && event.current_rsvp_count >= event.max_participants) {
+        throw new ConflictError('This event has reached maximum capacity.');
+      }
+
+      const insert = db.prepare(`
+        INSERT OR IGNORE INTO event_registrations (id, event_id, user_id, user_name, user_email, rsvp_status, created_at)
+        VALUES (?, ?, ?, ?, ?, 'registered', ?)
+      `).run(id, eventId, data.user_id, data.user_name, data.user_email, now);
+
+      if (insert.changes > 0) {
+        db.prepare('UPDATE campus_events SET current_rsvp_count = current_rsvp_count + 1 WHERE id = ?').run(eventId);
+      }
+      return { success: true, registrationId: id, alreadyRegistered: false };
+    });
   }
 
   public getStudentEventRegistrations(userId: string) {
@@ -422,13 +546,13 @@ export class CommunityRepository {
 
   public getCommunityRecommendationsForStudent(studentId: string) {
     const db = getDatabase();
-    // Retrieve student memory/profile
-    const memory = db.prepare('SELECT * FROM student_ai_memory WHERE student_id = ?').get(studentId) as any;
-    const communities = db.prepare('SELECT * FROM communities ORDER BY member_count DESC').all() as any[];
+    const memory = privacyService.canUseAIMemory(studentId)
+      ? (db.prepare('SELECT * FROM student_ai_memory WHERE student_id = ?').get(studentId) as Record<string, string> | undefined)
+      : undefined;
+    const communities = db.prepare('SELECT * FROM communities ORDER BY member_count DESC').all() as Array<Record<string, unknown>>;
 
-    // Calculate match score based on student target career and learning focus
-    const careerFocus = memory?.career_summary?.toLowerCase() || 'software engineering ai';
-    const learningFocus = memory?.learning_summary?.toLowerCase() || 'mathematics logic physics';
+    const careerFocus = memory?.career_summary?.toLowerCase() || '';
+    const learningFocus = memory?.learning_summary?.toLowerCase() || '';
 
     return communities.map((comm) => {
       let matchScore = 75;
@@ -436,21 +560,21 @@ export class CommunityRepository {
 
       if (comm.category === 'ai_robotics' && (careerFocus.includes('ai') || careerFocus.includes('software'))) {
         matchScore = 96;
-        matchReason = 'High cognitive affinity: Direct match with your AI Systems Engineer target career and logic circuits lab performance.';
+        matchReason = 'High cognitive affinity: aligns with your AI/Software target pathway.';
       } else if (comm.category === 'stem_prep' && learningFocus.includes('bac ii')) {
         matchScore = 94;
-        matchReason = 'Academic priority: Recommended for Grade 12 Bac II physics & calculus exam problem walkthroughs.';
+        matchReason = 'Academic priority: recommended for Grade 12 Bac II physics & calculus preparation.';
       } else if (comm.category === 'scholarships' && (careerFocus.includes('mptc') || careerFocus.includes('scholarship'))) {
         matchScore = 92;
-        matchReason = 'Target funding alignment: Essential guidelines for MPTC 100% full scholarship essays and interviews.';
+        matchReason = 'Target funding alignment: peer discussion on scholarship essays and interviews.';
       } else if (comm.category === 'clean_energy' && learningFocus.includes('energy')) {
         matchScore = 88;
-        matchReason = 'STEM curiosity match: Direct synergy with solar microgrid simulation projects.';
+        matchReason = 'STEM curiosity match: aligns with clean energy simulation projects.';
       }
 
       return {
         ...comm,
-        rules: typeof comm.rules === 'string' ? JSON.parse(comm.rules) : comm.rules,
+        rules: typeof comm.rules === 'string' ? safeJsonParse(comm.rules, []) : comm.rules,
         matchScore,
         matchReason
       };
@@ -459,30 +583,33 @@ export class CommunityRepository {
 
   public getMentorRecommendationsForStudent(studentId: string) {
     const db = getDatabase();
-    const memory = db.prepare('SELECT * FROM student_ai_memory WHERE student_id = ?').get(studentId) as any;
-    const mentors = db.prepare('SELECT * FROM mentor_profiles WHERE is_accepting_mentees = 1 ORDER BY rating DESC').all() as any[];
+    const memory = privacyService.canUseAIMemory(studentId)
+      ? (db.prepare('SELECT * FROM student_ai_memory WHERE student_id = ?').get(studentId) as Record<string, string> | undefined)
+      : undefined;
+    const mentors = db.prepare('SELECT * FROM mentor_profiles WHERE is_accepting_mentees = 1 ORDER BY rating DESC').all() as Array<Record<string, unknown>>;
 
-    const careerFocus = memory?.career_summary?.toLowerCase() || 'cadt software ai';
+    const careerFocus = memory?.career_summary?.toLowerCase() || '';
 
     return mentors.map((m) => {
       let matchScore = 80;
       let matchReason = 'Verified senior mentor with proven academic counseling experience.';
+      const expertiseRaw = String(m.expertise_areas || '').toLowerCase();
 
-      if (m.expertise_areas.toLowerCase().includes('ai') && careerFocus.includes('ai')) {
+      if (expertiseRaw.includes('ai') && careerFocus.includes('ai')) {
         matchScore = 98;
-        matchReason = `Highest domain alignment: ${m.full_name} leads CADT AI research and advises Grade 12 students entering software engineering.`;
+        matchReason = `High domain alignment: ${String(m.full_name || 'Mentor')} advises students entering AI and software engineering.`;
       } else if (m.university_id === 'univ-itc' && careerFocus.includes('itc')) {
         matchScore = 95;
-        matchReason = `Institutional prestige match: Expert guidance on conquering the 2-Year Tronc Commun entrance exam.`;
+        matchReason = 'Institutional match: guidance on the ITC Tronc Commun entrance exam.';
       } else if (m.verified_badge === 'alumni_star') {
         matchScore = 90;
-        matchReason = 'Alumni star mentor with high feedback ratings from provincial scholarship candidates.';
+        matchReason = 'Alumni star mentor with strong feedback ratings from scholarship candidates.';
       }
 
       return {
         ...m,
-        expertise_areas: typeof m.expertise_areas === 'string' ? JSON.parse(m.expertise_areas) : m.expertise_areas,
-        availability_slots: typeof m.availability_slots === 'string' ? JSON.parse(m.availability_slots) : m.availability_slots,
+        expertise_areas: typeof m.expertise_areas === 'string' ? safeJsonParse(m.expertise_areas, []) : m.expertise_areas,
+        availability_slots: typeof m.availability_slots === 'string' ? safeJsonParse(m.availability_slots, []) : m.availability_slots,
         matchScore,
         matchReason
       };

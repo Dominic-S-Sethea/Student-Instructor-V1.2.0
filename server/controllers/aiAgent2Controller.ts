@@ -7,12 +7,30 @@ import {
 } from '../middleware/authMiddleware';
 import { safeErrorMessage } from '../utils/httpErrors';
 
+const ALLOWED_AGENT_KEYS = new Set<AgentKey>([
+  'education_advisor',
+  'career_intelligence',
+  'learning_coach',
+  'research_agent',
+  'parent_assistant',
+  'teacher_assistant',
+]);
+
+function parseAgentKey(raw: unknown): AgentKey | null {
+  if (raw === undefined || raw === null || raw === '') return 'education_advisor';
+  if (typeof raw === 'string' && ALLOWED_AGENT_KEYS.has(raw as AgentKey)) {
+    return raw as AgentKey;
+  }
+  return null;
+}
+
 export class AIAgent2Controller {
   /** GET /api/ai-os/agents */
   public async getAgents(_req: Request, res: Response): Promise<void> {
     try {
       const agents = aiAgent2Service.getAgents();
       res.json({
+        success: true,
         total: agents.length,
         systemVersion: 'Personal Education Intelligence Agent 2.0 (CDES OS)',
         agents,
@@ -37,7 +55,11 @@ export class AIAgent2Controller {
       );
       if (!studentId) return;
 
-      const agentKey = (typeof body.agentKey === 'string' ? body.agentKey : 'education_advisor') as AgentKey;
+      const agentKey = parseAgentKey(body.agentKey);
+      if (!agentKey) {
+        res.status(400).json({ success: false, error: 'Invalid agentKey.' });
+        return;
+      }
       const message = typeof body.message === 'string' ? body.message : '';
 
       if (!message || message.trim() === '') {
@@ -46,7 +68,7 @@ export class AIAgent2Controller {
       }
 
       const result = await aiAgent2Service.handleAgentDialogue(studentId, agentKey, message.trim());
-      res.json(result);
+      res.json({ success: true, ...result });
     } catch (error: unknown) {
       res.status(500).json({
         success: false,
@@ -63,7 +85,7 @@ export class AIAgent2Controller {
       if (!studentId) return;
 
       const memory = aiAgent2Service.getLongTermMemory(studentId);
-      res.json({ memory });
+      res.json({ success: true, memory });
     } catch (error: unknown) {
       res.status(500).json({
         success: false,
@@ -86,8 +108,17 @@ export class AIAgent2Controller {
       if (!authorizedStudentId) return;
 
       const scopedMemory: StudentLongTermMemory = { ...memory, studentId: authorizedStudentId };
-      aiAgent2Service.saveLongTermMemory(scopedMemory);
-      res.json({ success: true, message: 'Long-term memory updated successfully', memory: scopedMemory });
+      const saved = aiAgent2Service.saveLongTermMemory(scopedMemory);
+      if (!saved) {
+        res.status(403).json({
+          success: false,
+          persisted: false,
+          code: 'AI_MEMORY_CONSENT_REQUIRED',
+          error: 'AI memory persistence is disabled by student/guardian privacy preferences.',
+        });
+        return;
+      }
+      res.json({ success: true, persisted: true, message: 'Long-term memory updated successfully', memory: scopedMemory });
     } catch (error: unknown) {
       res.status(500).json({
         success: false,
@@ -105,6 +136,7 @@ export class AIAgent2Controller {
 
       const matches = aiAgent2Service.getPersonalizedMatches(studentId);
       res.json({
+        success: true,
         studentId,
         count: matches.length,
         matches,
@@ -127,6 +159,7 @@ export class AIAgent2Controller {
 
       const plans = aiAgent2Service.getActionPlans(studentId);
       res.json({
+        success: true,
         studentId,
         count: plans.length,
         plans,
@@ -158,8 +191,17 @@ export class AIAgent2Controller {
         return;
       }
 
-      const success = aiAgent2Service.toggleMilestone(planId, milestoneId, studentId);
-      res.json({ success, planId, milestoneId });
+      const toggled = aiAgent2Service.toggleMilestone(planId, milestoneId, studentId);
+      if (!toggled) {
+        res.status(404).json({
+          success: false,
+          error: 'Action plan or milestone not found for this account.',
+          planId,
+          milestoneId,
+        });
+        return;
+      }
+      res.json({ success: true, planId, milestoneId });
     } catch (error: unknown) {
       res.status(500).json({
         success: false,
@@ -174,7 +216,7 @@ export class AIAgent2Controller {
     try {
       const conceptId = typeof req.query.conceptId === 'string' ? req.query.conceptId : undefined;
       const concept = aiAgent2Service.getAdaptiveConcept(conceptId);
-      res.json({ concept });
+      res.json({ success: true, concept });
     } catch (error: unknown) {
       res.status(500).json({
         success: false,
@@ -189,6 +231,7 @@ export class AIAgent2Controller {
     try {
       const pipeline = aiAgent2Service.getKnowledgePipeline();
       res.json({
+        success: true,
         total: pipeline.length,
         pipeline,
       });
@@ -206,7 +249,11 @@ export class AIAgent2Controller {
     try {
       const body = (req.body || {}) as Record<string, unknown>;
       const prompt = typeof body.prompt === 'string' ? body.prompt : '';
-      const agentKey = (typeof body.agentKey === 'string' ? body.agentKey : 'education_advisor') as AgentKey;
+      const agentKey = parseAgentKey(body.agentKey);
+      if (!agentKey) {
+        res.status(400).json({ success: false, error: 'Invalid agentKey.' });
+        return;
+      }
       const studentId = resolveAuthorizedStudentId(
         req,
         res,
@@ -219,7 +266,7 @@ export class AIAgent2Controller {
         return;
       }
       const result = aiAgent2Service.evaluateSafety(prompt, agentKey, studentId);
-      res.json(result);
+      res.json({ success: true, ...result });
     } catch (error: unknown) {
       res.status(500).json({
         success: false,
@@ -234,7 +281,7 @@ export class AIAgent2Controller {
     try {
       const studentId = typeof req.query.studentId === 'string' ? req.query.studentId : undefined;
       const metrics = aiAgent2Service.getClosedLoopMetrics(studentId);
-      res.json(metrics);
+      res.json({ success: true, ...metrics });
     } catch (error: unknown) {
       res.status(500).json({
         success: false,

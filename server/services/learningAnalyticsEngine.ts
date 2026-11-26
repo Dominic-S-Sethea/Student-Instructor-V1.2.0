@@ -1,6 +1,11 @@
 import { AnalyticsRepository } from '../repositories/analyticsRepository';
 import { IntelligenceRepository } from '../repositories/intelligenceRepository';
+import { PrivacyService } from './privacyService';
+import { safeJsonParse } from '../utils/safeJson';
 import {
+  ActivityEventRecord,
+  LearningEventRecord,
+  GameEventRecord,
   StudentIntelligenceProfile,
   EngagementMetrics,
   LearningProgressionMetrics,
@@ -13,54 +18,58 @@ import {
 export class LearningAnalyticsEngine {
   private analyticsRepo: AnalyticsRepository;
   private intelligenceRepo: IntelligenceRepository;
+  private privacyService: PrivacyService;
 
   constructor(
     analyticsRepo?: AnalyticsRepository,
-    intelligenceRepo?: IntelligenceRepository
+    intelligenceRepo?: IntelligenceRepository,
+    privacyService?: PrivacyService
   ) {
     this.analyticsRepo = analyticsRepo || new AnalyticsRepository();
     this.intelligenceRepo = intelligenceRepo || new IntelligenceRepository();
+    this.privacyService = privacyService || new PrivacyService();
   }
 
   /**
    * Main Engine Entrypoint:
    * Computes dynamic metrics from raw activity, learning, and game events,
-   * updates the student_intelligence_profile in the database, and returns the comprehensive analytics.
+   * updates the student_intelligence_profile only when analytics consent is active,
+   * and returns honest analytics without fabricating synthetic baseline scores.
    */
   public evaluateStudentIntelligence(studentId: string): ComprehensiveStudentAnalytics {
-    const activityEvents = this.analyticsRepo.getStudentActivityEvents(studentId, 250);
-    const learningEvents = this.analyticsRepo.getStudentLearningEvents(studentId, 250);
-    const gameEvents = this.analyticsRepo.getStudentGameEvents(studentId, 250);
+    const canCollect = this.privacyService.canCollectAnalytics(studentId);
+    const activityEvents = canCollect ? this.analyticsRepo.getStudentActivityEvents(studentId, 250) : [];
+    const learningEvents = canCollect ? this.analyticsRepo.getStudentLearningEvents(studentId, 250) : [];
+    const gameEvents = canCollect ? this.analyticsRepo.getStudentGameEvents(studentId, 250) : [];
+    const hasEvents = activityEvents.length + learningEvents.length + gameEvents.length > 0;
 
-    // 1. Calculate Engagement Metrics
     const engagement = this.computeEngagementMetrics(activityEvents, learningEvents, gameEvents);
-
-    // 2. Calculate Learning Progression Metrics
     const learning = this.computeLearningProgressionMetrics(learningEvents);
-
-    // 3. Calculate Behavioral Metrics
     const behavior = this.computeBehavioralMetrics(activityEvents, learningEvents, gameEvents);
-
-    // 4. Derive Subject Strengths & Weaknesses
     const { strengths, weaknesses } = this.evaluateSubjectProficiency(learningEvents);
-
-    // 5. Derive Learning Preferences
     const learningPreferences = this.inferLearningPreferences(activityEvents, learningEvents, gameEvents);
-
-    // 6. Derive Interest Patterns
     const interestPatterns = this.extractInterestPatterns(activityEvents, learningEvents);
 
-    // 7. Synthesize Composite Scores
-    const engagementScore = Math.round(engagement.consistencyScore * 0.4 + Math.min(100, (engagement.activeDaysCount / 14) * 100) * 0.3 + Math.min(100, (engagement.totalTimeSpentMinutes / 120) * 100) * 0.3);
-    const persistenceScore = behavior.persistenceScore;
-    const problemSolvingScore = Math.round(learning.averageScore * 0.6 + (learning.difficultyProgression.advancedCount * 5 + learning.difficultyProgression.hardCount * 8) * 0.4);
+    const engagementScore = hasEvents
+      ? Math.round(
+          engagement.consistencyScore * 0.4 +
+            Math.min(100, (engagement.activeDaysCount / 14) * 100) * 0.3 +
+            Math.min(100, (engagement.totalTimeSpentMinutes / 120) * 100) * 0.3
+        )
+      : 0;
+    const persistenceScore = hasEvents ? behavior.persistenceScore : 0;
+    const problemSolvingScore = learningEvents.length > 0
+      ? Math.round(
+          learning.averageScore * 0.6 +
+            (learning.difficultyProgression.advancedCount * 5 + learning.difficultyProgression.hardCount * 8) * 0.4
+        )
+      : 0;
 
-    const boundedEngagement = Math.min(100, Math.max(15, engagementScore || 65));
-    const boundedPersistence = Math.min(100, Math.max(20, persistenceScore || 70));
-    const boundedProblemSolving = Math.min(100, Math.max(25, problemSolvingScore || 68));
+    const boundedEngagement = Math.min(100, Math.max(0, engagementScore));
+    const boundedPersistence = Math.min(100, Math.max(0, persistenceScore));
+    const boundedProblemSolving = Math.min(100, Math.max(0, problemSolvingScore));
 
     const now = new Date().toISOString();
-
     const profile: StudentIntelligenceProfile = {
       studentId,
       learningPreferences,
@@ -73,10 +82,10 @@ export class LearningAnalyticsEngine {
       updatedAt: now
     };
 
-    // Persist dynamic profile in database
-    this.intelligenceRepo.upsertProfile(profile);
+    if (canCollect && hasEvents) {
+      this.intelligenceRepo.upsertProfile(profile);
+    }
 
-    // 8. Generate Adaptive Recommendations
     const recommendations = this.generatePedagogicalRecommendations(profile, learning, behavior);
 
     return {
@@ -88,10 +97,11 @@ export class LearningAnalyticsEngine {
     };
   }
 
-  // ==========================================
-  // ENGAGEMENT METRICS COMPUTATION
-  // ==========================================
-  private computeEngagementMetrics(activityEvents: any[], learningEvents: any[], gameEvents: any[]): EngagementMetrics {
+  private computeEngagementMetrics(
+    activityEvents: ActivityEventRecord[],
+    learningEvents: LearningEventRecord[],
+    gameEvents: GameEventRecord[]
+  ): EngagementMetrics {
     let totalSeconds = 0;
     const activeDatesSet = new Set<string>();
     const dailyMap: Record<string, { activeMinutes: number; eventCount: number }> = {};
@@ -107,25 +117,24 @@ export class LearningAnalyticsEngine {
       dailyMap[date].eventCount += 1;
     };
 
-    activityEvents.forEach(e => recordEventDuration(e.timestamp, e.duration || 45));
-    learningEvents.forEach(e => recordEventDuration(e.timestamp, e.time_spent || 120));
-    gameEvents.forEach(e => recordEventDuration(e.timestamp, e.time_taken || 90));
+    activityEvents.forEach((e) => recordEventDuration(e.timestamp, e.duration || 45));
+    learningEvents.forEach((e) => recordEventDuration(e.timestamp, e.time_spent || 120));
+    gameEvents.forEach((e) => recordEventDuration(e.timestamp, e.time_taken || 90));
 
-    const activeDaysCount = activeDatesSet.size || 1;
-    const totalMinutes = Math.round(totalSeconds / 60) || 45;
+    const activeDaysCount = activeDatesSet.size;
+    const totalMinutes = Math.round(totalSeconds / 60);
     const totalHours = Math.round((totalMinutes / 60) * 10) / 10;
-    const weeklySessionFrequency = Math.round((activeDaysCount / 2) * 10) / 10 || 3.5;
+    const weeklySessionFrequency = Math.round((activeDaysCount / 2) * 10) / 10;
 
-    // Consistency is high if session days are regular rather than spaced weeks apart
-    let consistencyScore = 80;
+    let consistencyScore = 0;
     if (activeDaysCount >= 5) consistencyScore = 92;
     else if (activeDaysCount >= 3) consistencyScore = 82;
-    else consistencyScore = 65;
+    else if (activeDaysCount >= 1) consistencyScore = 65;
 
     const dailyActiveTrend = Object.keys(dailyMap)
       .sort()
       .slice(-14)
-      .map(date => ({
+      .map((date) => ({
         date,
         activeMinutes: Math.max(1, dailyMap[date].activeMinutes),
         eventCount: dailyMap[date].eventCount
@@ -145,21 +154,17 @@ export class LearningAnalyticsEngine {
     };
   }
 
-  // ==========================================
-  // LEARNING METRICS COMPUTATION
-  // ==========================================
-  private computeLearningProgressionMetrics(learningEvents: any[]): LearningProgressionMetrics {
+  private computeLearningProgressionMetrics(learningEvents: LearningEventRecord[]): LearningProgressionMetrics {
     const scores = learningEvents
-      .filter(e => e.score !== null && e.score !== undefined)
-      .map(e => Number(e.score));
+      .filter((e) => e.score !== null && e.score !== undefined)
+      .map((e) => Number(e.score));
 
     const totalQuizzes = scores.length;
     const averageScore = totalQuizzes > 0
       ? Math.round(scores.reduce((a, b) => a + b, 0) / totalQuizzes)
-      : 78;
+      : 0;
 
-    // Improvement rate: score comparison between older 50% vs newer 50%
-    let improvementRatePercentage = 6.5;
+    let improvementRatePercentage = 0;
     if (scores.length >= 4) {
       const half = Math.floor(scores.length / 2);
       const recentHalf = scores.slice(0, half);
@@ -171,13 +176,12 @@ export class LearningAnalyticsEngine {
       }
     }
 
-    // Difficulty breakdown
     let beginnerCount = 0;
     let intermediateCount = 0;
     let advancedCount = 0;
     let hardCount = 0;
 
-    learningEvents.forEach(e => {
+    learningEvents.forEach((e) => {
       const diff = (e.difficulty || 'intermediate').toLowerCase();
       if (diff === 'beginner') beginnerCount++;
       else if (diff === 'advanced') advancedCount++;
@@ -185,16 +189,17 @@ export class LearningAnalyticsEngine {
       else intermediateCount++;
     });
 
-    const completedLessonsCount = learningEvents.filter(e =>
-      e.action === 'lesson_completed' || e.action === 'experiment_completed' || (e.score && e.score >= 70)
-    ).length || Math.max(1, learningEvents.length);
+    const completedLessonsCount = learningEvents.filter(
+      (e) => e.action === 'lesson_completed' || e.action === 'experiment_completed' || (e.score !== null && e.score >= 70)
+    ).length;
 
-    let masteryLevel: 'Novice' | 'Developing' | 'Proficient' | 'Advanced' | 'Master' = 'Developing';
-    if (averageScore >= 90 && advancedCount >= 2) masteryLevel = 'Master';
-    else if (averageScore >= 82) masteryLevel = 'Advanced';
-    else if (averageScore >= 70) masteryLevel = 'Proficient';
-    else if (averageScore >= 50) masteryLevel = 'Developing';
-    else masteryLevel = 'Novice';
+    let masteryLevel: 'Novice' | 'Developing' | 'Proficient' | 'Advanced' | 'Master' = 'Novice';
+    if (totalQuizzes > 0) {
+      if (averageScore >= 90 && advancedCount >= 2) masteryLevel = 'Master';
+      else if (averageScore >= 82) masteryLevel = 'Advanced';
+      else if (averageScore >= 70) masteryLevel = 'Proficient';
+      else if (averageScore >= 50) masteryLevel = 'Developing';
+    }
 
     return {
       improvementRatePercentage,
@@ -211,47 +216,49 @@ export class LearningAnalyticsEngine {
     };
   }
 
-  // ==========================================
-  // BEHAVIORAL METRICS COMPUTATION
-  // ==========================================
-  private computeBehavioralMetrics(activityEvents: any[], learningEvents: any[], gameEvents: any[]): BehavioralMetrics {
-    // 1. Persistence: Retry after failure rate
-    const failedGameLevels = gameEvents.filter(g => g.success === 0 || g.result === 'FAILED');
-    const retriedAndWon = gameEvents.filter(g => g.attempt > 1 && (g.success === 1 || g.result === 'SUCCESS'));
+  private computeBehavioralMetrics(
+    activityEvents: ActivityEventRecord[],
+    learningEvents: LearningEventRecord[],
+    gameEvents: GameEventRecord[]
+  ): BehavioralMetrics {
+    const failedGameLevels = gameEvents.filter((g) => g.success === 0 || g.result === 'FAILED');
+    const retriedAndWon = gameEvents.filter((g) => g.attempt > 1 && (g.success === 1 || g.result === 'SUCCESS'));
 
-    let retrySuccessRate = 75;
+    let retrySuccessRate = 0;
     if (failedGameLevels.length > 0) {
       retrySuccessRate = Math.min(100, Math.round((retriedAndWon.length / failedGameLevels.length) * 100));
+    } else if (gameEvents.length > 0) {
+      retrySuccessRate = 100;
     }
 
     const avgAttempts = gameEvents.length > 0
       ? Math.round((gameEvents.reduce((acc, g) => acc + (g.attempt || 1), 0) / gameEvents.length) * 10) / 10
-      : 1.4;
+      : 0;
 
-    // Persistence score (0 - 100)
-    const persistenceScore = Math.min(100, Math.max(30, Math.round(retrySuccessRate * 0.6 + (avgAttempts >= 1.5 ? 30 : 20))));
+    const persistenceScore = gameEvents.length > 0
+      ? Math.min(100, Math.max(30, Math.round(retrySuccessRate * 0.6 + (avgAttempts >= 1.5 ? 30 : 20))))
+      : 0;
 
-    // 2. Curiosity & Exploration: Breadth of content visited and AI questions asked
-    const searchEvents = activityEvents.filter(e => e.event_type === 'search' || e.event_type === 'ai_question');
+    const searchEvents = activityEvents.filter((e) => e.event_type === 'search' || e.event_type === 'ai_question');
     const uniqueTopics = new Set<string>();
 
-    activityEvents.forEach(e => {
-      try {
-        const meta = typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata;
-        if (meta?.query) uniqueTopics.add(meta.query.toLowerCase());
-        if (meta?.category) uniqueTopics.add(meta.category.toLowerCase());
-        if (meta?.fieldOfStudy) uniqueTopics.add(meta.fieldOfStudy.toLowerCase());
-      } catch {
-        // ignore
-      }
+    activityEvents.forEach((e) => {
+      const meta = typeof e.metadata === 'string'
+        ? safeJsonParse<Record<string, unknown>>(e.metadata, {})
+        : (e.metadata || {});
+      if (typeof meta?.query === 'string') uniqueTopics.add(meta.query.toLowerCase());
+      if (typeof meta?.category === 'string') uniqueTopics.add(meta.category.toLowerCase());
+      if (typeof meta?.fieldOfStudy === 'string') uniqueTopics.add(meta.fieldOfStudy.toLowerCase());
     });
 
-    learningEvents.forEach(e => {
-      if (e.content_id) uniqueTopics.add(e.content_id.split('-')[0]);
+    learningEvents.forEach((e) => {
+      if (e.content_id) uniqueTopics.add(String(e.content_id).split('-')[0]);
     });
 
-    const topicsExploredCount = uniqueTopics.size || 5;
-    const curiosityBreadthScore = Math.min(100, Math.max(40, topicsExploredCount * 12 + searchEvents.length * 5));
+    const topicsExploredCount = uniqueTopics.size;
+    const curiosityBreadthScore = topicsExploredCount > 0 || searchEvents.length > 0
+      ? Math.min(100, topicsExploredCount * 12 + searchEvents.length * 5)
+      : 0;
     const explorationDiversityIndex = Math.min(1.0, Math.round((topicsExploredCount / 10) * 100) / 100);
 
     return {
@@ -261,20 +268,17 @@ export class LearningAnalyticsEngine {
       curiosityBreadthScore,
       topicsExploredCount,
       explorationDiversityIndex,
-      gameResilienceScore: Math.min(100, Math.round(persistenceScore * 0.7 + retrySuccessRate * 0.3))
+      gameResilienceScore: gameEvents.length > 0 ? Math.min(100, Math.round(persistenceScore * 0.7 + retrySuccessRate * 0.3)) : 0
     };
   }
 
-  // ==========================================
-  // SUBJECT PROFICIENCY PARSER
-  // ==========================================
-  private evaluateSubjectProficiency(learningEvents: any[]): {
+  private evaluateSubjectProficiency(learningEvents: LearningEventRecord[]): {
     strengths: SubjectAssessment[];
     weaknesses: SubjectAssessment[];
   } {
     const subjectBuckets: Record<string, { totalScore: number; count: number; lastDate: string }> = {};
 
-    learningEvents.forEach(e => {
+    learningEvents.forEach((e) => {
       let subj = 'STEM & Logic';
       const cid = (e.content_id || '').toLowerCase();
       if (cid.includes('math') || cid.includes('calc') || cid.includes('algebra')) subj = 'Mathematics';
@@ -294,16 +298,13 @@ export class LearningAnalyticsEngine {
       }
     });
 
-    // Default benchmarks if event count is minimal
     if (Object.keys(subjectBuckets).length === 0) {
-      subjectBuckets['Computer Science'] = { totalScore: 176, count: 2, lastDate: new Date().toISOString() };
-      subjectBuckets['Mathematics'] = { totalScore: 164, count: 2, lastDate: new Date().toISOString() };
-      subjectBuckets['Physics'] = { totalScore: 68, count: 1, lastDate: new Date().toISOString() };
+      return { strengths: [], weaknesses: [] };
     }
 
-    const assessments: SubjectAssessment[] = Object.keys(subjectBuckets).map(subject => {
+    const assessments: SubjectAssessment[] = Object.keys(subjectBuckets).map((subject) => {
       const b = subjectBuckets[subject];
-      const avg = b.count > 0 ? Math.round(b.totalScore / b.count) : 75;
+      const avg = b.count > 0 ? Math.round(b.totalScore / b.count) : 0;
       let masteryLevel: 'Novice' | 'Developing' | 'Proficient' | 'Advanced' | 'Master' = 'Developing';
       if (avg >= 90) masteryLevel = 'Master';
       else if (avg >= 80) masteryLevel = 'Advanced';
@@ -320,89 +321,85 @@ export class LearningAnalyticsEngine {
       };
     });
 
-    const strengths = assessments.filter(a => a.score >= 75);
-    const weaknesses = assessments.filter(a => a.score < 75);
-
     return {
-      strengths: strengths.length > 0 ? strengths : [assessments[0]],
-      weaknesses: weaknesses.length > 0 ? weaknesses : []
+      strengths: assessments.filter((a) => a.score >= 75),
+      weaknesses: assessments.filter((a) => a.score < 75)
     };
   }
 
-  // ==========================================
-  // LEARNING PREFERENCES INFERENCE
-  // ==========================================
-  private inferLearningPreferences(activityEvents: any[], learningEvents: any[], gameEvents: any[]): LearningPreferences {
+  private inferLearningPreferences(
+    activityEvents: ActivityEventRecord[],
+    learningEvents: LearningEventRecord[],
+    gameEvents: GameEventRecord[]
+  ): LearningPreferences {
     let visualCount = 0;
     let textCount = 0;
     let interactiveCount = 0;
 
-    learningEvents.forEach(e => {
-      const meta = typeof e.metadata === 'string' ? JSON.parse(e.metadata || '{}') : (e.metadata || {});
-      const format = (meta.format || meta.type || '').toLowerCase();
+    learningEvents.forEach((e) => {
+      const meta = typeof e.metadata === 'string'
+        ? safeJsonParse<Record<string, unknown>>(e.metadata, {})
+        : (e.metadata || {});
+      const format = String(meta.format || meta.type || '').toLowerCase();
       if (format.includes('sim') || format.includes('game') || format.includes('interact')) interactiveCount++;
       else if (format.includes('visual') || format.includes('diagram') || format.includes('video')) visualCount++;
       else textCount++;
     });
 
-    gameEvents.forEach(() => interactiveCount += 2);
+    gameEvents.forEach(() => {
+      interactiveCount += 2;
+    });
 
-    const total = visualCount + textCount + interactiveCount || 10;
-    const visualRatio = Math.round((visualCount / total) * 100) / 100;
-    const interactiveRatio = Math.round((interactiveCount / total) * 100) / 100;
+    const total = visualCount + textCount + interactiveCount;
+    const visualRatio = total > 0 ? Math.round((visualCount / total) * 100) / 100 : 0;
+    const interactiveRatio = total > 0 ? Math.round((interactiveCount / total) * 100) / 100 : 0;
 
-    let primaryStyle: 'visual' | 'textual' | 'interactive' | 'simulation' | 'balanced' = 'interactive';
-    if (interactiveRatio >= 0.45) primaryStyle = 'interactive';
-    else if (visualRatio >= 0.4) primaryStyle = 'visual';
-    else if (textCount / total >= 0.5) primaryStyle = 'textual';
-    else primaryStyle = 'balanced';
+    let primaryStyle: 'visual' | 'textual' | 'interactive' | 'simulation' | 'balanced' = 'balanced';
+    if (total > 0) {
+      if (interactiveRatio >= 0.45) primaryStyle = 'interactive';
+      else if (visualRatio >= 0.4) primaryStyle = 'visual';
+      else if (textCount / total >= 0.5) primaryStyle = 'textual';
+    }
 
-    // Pacing
     const avgLearnSec = learningEvents.length > 0
       ? learningEvents.reduce((acc, e) => acc + (e.time_spent || 60), 0) / learningEvents.length
-      : 120;
+      : 0;
 
     let pacing: 'accelerated' | 'moderate' | 'deliberate' | 'deep_dive' = 'moderate';
-    if (avgLearnSec < 45) pacing = 'accelerated';
+    if (avgLearnSec > 0 && avgLearnSec < 45) pacing = 'accelerated';
     else if (avgLearnSec > 300) pacing = 'deep_dive';
     else if (avgLearnSec > 150) pacing = 'deliberate';
 
     return {
       primaryStyle,
       pacing,
-      sessionLengthPreferenceMinutes: Math.round(avgLearnSec / 60) || 15,
-      peakLearningHours: 'evening',
-      visualPreferenceRatio: Math.max(0.35, visualRatio),
-      interactivePreferenceRatio: Math.max(0.45, interactiveRatio)
+      sessionLengthPreferenceMinutes: Math.round(avgLearnSec / 60),
+      peakLearningHours: activityEvents.length > 0 ? 'evening' : 'unspecified',
+      visualPreferenceRatio: visualRatio,
+      interactivePreferenceRatio: interactiveRatio
     };
   }
 
-  // ==========================================
-  // INTEREST PATTERN EXTRACTION
-  // ==========================================
-  private extractInterestPatterns(activityEvents: any[], learningEvents: any[]): string[] {
+  private extractInterestPatterns(
+    activityEvents: ActivityEventRecord[],
+    learningEvents: LearningEventRecord[]
+  ): string[] {
     const patterns = new Set<string>();
 
-    activityEvents.forEach(e => {
-      try {
-        const meta = typeof e.metadata === 'string' ? JSON.parse(e.metadata || '{}') : (e.metadata || {});
-        if (meta.searchQuery) patterns.add(meta.searchQuery);
-        if (meta.major) patterns.add(meta.major);
-        if (meta.filterField) patterns.add(meta.filterField);
-      } catch {
-        // ignore
-      }
+    activityEvents.forEach((e) => {
+      const meta = typeof e.metadata === 'string'
+        ? safeJsonParse<Record<string, unknown>>(e.metadata, {})
+        : (e.metadata || {});
+      if (typeof meta.searchQuery === 'string') patterns.add(meta.searchQuery);
+      if (typeof meta.major === 'string') patterns.add(meta.major);
+      if (typeof meta.filterField === 'string') patterns.add(meta.filterField);
     });
 
-    learningEvents.forEach(e => {
+    learningEvents.forEach((e) => {
       if (e.content_id) {
-        patterns.add(e.content_id.split('-')[0].toUpperCase());
+        patterns.add(String(e.content_id).split('-')[0].toUpperCase());
       }
     });
-
-    if (patterns.size === 0) {
-      return ['Software Engineering', 'Artificial Intelligence', 'Calculus & Logic', 'Robotics & STEM'];
-    }
 
     return Array.from(patterns).slice(0, 6);
   }

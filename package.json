@@ -3,34 +3,33 @@
   "private": true,
   "version": "1.2.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server/server.cjs && node scripts/copy-db-assets.mjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server/server.cjs && esbuild server/db/runRetentionCli.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server/retention.cjs && node scripts/copy-db-assets.mjs",
     "start": "node dist/server/server.cjs",
     "preview": "vite preview",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "lint": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
-    "test": "tsx server/tests/backend.test.ts && tsx server/tests/secretScan.test.ts && tsx server/tests/startupAndMigrations.test.ts && tsx server/tests/authOwnershipConsent.test.ts && tsx server/tests/catalogAccuracyAndEditorial.test.ts && tsx server/tests/guidanceAndPackaging.test.ts && tsx server/tests/mcpAndHermesMemory.test.ts && tsx server/tests/phase3ApiHardening.test.ts",
+    "test": "node scripts/run-tests.mjs",
     "test:coverage": "node scripts/run-coverage.mjs",
+    "test:stress": "tsx scripts/stress-test.ts",
+    "test:e2e:browser": "python3 scripts/e2e-browser-smoke.py",
+    "verify:catalog": "tsx scripts/verify-catalog-integrity.ts",
     "audit:dep": "npm audit --omit=dev",
+    "retention:run": "node dist/server/retention.cjs",
     "retention:cron": "node server/db/retention_cron.js"
   },
   "dependencies": {
     "@google/genai": "^3.6.1",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "bcryptjs": "^3.0.3",
-    "canvas-confetti": "^1.9.4",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "firebase": "^13.2.0",
     "jsonwebtoken": "^9.0.3",
-    "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
-    "react": "^19.0.1",
-    "react-dom": "^19.0.1",
-    "react-markdown": "^10.1.0",
-    "uuid": "^11.0.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -42,13 +41,15 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "canvas-confetti": "^1.9.4",
     "esbuild": "^0.25.0",
+    "lucide-react": "^0.546.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "react-markdown": "^10.1.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3"
-  },
-  "overrides": {
-    "@grpc/grpc-js": "^1.14.0"
   }
 }

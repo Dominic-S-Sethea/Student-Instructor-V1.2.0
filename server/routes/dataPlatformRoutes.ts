@@ -85,12 +85,26 @@ router.post(
   requireRole('admin'),
   rateLimiter(60000, 10),
   validate(z.object({
-    test_type: z.enum(['dry_run', 'integration']),
+    test_type: z.enum(['dry_run', 'integration']).optional(),
     mock: z.boolean().optional(),
+    text: z.string().max(4000).optional(),
+    student_id: z.string().max(120).optional(),
+    category: z.string().max(100).optional(),
   }), 'body'),
   (req: AuthenticatedRequest, res: Response) => {
   try {
-    const result = dataPlatformService.runDataPipelineTest(req.body || {});
+    const body = (req.body || {}) as {
+      text?: string;
+      student_id?: string;
+      category?: string;
+      test_type?: 'dry_run' | 'integration';
+      mock?: boolean;
+    };
+    const result = dataPlatformService.runDataPipelineTest({
+      text: body.text || 'I need help preparing for CADT entrance exam in Calculus vectors and finding scholarships.',
+      student_id: body.student_id || req.user!.userId,
+      category: body.category || body.test_type || 'university_inquiry',
+    });
     res.json({ success: true, data: result });
   } catch (err: unknown) {
     sendPlatformError(res, err, 'Pipeline test failed');
@@ -98,7 +112,7 @@ router.post(
 });
 
 // 6. Closed-Loop AI Improvement Flywheel (Task 6)
-router.get('/improvement-flywheel', rateLimiter(60000, 30), (_req: Request, res: Response) => {
+router.get('/improvement-flywheel', authenticateToken, requireRole('admin'), rateLimiter(60000, 30), (_req: AuthenticatedRequest, res: Response) => {
   try {
     const flywheel = dataPlatformService.getImprovementFlywheelMetrics();
     res.json({ success: true, data: flywheel });

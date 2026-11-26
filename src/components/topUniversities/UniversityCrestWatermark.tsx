@@ -20,7 +20,7 @@ export const UniversityCrestWatermark: React.FC<UniversityCrestWatermarkProps> =
   const [hasError, setHasError] = useState(false);
 
   // Official high-resolution crest / logo path (e.g., Harvard official coat of arms with laurels and banner)
-  const officialCrestPath = `/crests/${program.id}.png`;
+  const officialCrestPath = `${import.meta.env.BASE_URL}crests/${program.id}.png`;
   // Fallback high-res institutional favicon
   const fallbackUrl = `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://${meta.domain}&size=256`;
 
@@ -34,6 +34,7 @@ export const UniversityCrestWatermark: React.FC<UniversityCrestWatermarkProps> =
           src={officialCrestPath}
           alt=""
           loading="lazy"
+          decoding="async"
           referrerPolicy="no-referrer"
           onError={(e) => {
             // If primary local path fails, try fallback domain icon
@@ -45,7 +46,6 @@ export const UniversityCrestWatermark: React.FC<UniversityCrestWatermarkProps> =
             }
           }}
           className="w-[82%] h-[82%] max-w-[280px] max-h-[280px] sm:max-w-[310px] sm:max-h-[310px] object-contain opacity-50 transition-all duration-500 group-hover:scale-105 group-hover:opacity-60 drop-shadow-[0_4px_12px_rgba(0,0,0,0.06)]"
-          style={{ opacity: 0.5 }}
         />
       ) : (
         /* Symmetrical Heraldic Vector Crest Fallback centered at 50% opacity */

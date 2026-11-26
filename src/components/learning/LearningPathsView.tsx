@@ -20,6 +20,7 @@ import {
   StudentLearningPath,
 } from '../../../shared/types/learningTypes';
 import { learningClient, RoadmapWithStatus } from '../../services/learningClient';
+import { useAuth } from '../../context/AuthContext';
 
 interface LearningPathsViewProps {
   studentId?: string;
@@ -29,56 +30,76 @@ interface LearningPathsViewProps {
 }
 
 export const LearningPathsView: React.FC<LearningPathsViewProps> = ({
-  studentId = 'usr-student-01',
+  studentId: propStudentId,
   onOpenExperiment,
   onOpenContent,
   onRewardEarned,
 }) => {
+  const { user } = useAuth();
+  const studentId = user?.id || propStudentId || '';
   const [roadmaps, setRoadmaps] = useState<RoadmapWithStatus[]>([]);
   const [expandedPathId, setExpandedPathId] = useState<string | null>('path-ai-engineer');
   const [loading, setLoading] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const fetchRoadmaps = async () => {
+  const fetchRoadmaps = async (): Promise<void> => {
     try {
       setLoading(true);
+      setActionError(null);
       const data = await learningClient.getRoadmaps(studentId);
       setRoadmaps(data);
       if (data.length > 0 && !expandedPathId) {
         setExpandedPathId(data[0].id);
       }
     } catch (err) {
-      console.error('Failed to load roadmaps:', err);
+      setActionError(err instanceof Error ? err.message : 'Failed to load learning roadmaps.');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchRoadmaps();
+    void fetchRoadmaps();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [studentId]);
 
-  const handleEnroll = async (pathId: string) => {
-    const res = await learningClient.enrollRoadmap(pathId, studentId);
-    if (res) {
-      fetchRoadmaps();
-      if (onRewardEarned) {
-        onRewardEarned(15, 'Enrolled in new STEM Learning Roadmap!');
+  const handleEnroll = async (pathId: string): Promise<void> => {
+    try {
+      setActionError(null);
+      const res = await learningClient.enrollRoadmap(pathId, studentId);
+      if (res) {
+        await fetchRoadmaps();
+        if (onRewardEarned) {
+          onRewardEarned(15, 'Enrolled in new STEM Learning Roadmap!');
+        }
       }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Sign in to enroll in learning roadmaps.');
     }
   };
 
-  const handleAdvanceStep = async (pathId: string, currentStep: number) => {
-    const res = await learningClient.advanceRoadmap(pathId, currentStep, studentId);
-    if (res) {
-      fetchRoadmaps();
-      if (onRewardEarned) {
-        onRewardEarned(35, `Completed stage ${currentStep} of your learning roadmap!`);
+  const handleAdvanceStep = async (pathId: string, currentStep: number): Promise<void> => {
+    try {
+      setActionError(null);
+      const res = await learningClient.advanceRoadmap(pathId, currentStep, studentId);
+      if (res) {
+        await fetchRoadmaps();
+        if (onRewardEarned) {
+          onRewardEarned(35, `Completed stage ${currentStep} of your learning roadmap!`);
+        }
       }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Unable to advance learning step.');
     }
   };
 
   return (
     <div className="space-y-6">
+      {actionError && (
+        <div role="alert" className="p-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-2xl text-xs font-medium text-red-700 dark:text-red-300">
+          {actionError}
+        </div>
+      )}
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 sm:p-8 text-white relative overflow-hidden shadow-xl border border-indigo-900/40">
         <div className="absolute -right-10 -bottom-10 w-72 h-72 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -105,8 +126,14 @@ export const LearningPathsView: React.FC<LearningPathsViewProps> = ({
         <div className="space-y-5">
           {roadmaps.map((path) => {
             const isExpanded = expandedPathId === path.id;
-            const isEnrolled = path.is_enrolled;
+            const isEnrolled = Boolean(path.is_enrolled);
             const progress = path.progress_percentage || 0;
+            const currentStepOrder =
+              typeof path.current_step_order === 'number'
+                ? path.current_step_order
+                : typeof path.current_step === 'number'
+                  ? path.current_step
+                  : path.current_step?.step_order ?? 1;
 
             return (
               <div
@@ -161,7 +188,7 @@ export const LearningPathsView: React.FC<LearningPathsViewProps> = ({
                       </div>
                     ) : (
                       <button
-                        onClick={() => handleEnroll(path.id)}
+                        onClick={() => void handleEnroll(path.id)}
                         className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
                       >
                         Enroll in Roadmap
@@ -187,9 +214,9 @@ export const LearningPathsView: React.FC<LearningPathsViewProps> = ({
 
                     <div className="space-y-3">
                       {(path.steps || []).map((step, idx) => {
-                        const isStepDone = isEnrolled && step.step_order < path.current_step_order;
-                        const isStepCurrent = isEnrolled && step.step_order === path.current_step_order;
-                        const isStepLocked = isEnrolled ? step.step_order > path.current_step_order : idx > 0;
+                        const isStepDone = isEnrolled && step.step_order < currentStepOrder;
+                        const isStepCurrent = isEnrolled && step.step_order === currentStepOrder;
+                        const isStepLocked = isEnrolled ? step.step_order > currentStepOrder : idx > 0;
 
                         return (
                           <div

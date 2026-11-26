@@ -1,5 +1,8 @@
 import { Router, Response } from 'express';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
+import { rateLimiter } from '../middleware/rateLimiter';
+import { validate } from '../middleware/validationMiddleware';
+import { HermesDocUpdateSchema, HermesFactCreateSchema, HermesFactFeedbackSchema } from '../validators/domainSchemas';
 import { hermesMemoryService } from '../services/hermesMemoryService';
 import type {
   HermesDocType,
@@ -17,10 +20,10 @@ const VALID_CATEGORIES: readonly HermesFactCategory[] = [
   'study_habit',
 ];
 
-const VALID_ACTIONS: readonly HermesFactFeedbackAction[] = ['confirm', 'correct', 'end', 'revert'];
-
+const memoryLimiter = rateLimiter(60_000, 60, 'Too many memory requests. Please slow down.');
 const router = Router();
 router.use(authenticateToken);
+router.use(memoryLimiter);
 
 /** GET /api/memory — returns student's USER/MEMORY docs and active facts (consent-enforced). */
 router.get('/', (req: AuthenticatedRequest, res: Response): void => {
@@ -30,14 +33,14 @@ router.get('/', (req: AuthenticatedRequest, res: Response): void => {
 });
 
 /** PUT /api/memory/docs/:docType — updates USER (3000 chars) or MEMORY (10000 chars) doc. */
-router.put('/docs/:docType', (req: AuthenticatedRequest, res: Response): void => {
+router.put('/docs/:docType', validate(HermesDocUpdateSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   const userId = req.user?.userId;
   const rawType = String(req.params.docType || '').toUpperCase();
   if (rawType !== 'USER' && rawType !== 'MEMORY') {
     res.status(400).json({ success: false, error: 'docType must be USER or MEMORY.' });
     return;
   }
-  const content = typeof req.body?.content === 'string' ? req.body.content : '';
+  const { content } = req.body as { content: string };
   const result = hermesMemoryService.updateMemoryDoc(userId!, rawType as HermesDocType, content);
   if (!result.enabled) {
     res.status(403).json({
@@ -52,37 +55,19 @@ router.put('/docs/:docType', (req: AuthenticatedRequest, res: Response): void =>
 });
 
 /** POST /api/memory/facts — adds or reinforces a structured fact in fact_store. */
-router.post('/facts', (req: AuthenticatedRequest, res: Response): void => {
+router.post('/facts', validate(HermesFactCreateSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   const userId = req.user?.userId;
-  const factText = typeof req.body?.factText === 'string' ? req.body.factText.trim() : '';
-  if (!factText) {
-    res.status(400).json({ success: false, error: 'factText is required.' });
-    return;
-  }
-  if (factText.length > 400) {
-    res.status(400).json({ success: false, error: 'factText must be at most 400 characters.' });
-    return;
-  }
-  let category: HermesFactCategory = 'preference';
-  if (req.body?.category !== undefined) {
-    if (
-      typeof req.body.category !== 'string' ||
-      !VALID_CATEGORIES.includes(req.body.category as HermesFactCategory)
-    ) {
-      res.status(400).json({
-        success: false,
-        error: `category must be one of: ${VALID_CATEGORIES.join(', ')}.`,
-      });
-      return;
-    }
-    category = req.body.category as HermesFactCategory;
-  }
-
+  const body = req.body as {
+    factText: string;
+    category?: HermesFactCategory;
+    entities?: string[];
+    keywords?: string[];
+  };
   const result = hermesMemoryService.addFact(userId!, {
-    factText,
-    category,
-    entities: Array.isArray(req.body?.entities) ? req.body.entities.slice(0, 20).map(String) : undefined,
-    keywords: Array.isArray(req.body?.keywords) ? req.body.keywords.slice(0, 20).map(String) : undefined,
+    factText: body.factText,
+    category: body.category ?? 'preference',
+    entities: body.entities,
+    keywords: body.keywords,
     source: 'explicit_user',
   });
   if (!result.enabled) {
@@ -110,18 +95,16 @@ router.get('/facts/search', (req: AuthenticatedRequest, res: Response): void => 
 });
 
 /** POST /api/memory/facts/:id/feedback — confirm, correct, end, or revert a fact. */
-router.post('/facts/:id/feedback', (req: AuthenticatedRequest, res: Response): void => {
-  const action = typeof req.body?.action === 'string' ? req.body.action : '';
-  if (!VALID_ACTIONS.includes(action as HermesFactFeedbackAction)) {
-    res.status(400).json({ success: false, error: 'action must be confirm, correct, end, or revert.' });
-    return;
-  }
-  const updatedText = typeof req.body?.updatedText === 'string' ? req.body.updatedText : undefined;
-  const note = typeof req.body?.note === 'string' ? req.body.note : undefined;
+router.post('/facts/:id/feedback', validate(HermesFactFeedbackSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
+  const { action, updatedText, note } = req.body as {
+    action: HermesFactFeedbackAction;
+    updatedText?: string;
+    note?: string;
+  };
   const result = hermesMemoryService.applyFactFeedback(
     req.user!.userId,
     req.params.id,
-    action as HermesFactFeedbackAction,
+    action,
     updatedText,
     note
   );
@@ -142,8 +125,8 @@ router.post('/facts/:id/feedback', (req: AuthenticatedRequest, res: Response): v
 
 /** GET /api/memory/facts/:id/history — returns change/correction audit trail for one fact. */
 router.get('/facts/:id/history', (req: AuthenticatedRequest, res: Response): void => {
-  const history = hermesMemoryService.getFactHistory(req.user!.userId, req.params.id);
-  res.json({ success: true, history });
+  const status = hermesMemoryService.getFactHistoryWithStatus(req.user!.userId, req.params.id);
+  res.json({ success: true, ...status });
 });
 
 /** DELETE /api/memory — wipes all Hermes memory docs, facts, and history for the user. */

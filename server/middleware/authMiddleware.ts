@@ -10,19 +10,24 @@ export type UserRole = 'student' | 'admin' | 'organization' | 'mentor';
 
 export interface AuthenticatedRequest extends Request {
   user?: AuthTokenPayload;
+  authSource?: 'cookie' | 'bearer';
 }
 
-function extractJwt(req: Request): string | null {
+export function extractJwtWithSource(req: Request): { token: string; source: 'cookie' | 'bearer' } | null {
   const cookies = parseCookies(req.headers.cookie);
   if (cookies['cdes_jwt']) {
-    return cookies['cdes_jwt'];
+    return { token: cookies['cdes_jwt'], source: 'cookie' };
   }
   const authHeader = req.headers['authorization'];
   if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7).trim();
-    return token || null;
+    return token ? { token, source: 'bearer' } : null;
   }
   return null;
+}
+
+export function extractJwt(req: Request): string | null {
+  return extractJwtWithSource(req)?.token ?? null;
 }
 
 function resolveActiveUser(token: string): AuthTokenPayload | null {
@@ -31,19 +36,26 @@ function resolveActiveUser(token: string): AuthTokenPayload | null {
   if (!user || user.is_deleted || user.status === 'suspended') {
     return null;
   }
+  const currentVersion = typeof user.token_version === 'number' ? user.token_version : 1;
+  if (typeof payload.tv === 'number' && payload.tv !== currentVersion) {
+    return null;
+  }
   const profile = userRepo.getProfileByUserId(user.id);
   return {
     userId: user.id,
     email: user.email,
     role: user.role,
+    jti: payload.jti,
+    exp: payload.exp,
+    tv: currentVersion,
     studentProfileId: profile?.id ?? null,
   };
 }
 
 /** Enforces valid JWT (from HttpOnly cookie or Bearer header) on protected endpoints. */
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
-  const token = extractJwt(req);
-  if (!token) {
+  const extracted = extractJwtWithSource(req);
+  if (!extracted) {
     res.status(401).json({
       success: false,
       error: 'Authentication required.',
@@ -52,7 +64,7 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
   }
 
   try {
-    const resolved = resolveActiveUser(token);
+    const resolved = resolveActiveUser(extracted.token);
     if (!resolved) {
       res.status(401).json({
         success: false,
@@ -61,23 +73,25 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
       return;
     }
     req.user = resolved;
+    req.authSource = extracted.source;
     next();
-  } catch (err: unknown) {
+  } catch {
     res.status(401).json({
       success: false,
-      error: err instanceof Error ? err.message : 'Invalid or expired authentication token.',
+      error: 'Invalid or expired authentication token.',
     });
   }
 }
 
 /** Attaches authenticated user when a valid session/Bearer token is present; allows guests otherwise. */
 export function optionalAuth(req: AuthenticatedRequest, _res: Response, next: NextFunction): void {
-  const token = extractJwt(req);
-  if (token) {
+  const extracted = extractJwtWithSource(req);
+  if (extracted) {
     try {
-      const resolved = resolveActiveUser(token);
+      const resolved = resolveActiveUser(extracted.token);
       if (resolved) {
         req.user = resolved;
+        req.authSource = extracted.source;
       }
     } catch {
       // Ignore invalid/expired token for optional auth routes

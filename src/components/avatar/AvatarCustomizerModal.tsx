@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { X, Sparkles, Check, User, Shirt, Glasses, Smile, ShieldAlert } from 'lucide-react';
 import { ClientAvatarProfile } from '../../types';
 import { AvatarRenderer } from './AvatarRenderer';
+import { useAccessibleDialog } from '../../hooks/useModalAccessibility';
 
 interface AvatarCustomizerModalProps {
   initialProfile: ClientAvatarProfile;
@@ -106,6 +107,9 @@ export const AvatarCustomizerModal: React.FC<AvatarCustomizerModalProps> = ({
   const [tab, setTab] = useState<'appearance' | 'clothing' | 'accessories' | 'identity'>('appearance');
   const [profile, setProfile] = useState<ClientAvatarProfile>({ ...initialProfile });
   const [isSaving, setIsSaving] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useAccessibleDialog(isOpen, onClose, dialogRef);
 
   if (!isOpen) return null;
 
@@ -120,8 +124,17 @@ export const AvatarCustomizerModal: React.FC<AvatarCustomizerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-sm animate-in fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="avatar-customizer-modal-title"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden focus:outline-hidden"
+      >
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/80">
           <div className="flex items-center space-x-3">
@@ -129,7 +142,7 @@ export const AvatarCustomizerModal: React.FC<AvatarCustomizerModalProps> = ({
               <User className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <h3 id="avatar-customizer-modal-title" className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 <span>Student Avatar Identity Studio</span>
                 <span className="text-xs bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full">
                   អត្តសញ្ញាណនិស្សិត
@@ -141,8 +154,10 @@ export const AvatarCustomizerModal: React.FC<AvatarCustomizerModalProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+            aria-label="Close avatar customizer"
+            className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>

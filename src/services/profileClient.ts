@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost, apiPut } from './apiClient';
+import { apiDelete, apiFetchRaw, apiGet, apiPost, apiPut } from './apiClient';
 import type { EducationEntry, StudentProfile } from './authClient';
 
 export interface PrivacyConsentState {
@@ -15,6 +15,13 @@ export interface PrivacyConsentState {
   consentDate: string;
   withdrawnAt?: string | null;
   blockedReasons?: string[];
+}
+
+export interface PrivacyErasureResult {
+  message: string;
+  erased: Record<string, number>;
+  totalRowsErased: number;
+  consent: PrivacyConsentState;
 }
 
 export const profileClient = {
@@ -69,5 +76,22 @@ export const profileClient = {
 
   async requestParentalVerification(parentEmail: string): Promise<PrivacyConsentState> {
     return apiPost<PrivacyConsentState>('/api/privacy/parent-verify', { parentEmail });
+  },
+
+  async requestErasure(): Promise<PrivacyErasureResult> {
+    const res = await apiFetchRaw<{
+      success: boolean;
+      message?: string;
+      erased?: Record<string, number>;
+      totalRowsErased?: number;
+      data: PrivacyConsentState;
+    }>('/api/privacy/erasure', { method: 'POST', body: JSON.stringify({}) });
+
+    return {
+      message: res.message || 'Optional activity, AI memory, and research records erased.',
+      erased: res.erased || {},
+      totalRowsErased: Number(res.totalRowsErased ?? 0),
+      consent: res.data,
+    };
   },
 };

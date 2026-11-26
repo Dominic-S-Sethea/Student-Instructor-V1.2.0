@@ -1,7 +1,17 @@
 import { Router, Response } from 'express';
 import { UserService } from '../services/userService';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
-import { safeErrorMessage } from '../utils/httpErrors';
+import { validate } from '../middleware/validationMiddleware';
+import {
+  UserEducationCreateSchema,
+  UserProfileUpdateSchema,
+  UserSettingsUpdateSchema,
+} from '../validators/apiSchemas';
+import { sendRouteError } from '../utils/httpErrors';
+import { parseOptionalPositiveInt } from '../utils/queryParams';
+import { notificationRepository } from '../repositories/notificationRepository';
+import { userSettingsService } from '../services/userSettingsService';
+import type { PartialUserSettings } from '../../shared/types/userSettings';
 
 const router = Router();
 const userService = new UserService();
@@ -12,17 +22,14 @@ router.get('/profile', authenticateToken, (req: AuthenticatedRequest, res: Respo
     const data = userService.getProfile(req.user!.userId);
     res.json({ success: true, data });
   } catch (err: unknown) {
-    res.status(500).json({
-      success: false,
-      error: safeErrorMessage(err, 'Failed to retrieve profile.', 500),
-    });
+    sendRouteError(res, err, 'Failed to retrieve profile.');
   }
 });
 
 /** PUT /api/users/profile — update authenticated user's own profile (never caller-supplied user_id). */
-router.put('/profile', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+router.put('/profile', authenticateToken, validate(UserProfileUpdateSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   try {
-    const body = (req.body || {}) as Record<string, unknown>;
+    const body = req.body as Record<string, unknown>;
     const updated = userService.updateProfile(req.user!.userId, {
       name: typeof body.name === 'string' ? body.name : undefined,
       date_of_birth: body.date_of_birth === null ? null : typeof body.date_of_birth === 'string' ? body.date_of_birth : undefined,
@@ -44,22 +51,14 @@ router.put('/profile', authenticateToken, (req: AuthenticatedRequest, res: Respo
     });
     res.json({ success: true, data: updated });
   } catch (err: unknown) {
-    res.status(400).json({
-      success: false,
-      error: err instanceof Error ? err.message : 'Failed to update profile.',
-    });
+    sendRouteError(res, err, 'Failed to update profile.');
   }
 });
 
 /** POST /api/users/education — add an education history milestone for authenticated user. */
-router.post('/education', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+router.post('/education', authenticateToken, validate(UserEducationCreateSchema, 'body'), (req: AuthenticatedRequest, res: Response): void => {
   try {
-    const { institution, degree, start_date, end_date, achievements } = req.body || {};
-    if (!institution || !degree) {
-      res.status(400).json({ success: false, error: 'Institution and degree are required.' });
-      return;
-    }
-
+    const { institution, degree, start_date, end_date, achievements } = req.body;
     const record = userService.addEducation(req.user!.userId, {
       institution: String(institution),
       degree: String(degree),
@@ -70,10 +69,7 @@ router.post('/education', authenticateToken, (req: AuthenticatedRequest, res: Re
 
     res.status(201).json({ success: true, data: record });
   } catch (err: unknown) {
-    res.status(400).json({
-      success: false,
-      error: err instanceof Error ? err.message : 'Failed to add education record.',
-    });
+    sendRouteError(res, err, 'Failed to add education record.');
   }
 });
 
@@ -85,6 +81,82 @@ router.delete('/education/:id', authenticateToken, (req: AuthenticatedRequest, r
     return;
   }
   res.json({ success: true });
+});
+
+/** GET /api/users/notifications — list authenticated user's persisted notifications. */
+router.get('/notifications', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  try {
+    const limit = parseOptionalPositiveInt(req.query.limit, 'limit', 30, 50);
+    const notifications = notificationRepository.listByUser(req.user!.userId, limit);
+    const unreadCount = notificationRepository.getUnreadCount(req.user!.userId);
+    res.json({ success: true, data: { notifications, unreadCount } });
+  } catch (err: unknown) {
+    sendRouteError(res, err, 'Failed to load notifications.');
+  }
+});
+
+/** PATCH /api/users/notifications/:id/read — mark one owned notification as read. */
+router.patch('/notifications/:id/read', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  const updated = notificationRepository.markRead(req.user!.userId, req.params.id);
+  if (!updated) {
+    res.status(404).json({ success: false, error: 'Notification not found.' });
+    return;
+  }
+  res.json({ success: true, unreadCount: notificationRepository.getUnreadCount(req.user!.userId) });
+});
+
+/** POST /api/users/notifications/read-all — mark all notifications read for authenticated user. */
+router.post('/notifications/read-all', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  const marked = notificationRepository.markAllRead(req.user!.userId);
+  res.json({ success: true, marked, unreadCount: 0 });
+});
+
+/** DELETE /api/users/notifications/:id — delete one owned notification. */
+router.delete('/notifications/:id', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  const removed = notificationRepository.remove(req.user!.userId, req.params.id);
+  if (!removed) {
+    res.status(404).json({ success: false, error: 'Notification not found.' });
+    return;
+  }
+  res.json({ success: true, unreadCount: notificationRepository.getUnreadCount(req.user!.userId) });
+});
+
+/** GET /api/users/settings — load authenticated user's persisted platform settings. */
+router.get('/settings', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  try {
+    const data = userSettingsService.getSettings(req.user!.userId);
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    sendRouteError(res, err, 'Failed to retrieve user settings.');
+  }
+});
+
+/** PUT /api/users/settings — merge validated partial preferences into authenticated user's settings. */
+router.put(
+  '/settings',
+  authenticateToken,
+  validate(UserSettingsUpdateSchema, 'body'),
+  (req: AuthenticatedRequest, res: Response): void => {
+    try {
+      const data = userSettingsService.updateSettings(
+        req.user!.userId,
+        req.body as PartialUserSettings,
+      );
+      res.json({ success: true, data });
+    } catch (err: unknown) {
+      sendRouteError(res, err, 'Failed to update user settings.');
+    }
+  },
+);
+
+/** DELETE /api/users/settings — reset authenticated user's platform settings to defaults. */
+router.delete('/settings', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  try {
+    const data = userSettingsService.resetSettings(req.user!.userId);
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    sendRouteError(res, err, 'Failed to reset user settings.');
+  }
 });
 
 export default router;

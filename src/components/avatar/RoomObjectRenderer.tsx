@@ -19,7 +19,7 @@ export const RoomObjectRenderer: React.FC<RoomObjectRendererProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`relative cursor-pointer transition-all duration-200 group select-none ${
+      className={`relative cursor-pointer transition-all duration-200 group ${
         isSelected ? 'ring-2 ring-blue-500 ring-offset-2 rounded-xl scale-105' : 'hover:scale-105'
       } ${className}`}
       title={`${item.name} (${item.category})`}

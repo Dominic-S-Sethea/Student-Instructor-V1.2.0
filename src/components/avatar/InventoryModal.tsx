@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { X, Package, Sparkles, Check, Plus, BookOpen, Layers } from 'lucide-react';
 import { ClientStudentInventoryItem, ClientAvatarItem } from '../../types';
 import { RoomObjectRenderer } from './RoomObjectRenderer';
+import { useAccessibleDialog } from '../../hooks/useModalAccessibility';
 
 interface InventoryModalProps {
   isOpen: boolean;
@@ -25,6 +26,9 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
   const [activeTab, setActiveTab] = useState<'owned' | 'catalog'>('owned');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [placingId, setPlacingId] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useAccessibleDialog(isOpen, onClose, dialogRef);
 
   if (!isOpen) return null;
 
@@ -50,8 +54,17 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-sm animate-in fade-in"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="inventory-modal-title"
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden focus:outline-hidden"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
           <div className="flex items-center space-x-3">
@@ -59,7 +72,7 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
               <Package className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <h3 id="inventory-modal-title" className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 <span>Learning Gear & Room Inventory</span>
                 <span className="text-xs bg-amber-100 text-amber-800 font-semibold px-2 py-0.5 rounded-full">
                   សារពើភ័ណ្ឌ
@@ -71,8 +84,10 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+            aria-label="Close inventory"
+            className="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
