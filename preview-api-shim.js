@@ -380,7 +380,7 @@
         recommendations: {
           topMajor: 'Computer Science & Artificial Intelligence',
           alternativeMajor: 'Data Science & Digital Engineering',
-          fitReason: `Based on your selected interests (${interests || 'Technology & Engineering'}), math strength (${body.mathAbility || 'Solid'}), work style (${body.workStyle || 'Collaborative'}), and goal (${body.careerGoal || 'Tech Leadership'}), CADT and ITC offer strong curriculum-to-career alignment in Cambodia.`,
+          fitReason: `Based on your selected interests (${interests || 'Technology & Engineering'}), math comfort (${String(body.mathAbility || 'solid').replace(/_/g, ' ')}), work style (${String(body.workStyle || 'collaborative').replace(/_/g, ' ')}), and goal (${String(body.careerGoal || 'tech leadership').replace(/_/g, ' ')}), CADT and ITC offer strong curriculum-to-career alignment in Cambodia.`,
           recommendedUniversities: topUnivs,
           roiAnalysis: {
             isEstimate: true,
