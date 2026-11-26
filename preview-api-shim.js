@@ -324,6 +324,28 @@
       saveState(st);
       return jsonRes({ success: true, data: c });
     }
+    // User Settings (per-user static preview persistence)
+    if (path === '/api/users/settings') {
+      if (!uid) return jsonRes({ success: false, error: 'Unauthorized' }, 401);
+      st.settings = st.settings || {};
+      if (method === 'GET') {
+        const cur = st.settings[uid] || {};
+        return jsonRes({ success: true, data: { settings: cur, updatedAt: cur.__updatedAt || null } });
+      }
+      if (method === 'PUT') {
+        const prev = st.settings[uid] || {};
+        const merged = { ...prev, ...(body || {}), __updatedAt: new Date().toISOString() };
+        st.settings[uid] = merged;
+        saveState(st);
+        return jsonRes({ success: true, data: { settings: merged, updatedAt: merged.__updatedAt } });
+      }
+      if (method === 'DELETE') {
+        delete st.settings[uid];
+        saveState(st);
+        return jsonRes({ success: true, data: { settings: {}, updatedAt: null } });
+      }
+    }
+
     if (path === '/api/privacy/erasure' && method === 'POST') {
       if (!uid) return jsonRes({ success: false, error: 'Unauthorized' }, 401);
       const count = Object.keys(st.saved[uid] || {}).length + (st.notifications[uid] || []).length;
