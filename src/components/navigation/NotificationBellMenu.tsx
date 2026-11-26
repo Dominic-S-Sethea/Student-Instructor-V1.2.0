@@ -8,6 +8,8 @@ interface NotificationBellMenuProps {
   onMarkRead?: (id: string) => void;
   onMarkAllRead?: () => void;
   onNavigateTab: (tab: TabView) => void;
+  placement?: 'top-nav' | 'sidebar';
+  compact?: boolean;
 }
 
 const VALID_TABS = new Set<string>([
@@ -40,6 +42,8 @@ export const NotificationBellMenu: React.FC<NotificationBellMenuProps> = ({
   onMarkRead,
   onMarkAllRead,
   onNavigateTab,
+  placement = 'top-nav',
+  compact = false,
 }) => {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -60,6 +64,13 @@ export const NotificationBellMenu: React.FC<NotificationBellMenuProps> = ({
     };
   }, []);
 
+  const dropdownPosition =
+    placement === 'sidebar'
+      ? compact
+        ? 'left-full bottom-0 ml-2'
+        : 'left-0 bottom-full mb-2'
+      : 'right-0 mt-2';
+
   return (
     <div className="relative" ref={menuRef}>
       <button
@@ -68,7 +79,10 @@ export const NotificationBellMenu: React.FC<NotificationBellMenuProps> = ({
         onClick={() => setOpen((prev) => !prev)}
         aria-label={isKhmer ? 'ការជូនដំណឹង' : 'Notifications'}
         aria-expanded={open}
-        className="relative p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+        title={isKhmer ? 'ការជូនដំណឹង' : 'Notifications'}
+        className={`relative ${
+          compact ? 'w-10 h-10 flex items-center justify-center' : 'p-2'
+        } rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer`}
       >
         <Bell className="w-4 h-4" />
         {unreadCount > 0 && (
@@ -81,7 +95,7 @@ export const NotificationBellMenu: React.FC<NotificationBellMenuProps> = ({
       {open && (
         <div
           id="notifications-dropdown"
-          className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl z-50 overflow-hidden"
+          className={`absolute ${dropdownPosition} w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl z-50 overflow-hidden`}
         >
           <div className="px-3.5 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
             <span className="text-xs font-extrabold text-slate-900 dark:text-slate-100">

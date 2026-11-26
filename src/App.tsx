@@ -6,11 +6,13 @@
 import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { AppTabRouter } from './components/AppTabRouter';
+import { AppFooter } from './components/navigation/AppFooter';
 import { ADMIN_ONLY_TABS } from './components/navigation/navConfig';
 import { readTabFromHash, VALID_TABS, writeTabHash } from './utils/tabHashRouting';
 import { topCambodianUniversities } from './data/universityIntelligenceData';
 import { universityClient } from './services/universityClient';
 import { usePersistedNotifications } from './hooks/usePersistedNotifications';
+import { useSidebarShellState } from './hooks/useSidebarShellState';
 import { mergeLiveUniversities } from './utils/mergeUniversities';
 import { buildSessionStudentProfile } from './utils/appSessionProfile';
 import { LanguageProvider } from './context/LanguageContext';
@@ -128,6 +130,12 @@ function AppContent() {
     writeTabHash(destination);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [isAdmin]);
+
+  const { sidebarCollapsed, toggleSidebarCollapsed, navCommand, handleSelectSubAction } = useSidebarShellState(
+    handleNavigateTab,
+    setRoiModalUnivId,
+    universities[0]?.id || 'univ-cadt'
+  );
 
   const handleGoBack = useCallback(() => {
     setTabHistory((history) => {
@@ -267,6 +275,9 @@ function AppContent() {
         activeTab={activeTab}
         onSelectTab={handleNavigateTab}
         onTabChange={handleNavigateTab}
+        onSelectSubAction={handleSelectSubAction}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebarCollapsed={toggleSidebarCollapsed}
         notifications={notifications}
         onMarkNotificationRead={handleMarkNotificationRead}
         onClearAllNotifications={handleClearAllNotifications}
@@ -280,64 +291,76 @@ function AppContent() {
         onGoBack={handleGoBack}
       />
 
-      <AppTabRouter
-        activeTab={activeTab}
-        sessionKey={sessionKey}
-        authenticated={authenticated}
-        userId={user?.id}
-        isAdmin={isAdmin}
-        canGoBack={tabHistory.length > 0}
-        studentProfile={studentProfile}
-        mentors={mentors}
-        meetups={meetups}
-        majorInsights={majorInsights}
-        opportunities={opportunities}
-        universities={universities}
-        universitiesLoading={universitiesLoading}
-        universitiesError={universitiesError}
-        advisorPrefillPrompt={advisorPrefillPrompt}
-        selectedUniversityId={selectedUniversityId}
-        onConsumeAdvisorPrompt={() => setAdvisorPrefillPrompt('')}
-        onConsumeUniversitySelection={() => setSelectedUniversityId(null)}
-        onSelectUniversityDetails={(u) => {
-          setSelectedUniversityId(u.id);
-          handleNavigateTab('university-intelligence');
-        }}
-        onRetryUniversities={loadLiveUniversities}
-        onNavigateTab={handleNavigateTab}
-        onGoBack={handleGoBack}
-        onStartAdvisorPrompt={handleStartAdvisorPrompt}
-        onAskAIAboutMajor={handleAskAIAboutMajor}
-        onOpenBooking={setBookingMentor}
-        onCancelBooking={(bookingId) =>
-          setStudentProfile((prev) => ({
-            ...prev,
-            scheduledSessions: prev.scheduledSessions.filter((s) => s.id !== bookingId),
-          }))
-        }
-        onToggleSaveMentor={(mentorId) =>
-          setStudentProfile((prev) => ({
-            ...prev,
-            savedMentorIds: prev.savedMentorIds.includes(mentorId)
-              ? prev.savedMentorIds.filter((id) => id !== mentorId)
-              : [...prev.savedMentorIds, mentorId],
-          }))
-        }
-        onToggleSaveOpportunity={(oppId) =>
-          setStudentProfile((prev) => ({
-            ...prev,
-            savedOpportunityIds: prev.savedOpportunityIds.includes(oppId)
-              ? prev.savedOpportunityIds.filter((id) => id !== oppId)
-              : [...prev.savedOpportunityIds, oppId],
-          }))
-        }
-        onToggleJoinMeetup={handleToggleJoinMeetup}
-        onHostMeetup={handleHostMeetup}
-        onAddChatMessage={handleAddChatMessage}
-        onUpdateInterests={(interests) => setStudentProfile((prev) => ({ ...prev, interests }))}
-        onOpenROI={(id) => setRoiModalUnivId(id)}
-        onOpenAuthModal={() => setAuthModalOpen(true)}
-      />
+      <div
+        className={`flex-1 flex flex-col min-w-0 transition-[padding] duration-200 ease-out ${
+          sidebarCollapsed ? 'lg:pl-[76px]' : 'lg:pl-[272px]'
+        }`}
+      >
+        <AppTabRouter
+          activeTab={activeTab}
+          navCommand={navCommand}
+          sessionKey={sessionKey}
+          authenticated={authenticated}
+          userId={user?.id}
+          isAdmin={isAdmin}
+          canGoBack={tabHistory.length > 0}
+          studentProfile={studentProfile}
+          mentors={mentors}
+          meetups={meetups}
+          majorInsights={majorInsights}
+          opportunities={opportunities}
+          universities={universities}
+          universitiesLoading={universitiesLoading}
+          universitiesError={universitiesError}
+          advisorPrefillPrompt={advisorPrefillPrompt}
+          selectedUniversityId={selectedUniversityId}
+          onConsumeAdvisorPrompt={() => setAdvisorPrefillPrompt('')}
+          onConsumeUniversitySelection={() => setSelectedUniversityId(null)}
+          onSelectUniversityDetails={(u) => {
+            setSelectedUniversityId(u.id);
+            handleNavigateTab('university-intelligence');
+          }}
+          onRetryUniversities={loadLiveUniversities}
+          onNavigateTab={handleNavigateTab}
+          onGoBack={handleGoBack}
+          onStartAdvisorPrompt={handleStartAdvisorPrompt}
+          onAskAIAboutMajor={handleAskAIAboutMajor}
+          onOpenBooking={setBookingMentor}
+          onCancelBooking={(bookingId) =>
+            setStudentProfile((prev) => ({
+              ...prev,
+              scheduledSessions: prev.scheduledSessions.filter((s) => s.id !== bookingId),
+            }))
+          }
+          onToggleSaveMentor={(mentorId) =>
+            setStudentProfile((prev) => ({
+              ...prev,
+              savedMentorIds: prev.savedMentorIds.includes(mentorId)
+                ? prev.savedMentorIds.filter((id) => id !== mentorId)
+                : [...prev.savedMentorIds, mentorId],
+            }))
+          }
+          onToggleSaveOpportunity={(oppId) =>
+            setStudentProfile((prev) => ({
+              ...prev,
+              savedOpportunityIds: prev.savedOpportunityIds.includes(oppId)
+                ? prev.savedOpportunityIds.filter((id) => id !== oppId)
+                : [...prev.savedOpportunityIds, oppId],
+            }))
+          }
+          onToggleJoinMeetup={handleToggleJoinMeetup}
+          onHostMeetup={handleHostMeetup}
+          onAddChatMessage={handleAddChatMessage}
+          onUpdateInterests={(interests) => setStudentProfile((prev) => ({ ...prev, interests }))}
+          onOpenROI={(id) => setRoiModalUnivId(id)}
+          onOpenAuthModal={() => setAuthModalOpen(true)}
+        />
+
+        <AppFooter
+          onOpenPatchNotes={() => setIsPatchNotesOpen(true)}
+          onNavigateTab={handleNavigateTab}
+        />
+      </div>
 
       {authModalOpen && <AuthModal onClose={() => setAuthModalOpen(false)} />}
 
@@ -353,27 +376,6 @@ function AppContent() {
           <PatchNotesModal isOpen={isPatchNotesOpen} onClose={() => setIsPatchNotesOpen(false)} onNavigateToScholarships={() => handleNavigateTab('scholarships')} />
         )}
       </Suspense>
-
-      <footer className="mt-auto border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-6 pb-24 lg:pb-6">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 dark:text-slate-400">
-          <div className="flex items-center flex-wrap gap-2">
-            <span className="font-bold text-slate-900 dark:text-slate-100">Student Instructor</span>
-            <span>•</span>
-            <button type="button" onClick={() => setIsPatchNotesOpen(true)} className="font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer">
-              Release Notes
-            </button>
-            <span>•</span>
-            <span>Scholarships, University Guides &amp; Student Mentorship</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <span>ITC • CADT • RUPP • UHS Curricula Grounded</span>
-            <span>•</span>
-            <button type="button" onClick={() => handleNavigateTab('dashboard')} className="text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer">
-              Student Home
-            </button>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }

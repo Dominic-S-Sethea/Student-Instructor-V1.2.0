@@ -163,7 +163,9 @@ export const StudentProfileView: React.FC<StudentProfileViewProps> = ({
       </div>
 
       {/* Persistent Private Education Profile & Consent Panel */}
-      <StudentEducationAndPrivacyPanel />
+      <div id="profile-education-privacy" className="scroll-mt-6">
+        <StudentEducationAndPrivacyPanel />
+      </div>
 
       {/* Saved Scholarships Snapshot */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">

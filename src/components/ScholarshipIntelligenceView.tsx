@@ -49,13 +49,27 @@ import { TopUniversityDirectory } from './topUniversities/TopUniversityDirectory
 import { allTopUniversityPrograms } from '../data/topUniversities';
 import { useSavedScholarships } from '../hooks/useSavedScholarships';
 
-export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => void }> = ({ onOpenAuthModal }) => {
+interface ScholarshipIntelligenceViewProps {
+  onOpenAuthModal?: () => void;
+  externalDirectoryView?: 'top_universities' | 'flagship';
+  externalViewNonce?: number;
+  openSavedNonce?: number;
+}
+
+export const ScholarshipIntelligenceView: React.FC<ScholarshipIntelligenceViewProps> = ({
+  onOpenAuthModal,
+  externalDirectoryView,
+  externalViewNonce,
+  openSavedNonce,
+}) => {
   const { language, t } = useLanguage();
   const { authenticated, user, profile: authProfile, logout } = useAuth();
   const isKhmer = language === 'km';
 
   // Directory View Mode
-  const [directoryView, setDirectoryView] = useState<'top_universities' | 'flagship'>('flagship');
+  const [directoryView, setDirectoryView] = useState<'top_universities' | 'flagship'>(
+    externalDirectoryView || 'flagship'
+  );
 
   // Data state
   const [scholarships, setScholarships] = useState<ScholarshipItem[]>(initialScholarships);
@@ -100,6 +114,18 @@ export const ScholarshipIntelligenceView: React.FC<{ onOpenAuthModal?: () => voi
   const [isSavedDrawerOpen, setIsSavedDrawerOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [showFiltersMobile, setShowFiltersMobile] = useState(false);
+
+  useEffect(() => {
+    if (externalDirectoryView && externalViewNonce) {
+      setDirectoryView(externalDirectoryView);
+    }
+  }, [externalDirectoryView, externalViewNonce]);
+
+  useEffect(() => {
+    if (openSavedNonce) {
+      setIsSavedDrawerOpen(true);
+    }
+  }, [openSavedNonce]);
 
   // Fetch from API with AbortController + recoverable error state
   const fetchScholarships = async (signal?: AbortSignal): Promise<void> => {

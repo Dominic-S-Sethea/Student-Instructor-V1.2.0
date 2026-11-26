@@ -102,11 +102,26 @@ def main() -> int:
             page.on("pageerror", lambda err: page_errors.append(str(err)))
 
             page.goto(base_url, wait_until="networkidle")
-            page.wait_for_selector("header", timeout=15000)
+            page.wait_for_selector("#left-sidebar-nav", timeout=15000)
+            sidebar = page.locator("#left-sidebar-nav")
             body_text = page.inner_text("body")
             assert "Research Lab" not in body_text, "Admin-only Research Lab must be hidden from guest"
             assert "Platform Architecture" not in body_text, "Admin-only Platform Architecture must be hidden from guest"
+            # Verify Home Master Header dropdown reveals expected sub-headers
+            assert "Explore Verified Scholarships" in sidebar.inner_text()
+            assert "2-Minute Major Fit Quiz" in sidebar.inner_text()
             checks_passed.append("guest_home_loaded_admin_hidden")
+
+            # Verify sidebar collapse-to-icons toggle and expand
+            expanded_box = sidebar.bounding_box()
+            assert expanded_box and expanded_box["width"] >= 240, f"Expected expanded sidebar, got {expanded_box}"
+            page.locator("#sidebar-collapse-btn").click()
+            page.wait_for_timeout(300)
+            collapsed_box = sidebar.bounding_box()
+            assert collapsed_box and collapsed_box["width"] <= 90, f"Expected collapsed icon rail, got {collapsed_box}"
+            page.locator("#sidebar-collapse-btn").click()
+            page.wait_for_timeout(300)
+            checks_passed.append("left_sidebar_collapse_expand")
 
             # Theme toggle (Light -> Dark -> Light)
             theme_btn = page.locator("#theme-toggle-btn")
@@ -122,30 +137,35 @@ def main() -> int:
             page.locator("#language-selector-btn").click()
             page.get_by_role("button", name="ភាសាខ្មែរ").click()
             page.wait_for_function("() => document.documentElement.lang === 'km'")
-            assert "អាហារូបករណ៍" in page.inner_text("header")
+            assert "អាហារូបករណ៍" in sidebar.inner_text()
             page.locator("#language-selector-btn").click()
             page.get_by_role("button", name="English").click()
             page.wait_for_function("() => document.documentElement.lang === 'en'")
             checks_passed.append("bilingual_en_km_toggle")
 
-            # Scholarships view + bookmark as guest
-            page.locator("header").get_by_role("button", name="Scholarships").click()
+            # Scholarships Master Header + sub-header deep navigation + bookmark as guest
+            sidebar.get_by_role("button", name="Scholarships", exact=True).click()
             page.wait_for_selector("#scholarship-intelligence-view", timeout=10000)
             page.wait_for_selector("button[aria-label='Bookmark scholarship']", timeout=10000)
             page.locator("button[aria-label='Bookmark scholarship']").first.click()
             page.wait_for_selector("button[aria-label='Remove bookmark']", timeout=5000)
+            # Sub-header switches directly to Top 100 Global Aid
+            sidebar.get_by_role("button", name="Top 100 Global Aid").click()
+            page.wait_for_timeout(500)
+            assert page.locator('img[src*="/crests/"]').count() > 0, "Top 100 Global Aid sub-header must open crests directory"
             checks_passed.append("guest_scholarship_catalog_and_bookmark")
 
-            # Universities view hydrated from live SQLite
-            page.locator("header").get_by_role("button", name="Universities").click()
+            # Universities Master Header hydrated from live SQLite
+            sidebar.get_by_role("button", name="Universities", exact=True).click()
             page.wait_for_timeout(600)
             uni_text = page.inner_text("main")
             assert "CADT" in uni_text or "ITC" in uni_text or "RUPP" in uni_text
             checks_passed.append("universities_live_hydration")
 
-            # 2-Minute Major Fit Quiz via Explore dropdown
-            page.locator("header").get_by_role("button", name="Explore").click()
-            page.locator("header").get_by_role("button", name="2-Min Major Fit Quiz").first.click()
+            # 2-Minute Major Fit Quiz via Home Master Header dropdown
+            sidebar.get_by_role("button", name="Home", exact=True).click()
+            page.wait_for_timeout(250)
+            sidebar.get_by_role("button", name="2-Minute Major Fit Quiz").click()
             page.wait_for_timeout(400)
             for _ in range(5):
                 next_btn = page.locator("main button").filter(has_text="Next").or_(
@@ -163,7 +183,7 @@ def main() -> int:
             checks_passed.append("decision_quiz_completed")
 
             # Register Student A -> verify guest bookmark syncs + welcome notification bell + Study Advisor offline chat
-            page.locator("header").get_by_role("button", name="Sign In").click()
+            sidebar.get_by_role("button", name="Sign In").click()
             page.get_by_role("dialog").get_by_role("button", name="Register").click()
             page.fill("#auth-name", "Sokha E2E Alpha")
             page.fill("#auth-email", "sokha.e2e@cdes.test")
@@ -181,7 +201,7 @@ def main() -> int:
             checks_passed.append("student_a_persisted_notification_bell")
 
             # Verify guest bookmark merged into Student A SQLite saved drawer
-            page.locator("header").get_by_role("button", name="Scholarships").click()
+            sidebar.get_by_role("button", name="Scholarships", exact=True).click()
             page.wait_for_selector("#scholarship-intelligence-view", timeout=10000)
             page.wait_for_timeout(600)
             page.locator("#open-saved-scholarships").click()
@@ -193,7 +213,7 @@ def main() -> int:
             checks_passed.append("student_a_guest_bookmark_synced_to_sqlite")
 
             # Study Advisor deterministic offline chat
-            page.locator("header").get_by_role("button", name="Study Advisor").click()
+            sidebar.get_by_role("button", name="Study Advisor", exact=True).click()
             advisor_input = page.get_by_label("Ask the Study Advisor")
             advisor_input.fill("Compare Computer Science at CADT vs ITC")
             page.locator("form button[type='submit']").click()
@@ -203,7 +223,7 @@ def main() -> int:
             checks_passed.append("student_a_study_advisor_offline_reply")
 
             # My Profile & Privacy Center (optional tracking OFF by default)
-            page.locator("header").get_by_role("button", name="My Profile").click()
+            sidebar.get_by_role("button", name="My Profile", exact=True).click()
             page.wait_for_timeout(600)
             prof_text = page.inner_text("main")
             assert "Sokha E2E Alpha" in prof_text
@@ -220,7 +240,8 @@ def main() -> int:
             page_b.on("pageerror", lambda err: page_errors.append(str(err)))
 
             page_b.goto(base_url, wait_until="networkidle")
-            page_b.locator("header").get_by_role("button", name="Sign In").click()
+            sidebar_b = page_b.locator("#left-sidebar-nav")
+            sidebar_b.get_by_role("button", name="Sign In").click()
             page_b.get_by_role("dialog").get_by_role("button", name="Register").click()
             page_b.fill("#auth-name", "Dara E2E Beta")
             page_b.fill("#auth-email", "dara.e2e@cdes.test")
@@ -228,7 +249,7 @@ def main() -> int:
             page_b.get_by_role("dialog").get_by_role("button", name="Create Account").click()
             page_b.wait_for_selector("#notifications-bell-btn", timeout=10000)
 
-            page_b.locator("header").get_by_role("button", name="My Profile").click()
+            sidebar_b.get_by_role("button", name="My Profile", exact=True).click()
             page_b.wait_for_timeout(600)
             prof_b_text = page_b.inner_text("main")
             assert "Dara E2E Beta" in prof_b_text

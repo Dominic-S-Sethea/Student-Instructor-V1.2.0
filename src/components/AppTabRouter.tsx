@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { ErrorBoundary } from './ErrorBoundary';
 import { StudentDashboard } from './StudentDashboard';
+import type { NavSubCommand } from '../hooks/useSidebarShellState';
 import type {
   ComprehensiveUniversityProfile,
   Mentor,
@@ -30,6 +31,7 @@ const EducationDataPlatformView = lazy(() => import('./data-strategy/EducationDa
 
 export interface AppTabRouterProps {
   activeTab: TabView;
+  navCommand?: NavSubCommand | null;
   sessionKey: string;
   authenticated: boolean;
   userId?: string;
@@ -66,7 +68,24 @@ export interface AppTabRouterProps {
 }
 
 export const AppTabRouter: React.FC<AppTabRouterProps> = (props) => {
-  const { activeTab, sessionKey, isAdmin, studentProfile, mentors, meetups, majorInsights, opportunities, universities } = props;
+  const { activeTab, navCommand, sessionKey, isAdmin, studentProfile, mentors, meetups, majorInsights, opportunities, universities } = props;
+
+  const schViewCmd =
+    navCommand?.action.type === 'scholarship-view' && navCommand.action.view !== 'saved'
+      ? { view: navCommand.action.view, nonce: navCommand.nonce }
+      : undefined;
+  const schSavedNonce =
+    navCommand?.action.type === 'scholarship-view' && navCommand.action.view === 'saved'
+      ? navCommand.nonce
+      : undefined;
+  const uniSubCmd =
+    navCommand?.action.type === 'university-view' && navCommand.action.subTab !== 'roi'
+      ? { subTab: navCommand.action.subTab, nonce: navCommand.nonce }
+      : undefined;
+  const advSubCmd =
+    navCommand?.action.type === 'advisor-view'
+      ? { subTab: navCommand.action.subTab, nonce: navCommand.nonce }
+      : undefined;
 
   return (
     <main id="main-content" tabIndex={-1} className="flex-1 w-full mx-auto pb-20 lg:pb-0 focus:outline-hidden">
@@ -112,6 +131,8 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = (props) => {
                 onConsumeInitialPrompt={props.onConsumeAdvisorPrompt}
                 onOpenBooking={props.onOpenBooking}
                 onNavigateTab={(tab) => props.onNavigateTab(tab as TabView)}
+                externalSubTab={advSubCmd?.subTab}
+                externalSubTabNonce={advSubCmd?.nonce}
               />
             </div>
           )}
@@ -204,11 +225,19 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = (props) => {
               isLoadingLive={props.universitiesLoading}
               liveError={props.universitiesError}
               onRetryLive={props.onRetryUniversities}
+              externalSubTab={uniSubCmd?.subTab}
+              externalSubTabNonce={uniSubCmd?.nonce}
             />
           )}
 
           {activeTab === 'scholarships' && (
-            <ScholarshipIntelligenceView key={sessionKey} onOpenAuthModal={props.onOpenAuthModal} />
+            <ScholarshipIntelligenceView
+              key={sessionKey}
+              onOpenAuthModal={props.onOpenAuthModal}
+              externalDirectoryView={schViewCmd?.view}
+              externalViewNonce={schViewCmd?.nonce}
+              openSavedNonce={schSavedNonce}
+            />
           )}
 
           {isAdmin && activeTab === 'research-lab' && <ResearchLaboratoryView />}

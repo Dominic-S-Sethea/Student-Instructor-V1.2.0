@@ -26,6 +26,8 @@ interface AIAdvisorProps {
   onConsumeInitialPrompt?: () => void;
   onOpenBooking: (mentor: Mentor) => void;
   onNavigateTab?: (tab: string) => void;
+  externalSubTab?: AIAdvisorSubTab;
+  externalSubTabNonce?: number;
 }
 
 const STARTER_CHIPS_EN = [
@@ -51,6 +53,8 @@ export const AIAdvisor: React.FC<AIAdvisorProps> = ({
   onConsumeInitialPrompt,
   onOpenBooking,
   onNavigateTab,
+  externalSubTab,
+  externalSubTabNonce,
 }) => {
   const { authenticated, user, profile: authProfile } = useAuth();
   const { language } = useLanguage();
@@ -61,13 +65,19 @@ export const AIAdvisor: React.FC<AIAdvisorProps> = ({
     ? authProfile?.name || user?.email?.split('@')[0] || (isKhmer ? 'សិស្ស' : 'Scholar')
     : isKhmer ? 'អ្នក' : 'there';
 
-  const [activeSubTab, setActiveSubTab] = useState<AIAdvisorSubTab>('chat');
+  const [activeSubTab, setActiveSubTab] = useState<AIAdvisorSubTab>(externalSubTab || 'chat');
   const [showAdvancedTools, setShowAdvancedTools] = useState(false);
   const [advisorMode, setAdvisorMode] = useState<'ready' | 'live' | 'offline'>('ready');
   const [expandedSourcesMsgId, setExpandedSourcesMsgId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (externalSubTab && externalSubTabNonce) {
+      setActiveSubTab(externalSubTab);
+    }
+  }, [externalSubTab, externalSubTabNonce]);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {

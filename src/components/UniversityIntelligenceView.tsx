@@ -30,6 +30,8 @@ interface Props {
   isLoadingLive?: boolean;
   liveError?: string | null;
   onRetryLive?: () => void;
+  externalSubTab?: 'profiles' | 'compare';
+  externalSubTabNonce?: number;
 }
 
 export const UniversityIntelligenceView: React.FC<Props> = ({
@@ -40,13 +42,23 @@ export const UniversityIntelligenceView: React.FC<Props> = ({
   onStartAIChatWithPrompt,
   liveError,
   onRetryLive,
+  externalSubTab,
+  externalSubTabNonce,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'profiles' | 'compare' | 'roi'>('profiles');
+  const [activeSubTab, setActiveSubTab] = useState<'profiles' | 'compare' | 'roi'>(
+    externalSubTab || 'profiles'
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<UniversityTypeFilter>('all');
   const [onlyScholarships, setOnlyScholarships] = useState(false);
   const [selectedUniForModal, setSelectedUniForModal] = useState<ComprehensiveUniversityProfile | null>(null);
   const [roiModalUnivId, setRoiModalUnivId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (externalSubTab && externalSubTabNonce) {
+      setActiveSubTab(externalSubTab);
+    }
+  }, [externalSubTab, externalSubTabNonce]);
 
   const { t } = useLanguage();
   const subtabScroll = useDraggableScroll<HTMLDivElement>();
