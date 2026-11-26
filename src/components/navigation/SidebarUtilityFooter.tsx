@@ -50,6 +50,9 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
   const displayName = authProfile?.name || user?.email?.split('@')[0] || 'Account';
   const initials = displayName.slice(0, 2).toUpperCase();
 
+  const focusRing =
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900';
+
   return (
     <div className="border-t border-slate-200 dark:border-slate-800 p-3 space-y-2.5 bg-slate-50/70 dark:bg-slate-900/95 shrink-0">
       {/* Row 1: Theme Toggle, Language Selector, Notifications */}
@@ -66,7 +69,7 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
           title={isDark ? 'Light Study Mode' : 'Dark Study Mode'}
           className={`inline-flex items-center justify-center gap-1.5 ${
             collapsed ? 'w-10 h-10 p-0' : 'px-2.5 py-2'
-          } rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold transition-colors cursor-pointer shrink-0`}
+          } rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold transition-colors cursor-pointer shrink-0 ${focusRing}`}
         >
           {isDark ? (
             <Sun className="w-4 h-4 text-amber-400 shrink-0" />
@@ -102,7 +105,7 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
             title={displayName}
             className={`w-full flex items-center ${
               collapsed ? 'justify-center p-1.5' : 'justify-between gap-2 px-2.5 py-2'
-            } rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer`}
+            } rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer ${focusRing}`}
           >
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-7 h-7 rounded-lg bg-blue-600 text-white text-xs font-extrabold flex items-center justify-center shrink-0">
@@ -148,7 +151,7 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
                   setAccountOpen(false);
                   onNavigateTab('profile');
                 }}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer ${focusRing}`}
               >
                 <User className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 <span>{isKhmer ? 'ប្រវត្តិរូបខ្ញុំ' : 'My Profile & Privacy'}</span>
@@ -159,7 +162,7 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
                   setAccountOpen(false);
                   void logout();
                 }}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer ${focusRing}`}
               >
                 <LogOut className="w-4 h-4" />
                 <span>{isKhmer ? 'ចាកចេញ' : 'Sign Out'}</span>
@@ -176,7 +179,7 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
             title={isKhmer ? 'ចូលគណនី' : 'Sign In'}
             className={`w-full inline-flex items-center justify-center gap-1.5 ${
               collapsed ? 'h-10 px-0' : 'px-3.5 py-2.5'
-            } rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer`}
+            } rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer ${focusRing}`}
           >
             <LogIn className="w-4 h-4 shrink-0" />
             {!collapsed && <span>{isKhmer ? 'ចូលគណនី' : 'Sign In'}</span>}

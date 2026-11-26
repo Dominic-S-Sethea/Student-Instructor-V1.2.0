@@ -82,7 +82,7 @@ export const NotificationBellMenu: React.FC<NotificationBellMenuProps> = ({
         title={isKhmer ? 'ការជូនដំណឹង' : 'Notifications'}
         className={`relative ${
           compact ? 'w-10 h-10 flex items-center justify-center' : 'p-2'
-        } rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer`}
+        } rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900`}
       >
         <Bell className="w-4 h-4" />
         {unreadCount > 0 && (

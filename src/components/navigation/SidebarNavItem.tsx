@@ -154,6 +154,9 @@ function getAccentStyles(accent: MasterNavGroupConfig['accent']): {
   }
 }
 
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900';
+
 export const SidebarNavItem: React.FC<SidebarNavItemProps> = ({
   group,
   isKhmer,
@@ -179,7 +182,7 @@ export const SidebarNavItem: React.FC<SidebarNavItemProps> = ({
           aria-expanded={isFlyoutOpen}
           aria-controls={panelId}
           title={label}
-          className={`relative w-11 h-11 rounded-xl flex items-center justify-center border transition-all cursor-pointer ${
+          className={`relative w-11 h-11 rounded-xl flex items-center justify-center border transition-all cursor-pointer ${FOCUS_RING} ${
             isGroupActive || isFlyoutOpen
               ? styles.activeBtn
               : 'border-transparent text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
@@ -208,7 +211,7 @@ export const SidebarNavItem: React.FC<SidebarNavItemProps> = ({
                     type="button"
                     aria-current={subActive ? 'page' : undefined}
                     onClick={() => onSubItemClick(group, sub)}
-                    className={`w-full text-left px-2.5 py-2 rounded-xl flex items-start gap-2.5 transition-colors cursor-pointer ${
+                    className={`w-full text-left px-2.5 py-2 rounded-xl flex items-start gap-2.5 transition-colors cursor-pointer ${FOCUS_RING} ${
                       subActive
                         ? styles.subActive
                         : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
@@ -240,7 +243,7 @@ export const SidebarNavItem: React.FC<SidebarNavItemProps> = ({
         onClick={() => onMasterClick(group)}
         aria-expanded={isExpanded}
         aria-controls={panelId}
-        className={`relative w-full flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-xl text-left text-[13px] font-bold border transition-all cursor-pointer ${
+        className={`relative w-full flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-xl text-left text-[13px] font-bold border transition-all cursor-pointer ${FOCUS_RING} ${
           isGroupActive
             ? styles.activeBtn
             : 'border-transparent text-slate-700 dark:text-slate-200 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 hover:text-slate-950 dark:hover:text-white'
@@ -277,7 +280,7 @@ export const SidebarNavItem: React.FC<SidebarNavItemProps> = ({
                   tabIndex={isExpanded ? 0 : -1}
                   aria-current={subActive ? 'page' : undefined}
                   onClick={() => onSubItemClick(group, sub)}
-                  className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2 text-xs transition-colors cursor-pointer ${
+                  className={`w-full text-left px-2.5 py-2 rounded-lg flex items-center gap-2 text-xs transition-colors cursor-pointer ${FOCUS_RING} ${
                     subActive
                       ? styles.subActive
                       : 'text-slate-600 dark:text-slate-300 font-medium hover:text-slate-950 dark:hover:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/70'

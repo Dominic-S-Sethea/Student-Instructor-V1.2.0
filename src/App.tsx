@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { AppTabRouter } from './components/AppTabRouter';
 import { AppFooter } from './components/navigation/AppFooter';

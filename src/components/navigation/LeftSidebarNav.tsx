@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   GraduationCap,
@@ -10,6 +10,7 @@ import {
 import type { NotificationItem, TabView } from '../../types';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAuth } from '../../context/AuthContext';
+import { useAccessibleDialog } from '../../hooks/useModalAccessibility';
 import {
   ADMIN_MASTER_GROUP,
   findActiveMasterGroupId,
@@ -35,11 +36,26 @@ interface LeftSidebarNavProps {
   canGoBack?: boolean;
 }
 
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900';
+
 function resolveDefaultSubId(tab: TabView, group: MasterNavGroupConfig): string | null {
   const direct = group.subItems.find(
-    (s) => s.targetTab === tab && (s.action.type === 'tab' || s.action.type === 'scholarship-view' || s.action.type === 'university-view' || s.action.type === 'advisor-view')
+    (s) =>
+      s.targetTab === tab &&
+      (s.action.type === 'tab' ||
+        s.action.type === 'scholarship-view' ||
+        s.action.type === 'university-view' ||
+        s.action.type === 'advisor-view')
   );
   return direct ? direct.id : group.subItems[0]?.id ?? null;
+}
+
+function isModalOrDrawerAction(action: SubNavAction): boolean {
+  return (
+    (action.type === 'scholarship-view' && action.view === 'saved') ||
+    (action.type === 'university-view' && action.subTab === 'roi')
+  );
 }
 
 export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
@@ -67,6 +83,10 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const sidebarRef = useRef<HTMLElement>(null);
+  const handleCloseMobile = useCallback(() => setMobileOpen(false), []);
+
+  // Full WCAG focus trap, initial focus move, body scroll lock, and trigger focus return on mobile drawer
+  useAccessibleDialog(mobileOpen, handleCloseMobile, sidebarRef, { lockScroll: true });
 
   const groups: readonly MasterNavGroupConfig[] = isAdmin
     ? [...MASTER_NAV_GROUPS, ADMIN_MASTER_GROUP]
@@ -77,7 +97,16 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
     setOpenGroupIds([activeGroupId]);
   }, [activeGroupId]);
 
-  // Close flyouts / mobile drawer on Escape or outside click
+  // Close mobile drawer automatically if viewport expands to desktop lg+
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth >= 1024) setMobileOpen(false);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Close collapsed flyouts on Escape or outside click
   useEffect(() => {
     const onOutside = (e: MouseEvent) => {
       if (sidebarRef.current && !sidebarRef.current.contains(e.target as Node)) {
@@ -87,7 +116,6 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setFlyoutGroupId(null);
-        setMobileOpen(false);
       }
     };
     document.addEventListener('mousedown', onOutside);
@@ -118,7 +146,9 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
   };
 
   const handleSubItemClick = (_group: MasterNavGroupConfig, sub: SubNavItemConfig): void => {
-    setSelectedSubId(sub.id);
+    if (!isModalOrDrawerAction(sub.action)) {
+      setSelectedSubId(sub.id);
+    }
     setFlyoutGroupId(null);
     setMobileOpen(false);
     if (onSelectSubAction) {
@@ -149,7 +179,7 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
             aria-label={mobileOpen ? 'Close navigation sidebar' : 'Open navigation sidebar'}
             aria-expanded={mobileOpen}
             aria-controls="left-sidebar-nav"
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className={`p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${FOCUS_RING}`}
           >
             {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
@@ -158,7 +188,7 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
               type="button"
               onClick={onBack}
               aria-label="Go back"
-              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              className={`p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${FOCUS_RING}`}
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
@@ -166,7 +196,7 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
           <button
             type="button"
             onClick={() => handleNavigateDirect('dashboard')}
-            className="flex items-center gap-2 min-w-0 cursor-pointer"
+            className={`flex items-center gap-2 min-w-0 rounded-xl cursor-pointer ${FOCUS_RING}`}
           >
             <span className="w-8 h-8 rounded-xl bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-xs shrink-0">
               <GraduationCap className="w-4 h-4" />
@@ -182,19 +212,26 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
       {mobileOpen && (
         <div
           aria-hidden="true"
-          onClick={() => setMobileOpen(false)}
+          onClick={handleCloseMobile}
           className="lg:hidden fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-[1px]"
         />
       )}
 
-      {/* Fixed Left Sidebar (Always Pinned on Desktop lg+, Slide-Over Drawer on Mobile) */}
+      {/* Fixed Left Sidebar (Always Pinned on Desktop lg+, Accessible Slide-Over Drawer on Mobile) */}
       <aside
         id="left-sidebar-nav"
         ref={sidebarRef}
+        tabIndex={-1}
+        role={mobileOpen ? 'dialog' : undefined}
+        aria-modal={mobileOpen ? true : undefined}
         aria-label={isKhmer ? 'ម៉ឺនុយរុករកចម្បង' : 'Primary sidebar navigation'}
-        className={`fixed inset-y-0 left-0 z-50 lg:z-40 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg lg:shadow-xs transition-[width,transform] duration-200 ease-out ${
+        className={`fixed inset-y-0 left-0 z-50 lg:z-40 flex flex-col border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-lg lg:shadow-xs transition-[width,transform] duration-200 ease-out focus:outline-hidden ${
           isRail ? 'w-[76px]' : 'w-[272px]'
-        } ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+        } ${
+          mobileOpen
+            ? 'translate-x-0 visible pointer-events-auto'
+            : '-translate-x-full invisible pointer-events-none lg:translate-x-0 lg:visible lg:pointer-events-auto'
+        }`}
       >
         {/* Sidebar Top Brand & Collapse Toggle */}
         <div
@@ -206,7 +243,7 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
             <button
               type="button"
               onClick={() => handleNavigateDirect('dashboard')}
-              className="flex items-center gap-2.5 text-left min-w-0 group cursor-pointer"
+              className={`flex items-center gap-2.5 text-left min-w-0 rounded-xl group cursor-pointer ${FOCUS_RING}`}
             >
               <div className="w-9 h-9 rounded-xl bg-blue-600 dark:bg-blue-500 text-white flex items-center justify-center shadow-xs shrink-0">
                 <GraduationCap className="w-5 h-5" />
@@ -229,7 +266,7 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
                 onClick={onBack}
                 aria-label="Go back"
                 title="Go back"
-                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                className={`p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${FOCUS_RING}`}
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
               </button>
@@ -245,7 +282,7 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
               }}
               aria-label={isRail ? 'Expand sidebar' : 'Collapse sidebar'}
               title={isRail ? 'Expand sidebar' : 'Collapse sidebar'}
-              className="hidden lg:inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
+              className={`hidden lg:inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer ${FOCUS_RING}`}
             >
               {isRail ? (
                 <PanelLeftOpen className="w-4 h-4" />
@@ -257,9 +294,9 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
             {/* Mobile Close Drawer Button */}
             <button
               type="button"
-              onClick={() => setMobileOpen(false)}
+              onClick={handleCloseMobile}
               aria-label="Close navigation sidebar"
-              className="lg:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              className={`lg:hidden inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer ${FOCUS_RING}`}
             >
               <X className="w-4 h-4" />
             </button>
