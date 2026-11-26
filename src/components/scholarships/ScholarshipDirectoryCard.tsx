@@ -3,6 +3,7 @@ import { AlertTriangle, Bookmark, BookmarkCheck, Clock, ExternalLink, Globe2, Sh
 import { ScholarshipItem } from '../../types/scholarship';
 import { useLanguage } from '../../context/LanguageContext';
 import { getSafeHttpUrl } from '../../utils/safeUrl';
+import { hasActiveTextSelection } from '../../utils/textSelectionGuard';
 
 interface ScholarshipDirectoryCardProps {
   scholarship: ScholarshipItem;
@@ -76,7 +77,10 @@ export const ScholarshipDirectoryCard: React.FC<ScholarshipDirectoryCardProps> =
         </div>
         <div>
           <h3
-            onClick={() => onOpenDetail(scholarship)}
+            onClick={() => {
+              if (hasActiveTextSelection()) return;
+              onOpenDetail(scholarship);
+            }}
             className="font-bold text-sm text-slate-900 dark:text-slate-100 group-hover:text-emerald-700 dark:group-hover:text-emerald-400 cursor-pointer line-clamp-2 leading-snug transition-colors"
           >
             {n}

@@ -144,8 +144,8 @@ export const UniversityDossierModal: React.FC<UniversityDossierModalProps> = ({
             <div
               ref={univSelectorScroll.ref}
               {...univSelectorScroll.events}
-              className={`flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 select-none w-full ${
-                univSelectorScroll.isDragging ? 'cursor-grabbing' : 'cursor-grab'
+              className={`flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 w-full ${
+                univSelectorScroll.isDragging ? 'cursor-grabbing' : ''
               }`}
             >
               {allUniversities.map((u) => {
@@ -306,8 +306,8 @@ export const UniversityDossierModal: React.FC<UniversityDossierModalProps> = ({
           <div
             ref={navScroll.ref}
             {...navScroll.events}
-            className={`flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1 select-none text-xs ${
-              navScroll.isDragging ? 'cursor-grabbing' : 'cursor-grab'
+            className={`flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1 text-xs ${
+              navScroll.isDragging ? 'cursor-grabbing' : ''
             }`}
           >
             {[

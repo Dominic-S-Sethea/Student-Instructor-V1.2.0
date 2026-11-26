@@ -38,6 +38,7 @@ import {
 import { initialScholarships } from '../data/scholarshipData';
 import { useLanguage } from '../context/LanguageContext';
 import { useAuth } from '../context/AuthContext';
+import { useSettings } from '../context/SettingsContext';
 import { scholarshipClient } from '../services/scholarshipClient';
 import { ScholarshipDetailModal } from './scholarships/ScholarshipDetailModal';
 import { ScholarshipDirectoryCard } from './scholarships/ScholarshipDirectoryCard';
@@ -64,11 +65,12 @@ export const ScholarshipIntelligenceView: React.FC<ScholarshipIntelligenceViewPr
 }) => {
   const { language, t } = useLanguage();
   const { authenticated, user, profile: authProfile, logout } = useAuth();
+  const { settings } = useSettings();
   const isKhmer = language === 'km';
 
   // Directory View Mode
   const [directoryView, setDirectoryView] = useState<'top_universities' | 'flagship'>(
-    externalDirectoryView || 'flagship'
+    externalDirectoryView || settings.defaultScholarshipsTab
   );
 
   // Data state
@@ -104,7 +106,7 @@ export const ScholarshipIntelligenceView: React.FC<ScholarshipIntelligenceViewPr
   const [selectedField, setSelectedField] = useState<FieldOfStudy | 'all'>('all');
   const [selectedFunding, setSelectedFunding] = useState<FundingType | 'all'>('all');
   const [selectedCategory, setSelectedCategory] = useState<StudentCategory | 'all'>('all');
-  const [onlyVerified, setOnlyVerified] = useState(true);
+  const [onlyVerified, setOnlyVerified] = useState(settings.onlyVerifiedScholarshipsByDefault);
   const [sortBy, setSortBy] = useState<'latest_updated' | 'deadline_approaching' | 'fully_funded' | 'most_popular'>('latest_updated');
 
   // Modals state

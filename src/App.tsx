@@ -18,6 +18,7 @@ import { buildSessionStudentProfile } from './utils/appSessionProfile';
 import { LanguageProvider } from './context/LanguageContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SettingsProvider } from './context/SettingsContext';
 import { SavedScholarshipsProvider } from './context/SavedScholarshipsContext';
 import { AuthModal } from './components/AuthModal';
 import type {
@@ -385,9 +386,9 @@ export default function App() {
     <ThemeProvider>
       <LanguageProvider>
         <AuthProvider>
-          <SavedScholarshipsProvider>
-            <AppContent />
-          </SavedScholarshipsProvider>
+          <SettingsProvider>
+            <SavedScholarshipsProvider><AppContent /></SavedScholarshipsProvider>
+          </SettingsProvider>
         </AuthProvider>
       </LanguageProvider>
     </ThemeProvider>

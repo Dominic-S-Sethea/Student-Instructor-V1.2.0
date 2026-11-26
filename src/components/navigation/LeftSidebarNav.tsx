@@ -345,6 +345,7 @@ export const LeftSidebarNav: React.FC<LeftSidebarNavProps> = ({
         <SidebarUtilityFooter
           collapsed={isRail}
           isKhmer={isKhmer}
+          currentTab={currentTab}
           notifications={notifications}
           onMarkNotificationRead={onMarkNotificationRead}
           onClearAllNotifications={onClearAllNotifications}

@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { ComprehensiveUniversityProfile } from '../../types';
 import { DataConfidenceBadge } from '../DataConfidenceBadge';
+import { hasActiveTextSelection } from '../../utils/textSelectionGuard';
 
 interface UniversityCatalogCardProps {
   univ: ComprehensiveUniversityProfile;
@@ -15,7 +16,10 @@ export const UniversityCatalogCard: React.FC<UniversityCatalogCardProps> = React
   onOpenROI,
 }) => (
   <div
-    onClick={() => onOpenDossier(univ)}
+    onClick={() => {
+      if (hasActiveTextSelection()) return;
+      onOpenDossier(univ);
+    }}
     role="button"
     tabIndex={0}
     onKeyDown={(e) => {

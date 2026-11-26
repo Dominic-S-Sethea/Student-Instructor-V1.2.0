@@ -155,6 +155,7 @@ export const ERASURE_SPECS: ReadonlyArray<{ table: string; column: 'student_id' 
   { table: 'content_feedback', column: 'student_id' },
   { table: 'user_saved_scholarships', column: 'user_id' },
   { table: 'user_notifications', column: 'user_id' },
+  { table: 'user_settings', column: 'user_id' },
   { table: 'student_achievements', column: 'student_id' },
   { table: 'student_inventory', column: 'student_id' },
   { table: 'virtual_rooms', column: 'student_id' },

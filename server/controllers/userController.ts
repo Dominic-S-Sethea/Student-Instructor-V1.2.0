@@ -2,10 +2,16 @@ import { Router, Response } from 'express';
 import { UserService } from '../services/userService';
 import { authenticateToken, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { validate } from '../middleware/validationMiddleware';
-import { UserEducationCreateSchema, UserProfileUpdateSchema } from '../validators/apiSchemas';
+import {
+  UserEducationCreateSchema,
+  UserProfileUpdateSchema,
+  UserSettingsUpdateSchema,
+} from '../validators/apiSchemas';
 import { sendRouteError } from '../utils/httpErrors';
 import { parseOptionalPositiveInt } from '../utils/queryParams';
 import { notificationRepository } from '../repositories/notificationRepository';
+import { userSettingsService } from '../services/userSettingsService';
+import type { PartialUserSettings } from '../../shared/types/userSettings';
 
 const router = Router();
 const userService = new UserService();
@@ -113,6 +119,44 @@ router.delete('/notifications/:id', authenticateToken, (req: AuthenticatedReques
     return;
   }
   res.json({ success: true, unreadCount: notificationRepository.getUnreadCount(req.user!.userId) });
+});
+
+/** GET /api/users/settings — load authenticated user's persisted platform settings. */
+router.get('/settings', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  try {
+    const data = userSettingsService.getSettings(req.user!.userId);
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    sendRouteError(res, err, 'Failed to retrieve user settings.');
+  }
+});
+
+/** PUT /api/users/settings — merge validated partial preferences into authenticated user's settings. */
+router.put(
+  '/settings',
+  authenticateToken,
+  validate(UserSettingsUpdateSchema, 'body'),
+  (req: AuthenticatedRequest, res: Response): void => {
+    try {
+      const data = userSettingsService.updateSettings(
+        req.user!.userId,
+        req.body as PartialUserSettings,
+      );
+      res.json({ success: true, data });
+    } catch (err: unknown) {
+      sendRouteError(res, err, 'Failed to update user settings.');
+    }
+  },
+);
+
+/** DELETE /api/users/settings — reset authenticated user's platform settings to defaults. */
+router.delete('/settings', authenticateToken, (req: AuthenticatedRequest, res: Response): void => {
+  try {
+    const data = userSettingsService.resetSettings(req.user!.userId);
+    res.json({ success: true, data });
+  } catch (err: unknown) {
+    sendRouteError(res, err, 'Failed to reset user settings.');
+  }
 });
 
 export default router;

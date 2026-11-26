@@ -28,6 +28,7 @@ const CommunityDashboard = lazy(() => import('./community/CommunityDashboard').t
 const ResearchLaboratoryView = lazy(() => import('./research/ResearchLaboratoryView').then((m) => ({ default: m.ResearchLaboratoryView })));
 const PlatformArchitectureView = lazy(() => import('./architecture/PlatformArchitectureView').then((m) => ({ default: m.PlatformArchitectureView })));
 const EducationDataPlatformView = lazy(() => import('./data-strategy/EducationDataPlatformView').then((m) => ({ default: m.EducationDataPlatformView })));
+const SettingsView = lazy(() => import('./settings/SettingsView').then((m) => ({ default: m.SettingsView })));
 
 export interface AppTabRouterProps {
   activeTab: TabView;
@@ -200,6 +201,14 @@ export const AppTabRouter: React.FC<AppTabRouterProps> = (props) => {
                 onNavigateTab={props.onNavigateTab}
               />
             </div>
+          )}
+
+          {activeTab === 'settings' && (
+            <SettingsView
+              key={sessionKey}
+              onNavigateTab={props.onNavigateTab}
+              onOpenAuthModal={props.onOpenAuthModal}
+            />
           )}
 
           {activeTab === 'decision-engine' && (

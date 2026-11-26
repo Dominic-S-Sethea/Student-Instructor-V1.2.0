@@ -10,6 +10,7 @@ import {
 import type { ChatMessage, Mentor, StudentProfile } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useSettings } from '../context/SettingsContext';
 import { guidanceClient } from '../services/guidanceClient';
 import { AdvisorMessageBubble } from './ai/AdvisorMessageBubble';
 import { AdvisorSubTabs, type AIAdvisorSubTab } from './ai/AdvisorSubTabs';
@@ -58,6 +59,7 @@ export const AIAdvisor: React.FC<AIAdvisorProps> = ({
 }) => {
   const { authenticated, user, profile: authProfile } = useAuth();
   const { language } = useLanguage();
+  const { settings } = useSettings();
   const isKhmer = language === 'km';
   const isAdmin = user?.role === 'admin';
   const starterChips = isKhmer ? STARTER_CHIPS_KM : STARTER_CHIPS_EN;
@@ -127,9 +129,16 @@ export const AIAdvisor: React.FC<AIAdvisorProps> = ({
         }
       : undefined;
 
+    const styleSuffix =
+      settings.advisorResponseStyle === 'concise'
+        ? '\n[Preference: Keep the answer concise with short bullet points.]'
+        : settings.advisorResponseStyle === 'bilingual'
+          ? '\n[Preference: Reply bilingually in English and Khmer (ភាសាខ្មែរ).]'
+          : '';
+
     try {
       const advisorData = await guidanceClient.chat({
-        userPrompt: messageText.slice(0, MAX_MESSAGE_CHARS),
+        userPrompt: `${messageText}${styleSuffix}`.slice(0, MAX_MESSAGE_CHARS),
         studentProfile: verifiedStudentContext,
         messages: boundedMessages,
       });

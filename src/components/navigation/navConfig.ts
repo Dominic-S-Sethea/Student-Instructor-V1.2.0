@@ -1,39 +1,6 @@
 import type { TabView } from '../../types';
-
-export interface NavItemConfig {
-  id: TabView;
-  labelEn: string;
-  labelKm: string;
-  descEn: string;
-  descKm: string;
-}
-
-export type SubNavAction =
-  | { type: 'tab'; tab: TabView }
-  | { type: 'scholarship-view'; view: 'flagship' | 'top_universities' | 'saved' }
-  | { type: 'university-view'; subTab: 'profiles' | 'compare' | 'roi' }
-  | { type: 'advisor-view'; subTab: 'chat' | 'growth-memory' | 'recommendations' }
-  | { type: 'scroll'; tab: TabView; elementId: string };
-
-export interface SubNavItemConfig {
-  id: string;
-  labelEn: string;
-  labelKm: string;
-  descEn: string;
-  descKm: string;
-  targetTab: TabView;
-  action: SubNavAction;
-}
-
-export interface MasterNavGroupConfig {
-  id: string;
-  labelEn: string;
-  labelKm: string;
-  defaultTab: TabView;
-  matchTabs: readonly TabView[];
-  accent: 'blue' | 'emerald' | 'indigo' | 'amber' | 'slate';
-  subItems: readonly SubNavItemConfig[];
-}
+import type { NavItemConfig, MasterNavGroupConfig } from './navTypes';
+export type { NavItemConfig, SubNavAction, SubNavItemConfig, MasterNavGroupConfig } from './navTypes';
 
 export const ADMIN_ONLY_TABS: readonly TabView[] = [
   'research-lab',
@@ -315,7 +282,7 @@ export const MASTER_NAV_GROUPS: readonly MasterNavGroupConfig[] = [
     labelEn: 'My Profile',
     labelKm: 'ប្រវត្តិរូបខ្ញុំ',
     defaultTab: 'profile',
-    matchTabs: ['profile'],
+    matchTabs: ['profile', 'settings'],
     accent: 'slate',
     subItems: [
       {
@@ -335,6 +302,15 @@ export const MASTER_NAV_GROUPS: readonly MasterNavGroupConfig[] = [
         descKm: 'ប្រវត្តិសិក្សា ការយល់ព្រម និងឯកជនភាព',
         targetTab: 'profile',
         action: { type: 'scroll', tab: 'profile', elementId: 'profile-education-privacy' },
+      },
+      {
+        id: 'prof-settings',
+        labelEn: 'Settings & Preferences',
+        labelKm: 'ការកំណត់ និងចំណូលចិត្ត',
+        descEn: 'Widescreen, theme colors, fonts & study defaults',
+        descKm: 'Widescreen ពណ៌ស្បែក ពុម្ពអក្សរ និងការកំណត់សិក្សា',
+        targetTab: 'settings',
+        action: { type: 'tab', tab: 'settings' },
       },
     ],
   },

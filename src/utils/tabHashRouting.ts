@@ -14,6 +14,7 @@ export const VALID_TABS: ReadonlySet<TabView> = new Set<TabView>([
   'mentors',
   'opportunities',
   'profile',
+  'settings',
   'stem-discovery',
   'events',
   'community',

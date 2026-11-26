@@ -257,3 +257,24 @@ export const ScholarshipExtractSchema = z.object({
   sourceUrl: z.string().trim().max(1000).optional(),
 });
 
+export const UserSettingsUpdateSchema = z
+  .object({
+    themeMode: z.enum(['light', 'dark', 'system']).optional(),
+    accentColor: z.enum(['blue', 'emerald', 'teal', 'amber', 'slate']).optional(),
+    highContrast: z.boolean().optional(),
+    reducedMotion: z.boolean().optional(),
+    layoutWidth: z.enum(['standard', 'wide', 'full']).optional(),
+    sidebarDefaultCollapsed: z.boolean().optional(),
+    cardDensity: z.enum(['comfortable', 'compact']).optional(),
+    fontFamily: z.enum(['jakarta', 'inter', 'serif', 'system', 'mono']).optional(),
+    fontScale: z.enum(['sm', 'md', 'lg', 'xl']).optional(),
+    lineSpacing: z.enum(['normal', 'relaxed']).optional(),
+    language: z.enum(['en', 'km']).optional(),
+    defaultScholarshipsTab: z.enum(['flagship', 'top_universities']).optional(),
+    onlyVerifiedScholarshipsByDefault: z.boolean().optional(),
+    deadlineReminderDays: z.union([z.literal(3), z.literal(7), z.literal(14)]).optional(),
+    advisorResponseStyle: z.enum(['balanced', 'concise', 'bilingual']).optional(),
+  })
+  .strict();
+
+

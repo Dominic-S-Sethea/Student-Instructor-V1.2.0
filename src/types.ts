@@ -20,6 +20,7 @@ export type TabView =
   | 'mentors'
   | 'opportunities'
   | 'profile'
+  | 'settings'
   | 'stem-discovery'
   | 'events'
   | 'community'

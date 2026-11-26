@@ -45,8 +45,8 @@ export const UniversityQuickStrip: React.FC<UniversityQuickStripProps> = ({
         <div
           ref={scroll.ref}
           {...scroll.events}
-          className={`flex items-center gap-2.5 overflow-x-auto no-scrollbar scroll-smooth py-1 px-1 select-none w-full ${
-            scroll.isDragging ? 'cursor-grabbing' : 'cursor-grab'
+          className={`flex items-center gap-2.5 overflow-x-auto no-scrollbar scroll-smooth py-1 px-1 w-full ${
+            scroll.isDragging ? 'cursor-grabbing' : ''
           }`}
           title="Click or drag to view and select any university"
         >

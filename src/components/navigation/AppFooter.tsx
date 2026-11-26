@@ -27,6 +27,14 @@ export const AppFooter: React.FC<AppFooterProps> = ({ onOpenPatchNotes, onNaviga
         <span>•</span>
         <button
           type="button"
+          onClick={() => onNavigateTab('settings')}
+          className="text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:underline font-semibold cursor-pointer"
+        >
+          Settings
+        </button>
+        <span>•</span>
+        <button
+          type="button"
           onClick={() => onNavigateTab('dashboard')}
           className="text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer"
         >

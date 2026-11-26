@@ -38,7 +38,7 @@ async function run(): Promise<void> {
     process.env.NODE_ENV = 'production';
     const prodRes = runMigrations({ seedCatalog: true, seedDemo: false });
     assert.strictEqual(prodRes.success, true);
-    assert.strictEqual(prodRes.schemaVersion, 12);
+    assert.strictEqual(prodRes.schemaVersion, 13);
     const db = getDatabase();
     const userCount = (db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }).c;
     assert.strictEqual(userCount, 0, 'Production startup must create zero demo users');
@@ -52,6 +52,8 @@ async function run(): Promise<void> {
     assert(fkList.some((fk) => fk.table === 'users'), 'hermes_memory_facts must reference users(id)');
     const savedFks = db.prepare('PRAGMA foreign_key_list(user_saved_scholarships)').all() as Array<{ table: string }>;
     assert(savedFks.some((fk) => fk.table === 'scholarships'), 'user_saved_scholarships must reference scholarships(id)');
+    const settingsFks = db.prepare('PRAGMA foreign_key_list(user_settings)').all() as Array<{ table: string }>;
+    assert(settingsFks.some((fk) => fk.table === 'users'), 'user_settings must reference users(id)');
     closeDatabase();
 
     // 2. Upgrade from legacy schema fixture (prior to 008) & restart persistence
@@ -83,14 +85,15 @@ async function run(): Promise<void> {
     `).run(mig7Now, mig7Now);
     closeDatabase();
 
-    // Upgrade to v12
+    // Upgrade to v13
     const upgRes = runMigrations({ seedCatalog: true, seedDemo: true });
-    assert.strictEqual(upgRes.schemaVersion, 12);
+    assert.strictEqual(upgRes.schemaVersion, 13);
     assert(upgRes.appliedMigrations.some((m) => m.includes('008')));
     assert(upgRes.appliedMigrations.some((m) => m.includes('009')));
     assert(upgRes.appliedMigrations.some((m) => m.includes('010')));
     assert(upgRes.appliedMigrations.some((m) => m.includes('011')));
     assert(upgRes.appliedMigrations.some((m) => m.includes('012')));
+    assert(upgRes.appliedMigrations.some((m) => m.includes('013')));
     const upgradedRow = getDatabase()
       .prepare('SELECT id, email FROM users WHERE id = ?')
       .get('usr-legacy-1') as { id: string; email: string } | undefined;
@@ -105,7 +108,7 @@ async function run(): Promise<void> {
       const healthJson = (await healthRes.json()) as { status: string; aiEnabled: boolean; database: { schemaVersion: number } };
       assert.strictEqual(healthJson.status, 'ok');
       assert.strictEqual(healthJson.aiEnabled, false);
-      assert.strictEqual(healthJson.database.schemaVersion, 12);
+      assert.strictEqual(healthJson.database.schemaVersion, 13);
     });
 
     // 3. Backup & Restore drill into new location

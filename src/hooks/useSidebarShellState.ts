@@ -1,21 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TabView } from '../types';
 import type { SubNavAction } from '../components/navigation/navConfig';
-
-const SIDEBAR_STORAGE_KEY = 'cdes_sidebar_collapsed';
+import { useSettings } from '../context/SettingsContext';
 
 export interface NavSubCommand {
   nonce: number;
   action: SubNavAction;
-}
-
-function readInitialCollapsed(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    return window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
 }
 
 export function useSidebarShellState(
@@ -28,21 +18,14 @@ export function useSidebarShellState(
   navCommand: NavSubCommand | null;
   handleSelectSubAction: (action: SubNavAction) => void;
 } {
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(readInitialCollapsed);
+  const { settings, updateSettings } = useSettings();
+  const sidebarCollapsed = settings.sidebarDefaultCollapsed;
   const [navCommand, setNavCommand] = useState<NavSubCommand | null>(null);
   const [pendingScrollId, setPendingScrollId] = useState<string | null>(null);
 
   const toggleSidebarCollapsed = useCallback(() => {
-    setSidebarCollapsed((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next));
-      } catch {
-        // Ignore storage quota / private-mode restrictions
-      }
-      return next;
-    });
-  }, []);
+    updateSettings({ sidebarDefaultCollapsed: !sidebarCollapsed });
+  }, [sidebarCollapsed, updateSettings]);
 
   useEffect(() => {
     if (!pendingScrollId) return;

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Globe, Check, ChevronDown } from 'lucide-react';
 import { useLanguage, Language } from '../context/LanguageContext';
+import { useSettings } from '../context/SettingsContext';
 
 interface LanguageSelectorProps {
   variant?: 'nav' | 'mobile';
@@ -13,7 +14,11 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   placement = 'down',
   compact = false,
 }) => {
-  const { language, setLanguage } = useLanguage();
+  const { language } = useLanguage();
+  const { updateSettings } = useSettings();
+  const setLanguage = (lang: Language): void => {
+    updateSettings({ language: lang });
+  };
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 

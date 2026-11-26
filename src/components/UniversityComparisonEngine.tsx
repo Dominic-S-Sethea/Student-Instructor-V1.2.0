@@ -81,8 +81,8 @@ export const UniversityComparisonEngine: React.FC<Props> = ({
           <div
             ref={selectorScroll.ref}
             {...selectorScroll.events}
-            className={`flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1 select-none w-full ${
-              selectorScroll.isDragging ? 'cursor-grabbing' : 'cursor-grab'
+            className={`flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1 w-full ${
+              selectorScroll.isDragging ? 'cursor-grabbing' : ''
             }`}
             title={t('nav.dragHint', 'Drag left & right to view all options')}
           >
@@ -127,8 +127,8 @@ export const UniversityComparisonEngine: React.FC<Props> = ({
         <div
           ref={matrixScroll.ref}
           {...matrixScroll.events}
-          className={`overflow-x-auto no-scrollbar scroll-smooth pb-4 select-none ${
-            matrixScroll.isDragging ? 'cursor-grabbing' : 'cursor-grab'
+          className={`overflow-x-auto no-scrollbar scroll-smooth pb-4 ${
+            matrixScroll.isDragging ? 'cursor-grabbing' : ''
           }`}
           title={t('nav.dragHint', 'Drag left & right to view all comparison columns')}
         >

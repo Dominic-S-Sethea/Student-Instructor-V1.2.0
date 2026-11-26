@@ -16,6 +16,7 @@ import {
   Layers,
   MessageSquare,
   Scale,
+  Settings,
   Shield,
   ShieldCheck,
   Sparkles,
@@ -100,6 +101,8 @@ function getSubIcon(subId: string): React.ReactNode {
       return <User className="w-3.5 h-3.5 shrink-0" />;
     case 'prof-privacy':
       return <ShieldCheck className="w-3.5 h-3.5 shrink-0" />;
+    case 'prof-settings':
+      return <Settings className="w-3.5 h-3.5 shrink-0" />;
     default:
       return <Layers className="w-3.5 h-3.5 shrink-0" />;
   }

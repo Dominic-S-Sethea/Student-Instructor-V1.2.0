@@ -1,14 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronUp, LogIn, LogOut, Moon, Sun, User } from 'lucide-react';
+import { ChevronUp, LogIn, LogOut, Moon, Settings, Sun, User } from 'lucide-react';
 import type { NotificationItem, TabView } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useSettings } from '../../context/SettingsContext';
 import { LanguageSelector } from '../LanguageSelector';
 import { NotificationBellMenu } from './NotificationBellMenu';
 
 interface SidebarUtilityFooterProps {
   collapsed: boolean;
   isKhmer: boolean;
+  currentTab?: TabView;
   notifications: NotificationItem[];
   onMarkNotificationRead?: (id: string) => void;
   onClearAllNotifications?: () => void;
@@ -19,6 +21,7 @@ interface SidebarUtilityFooterProps {
 export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
   collapsed,
   isKhmer,
+  currentTab,
   notifications,
   onMarkNotificationRead,
   onClearAllNotifications,
@@ -26,7 +29,8 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
   onNavigateTab,
 }) => {
   const { authenticated, user, profile: authProfile, logout } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
+  const { isDark } = useTheme();
+  const { updateSettings } = useSettings();
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
 
@@ -49,13 +53,18 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
 
   const displayName = authProfile?.name || user?.email?.split('@')[0] || 'Account';
   const initials = displayName.slice(0, 2).toUpperCase();
+  const isSettingsActive = currentTab === 'settings';
 
   const focusRing =
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900';
 
+  const handleToggleTheme = (): void => {
+    updateSettings({ themeMode: isDark ? 'light' : 'dark' });
+  };
+
   return (
     <div className="border-t border-slate-200 dark:border-slate-800 p-3 space-y-2.5 bg-slate-50/70 dark:bg-slate-900/95 shrink-0">
-      {/* Row 1: Theme Toggle, Language Selector, Notifications */}
+      {/* Row 1: Theme Toggle, Language Selector, Settings Gear, Notifications */}
       <div
         className={`flex items-center gap-1.5 ${
           collapsed ? 'flex-col' : 'justify-between'
@@ -64,7 +73,7 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
         <button
           id="theme-toggle-btn"
           type="button"
-          onClick={toggleTheme}
+          onClick={handleToggleTheme}
           aria-label={isDark ? 'Switch to Calm Light Mode' : 'Switch to Dark Study Mode'}
           title={isDark ? 'Light Study Mode' : 'Dark Study Mode'}
           className={`inline-flex items-center justify-center gap-1.5 ${
@@ -80,6 +89,24 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
         </button>
 
         <LanguageSelector variant="nav" placement="up" compact={collapsed} />
+
+        <button
+          id="sidebar-settings-btn"
+          type="button"
+          onClick={() => onNavigateTab('settings')}
+          aria-label={isKhmer ? 'ការកំណត់ប្រព័ន្ធ' : 'Platform Settings'}
+          aria-current={isSettingsActive ? 'page' : undefined}
+          title={isKhmer ? 'ការកំណត់ប្រព័ន្ធ (Settings)' : 'Platform Settings'}
+          className={`inline-flex items-center justify-center w-9 h-9 ${
+            collapsed ? 'w-10 h-10' : ''
+          } rounded-xl border text-xs font-bold transition-colors cursor-pointer shrink-0 ${focusRing} ${
+            isSettingsActive
+              ? 'border-blue-600 bg-blue-600 text-white shadow-xs'
+              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+          }`}
+        >
+          <Settings className="w-4 h-4 shrink-0" />
+        </button>
 
         {authenticated && (
           <NotificationBellMenu
@@ -155,6 +182,17 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
               >
                 <User className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 <span>{isKhmer ? 'ប្រវត្តិរូបខ្ញុំ' : 'My Profile & Privacy'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAccountOpen(false);
+                  onNavigateTab('settings');
+                }}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer ${focusRing}`}
+              >
+                <Settings className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <span>{isKhmer ? 'ការកំណត់ប្រព័ន្ធ' : 'Settings & Preferences'}</span>
               </button>
               <button
                 type="button"
