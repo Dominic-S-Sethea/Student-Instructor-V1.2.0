@@ -1,43 +1,44 @@
 # CDES Student Instructor V1.2.0 — Release Decision & Handoff
 
-**Decision**: **GO FOR STAGING & CONTROLLED PILOT — ALL TECHNICAL BLOCKERS CLEARED (ONLY OWNER GOVERNANCE & PROD SECRETS REMAIN)**  
-**Updated**: 25 November 2026 (Branch `feat/phases-4-6-remediation`, Schema `v11`)  
+**Decision**: **GO FOR STAGING & CONTROLLED PILOT — ALL 56/56 AUDIT FINDINGS & TECHNICAL BLOCKERS RESOLVED (ONLY OWNER GOVERNANCE & PROD SECRETS REMAIN)**  
+**Updated**: 26 November 2026 (Branch `feat/phases-4-6-remediation`, Schema `v12`)  
 
 ---
 
-## 1. Passed Verification Evidence (Verified on Final Revision)
+## 1. Passed Verification Evidence (Verified on Final Revision `d9a302a`)
 
 1. **Strict TypeScript Compilation** (`Node v22.23.5`, `node:sqlite`):
-   - `npm run lint` (`tsc --noEmit && tsc --noEmit -p tsconfig.server.json`) -> **Exit `0`** (zero errors; zero `any` in all 43 newly created files)
-2. **Automated Test & Coverage Suites** (`GEMINI_API_KEY=""`, disposable temp SQLite databases):
-   - `npm test` -> **Exit `0` — 16/16 suites passing** (all test files strictly `<= 250` lines):
-     - Core reconstruction suites (`6`): `backend.test.ts`, `secretScan.test.ts` (expanded patterns + removed `process.env` bypass), `startupAndMigrations.test.ts` (upgraded to schema `v11`), `authOwnershipConsent.test.ts`, `catalogAccuracyAndEditorial.test.ts`, `guidanceAndPackaging.test.ts`.
+   - `npm run lint` (`tsc --noEmit && tsc --noEmit -p tsconfig.server.json`) -> **Exit `0`** (zero client or server errors; **`0` `any` across all of `server/`**; `0` native `alert()`/`confirm()`/`prompt()` calls in `src/`).
+2. **Automated Test & Deduplicated V8 Coverage Suites** (`GEMINI_API_KEY=""`, disposable temp SQLite databases):
+   - `npm test` (`scripts/run-tests.mjs` auto-discovery) -> **Exit `0` — 20/20 suites passing (`45.37s`)** (all 21 files under `server/tests/` strictly `<= 250` lines):
+     - Core & reconstruction suites (`6`): `backend.test.ts`, `secretScan.test.ts`, `startupAndMigrations.test.ts` (schema `v12`), `authOwnershipConsent.test.ts`, `catalogAccuracyAndEditorial.test.ts`, `guidanceAndPackaging.test.ts`.
      - Audit Phases 3–6 suites (`6`): `mcpAndHermesMemory.test.ts`, `phase3ApiHardening.test.ts`, `phase4FrontendContracts.test.ts`, `phase5SecurityHardening.test.ts`, `phase5AiPrivacyHardening.test.ts`, `phase6ProductionReadiness.test.ts`.
-     - 8-Hour Engineering Expansion suites (`4`): `savedScholarshipsAndNotifications.test.ts` (W1), `securityPentestSuite.test.ts` (W2), `dataPipelineE2E.test.ts` (W3), `stressAndConcurrency.test.ts` (W4: `240 reqs, p95=196.0ms, writes=687, busyRetries=0`).
-   - `npm run test:coverage` -> **Exit `0`** (auto-discovered **16 suites**, **114 server modules executed**, **6767/17076 functions hit (`39.6%`)**).
+     - Engineering expansion suites (`4`): `savedScholarshipsAndNotifications.test.ts` (W1), `securityPentestSuite.test.ts` (W2), `dataPipelineE2E.test.ts` (W3), `stressAndConcurrency.test.ts` (W4: `240 reqs, p95=266.5ms, writes=926, busyRetries=0`).
+     - 56-Finding Principal Audit Remediation suites (`4`): `auditRemediationSecurityDb.test.ts`, `auditRemediationApi.test.ts`, `learningAndIntelligenceRoutes.test.ts`, `frontendUnits.test.ts`.
+   - `npm run test:coverage` -> **Exit `0`** — deduplicated across 20 child processes: **`111/112` server modules (`99.1%`)**, **`1103/1473` unique functions (`74.9%`)** (summary written to `coverage/summary.json`, `minCoveragePct: 50`).
 3. **Mixed-Workload Concurrency Stress Benchmark & Catalog Integrity Audit**:
    - `npm run test:stress` (`32` concurrent workers x `20` rounds = **640 mixed read/write requests**):
-     - **Status**: `PASS` | **Throughput**: `209.8 req/s` (`416` HTTP `200`, `224` HTTP `201`, **0 5xx errors**)
-     - **Latency**: `p50 = 97.47 ms`, `p95 = 234.84 ms`, `heapUsed delta = -1.23 MB`
-     - **SQLite Concurrency**: `readOps = 6266`, `writeOps = 981`, `writerMax = 1`, `busyTimeoutRetries = 0`, `slowQueriesCount = 0`, `integrity = "ok"`, `foreignKeyViolations = 0`
-   - `npm run verify:catalog` -> **PASS** (`schemaVersion: 11`, `12` scholarships audited, `7` universities audited, `0` FK violations, `integrity: "ok"`).
-4. **Interactive Headless Chromium Browser E2E Suite** (Previous Release Blocker **RESOLVED**):
+     - **Status**: `PASS` | **Throughput**: **`257.9 req/s`** (`416` HTTP `200`, `224` HTTP `201`, **0 5xx errors**)
+     - **Latency**: `p50 = 80.77 ms`, `p95 = 148.83 ms`
+     - **SQLite Concurrency**: `readOps = 6892`, `writeOps = 1380`, `writerMax = 1`, `busyTimeoutRetries = 0`, `slowQueriesCount = 0`, `integrity = "ok"`, `foreignKeyViolations = 0`
+   - `npm run verify:catalog` -> **PASS** (`schemaVersion: 12`, `12` scholarships audited, `7` universities audited, `0` FK violations, `integrity: "ok"`).
+4. **Interactive Headless Chromium Browser E2E Suite**:
    - `npm run test:e2e:browser` (`scripts/e2e-browser-smoke.py`, Playwright + Google Chrome `158.0.8127.36` against production `dist/server/server.cjs` + `dist/public`):
-     - **Status**: `PASS` — **13/13 checks passed**, **`consoleErrors: 0`**, **`pageErrors: 0`**, **`schemaVersion: 11`**.
-     - Verified live DOM journeys: production `/api/health`, guest home & hidden admin tabs, dark/light theme persistence, bilingual EN/KM toggle, scholarship catalog & guest bookmarking, live university hydration, 2-minute Decision Engine quiz, Student A registration + persisted notification bell + guest-to-SQLite bookmark sync + offline Study Advisor reply + Profile/Privacy Center, and Student B strict UI isolation.
+     - **Status**: `PASS` — **13/13 checks passed**, **`consoleErrors: 0`**, **`pageErrors: 0`**, **`schemaVersion: 12`**.
 5. **Production Packaging, Containerization & Clean-Directory Smoke Test**:
-   - `npm run build` -> **Exit `0`** (`vite v6.4.5` built `1978` modules into `dist/public/`; `esbuild` bundled `dist/server/server.cjs` `1.3 MB`; `copy-db-assets.mjs` copied SQL + operational DB scripts into `dist/server/db/`).
-   - Clean-directory production boot (`dist/` copied to `/tmp/cdes-clean-smoke-*` with zero `server/` or `src/` sources, `NODE_ENV=production`, `PORT=3198`, `COOKIE_SECURE=false`, `GEMINI_API_KEY=""`):
-     - `GET /api/health` -> `200` (`ready: true`, `aiEnabled: false`, `journalMode: "wal"`, `foreignKeys: true`, `schemaVersion: 11`, `integrity: "ok"`)
+   - `npm run build` -> **Exit `0`** (`vite v6.4.5` built `dist/public/` with **0** `vendor-firebase`/`vendor-motion` chunks + `theme-init.js`; `esbuild` bundled `dist/server/server.cjs` `1.4 MB` & `dist/server/retention.cjs` `19.8 KB`; `copy-db-assets.mjs` copied SQL + operational DB scripts into `dist/server/db/`).
+   - Clean-directory production boot (`/tmp/cdes-prod-smoke-*` with zero `server/` or `src/` sources, `NODE_ENV=production`, `PORT=3299`, `COOKIE_SECURE=false`, `GEMINI_API_KEY=""`):
+     - `GET /api/health`, `/api/health/live`, `/api/health/ready` -> `200` (`ready: true`, `aiEnabled: false`, `journalMode: "wal"`, `foreignKeys: true`, `schemaVersion: 12`, `integrity: "ok"`)
      - `GET /api/does-not-exist` -> `404` JSON (`{"success":false,"error":"API route not found."}`)
-     - Private `dist/server/*` probes (`/server/server.cjs`, `/dist/server/server.cjs`, `/db/schema.sql`, `/server/db/schema.sql`) -> zero server/SQL code exposed
-     - Static frontend `/` and `/assets/index-*.js`, `/assets/index-*.css` -> `200`
-   - Added production multi-stage non-root `Dockerfile`, `.dockerignore`, `docker-compose.yml` (`docker compose config --quiet` valid), and `docs/DEPLOYMENT_RUNBOOK.md`.
+     - Private `dist/server/*` probes -> zero server/SQL code exposed
+     - CSP verified: `script-src = 'self'` (zero `'unsafe-inline'`), `GET /theme-init.js` -> `200`
+     - Bundled `node dist/server/retention.cjs` -> `status: "ok"`
+   - Hardened multi-stage non-root `Dockerfile`, `docker-compose.yml` (`read_only`, `cap_drop: [ALL]`, `no-new-privileges`, fail-closed `JWT_SECRET`, `DOCKER_COMPOSE_VALID`), and `docs/DEPLOYMENT_RUNBOOK.md`.
 6. **Live Atomic Backup & Restore Drill (`dist/server/db/backupRestore.mjs`)**:
-   - Backed up populated production smoke DB (containing HTTP-registered student `smoke@student.cdes.edu.kh` + persisted welcome notification) -> atomically restored via temp-file rename -> verified `PRAGMA integrity_check = "ok"`, `foreignKeyViolations = 0`, `schemaVersion = 11`, user and notification preserved.
+   - Backed up populated production smoke DB (`smoke.final@student.cdes.edu.kh` + welcome notification) -> atomically restored -> verified `PRAGMA integrity_check = "ok"`, `foreignKeyViolations = 0`, `schemaVersion = 12`, user and notification preserved.
 7. **Dependency & Secret Audits**:
-   - `npm run audit:dep` -> `found 0 vulnerabilities` (`0` high/critical runtime vulnerabilities).
-   - `node .github/scripts/check-audit-baseline.cjs` -> **PASS** (`current high/critical=0`, `baseline high/critical=4`; fixed `0 -> 1` regression logic; `audit-baseline.json` untouched).
+   - `npm run audit:dep` -> **`found 0 vulnerabilities`** (Firebase, `motion`, `uuid` removed — `-125` packages).
+   - `node .github/scripts/check-audit-baseline.cjs` -> **PASS** (`current high/critical=0`, `baseline high/critical=4`; `audit-baseline.json` untouched).
    - Valid Gitleaks v8 `.github/.gitleaks.toml` + hardened `.github/workflows/ci.yml`.
 
 ---
