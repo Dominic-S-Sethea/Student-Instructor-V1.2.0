@@ -516,8 +516,8 @@ export const MajorsAndCareersView: React.FC<MajorsAndCareersViewProps> = ({
       {activeTab === 'majors' && (
         <div className="space-y-6">
           {/* Search & Filter Toolbar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="relative w-full sm:w-96">
+          <div className="flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
+            <div className="relative w-full xl:w-80 shrink-0">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
               <input
                 type="text"
@@ -528,15 +528,17 @@ export const MajorsAndCareersView: React.FC<MajorsAndCareersViewProps> = ({
               />
               {searchQuery && (
                 <button
+                  type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-3 text-slate-400 hover:text-slate-600"
+                  aria-label="Clear search"
+                  className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               )}
             </div>
 
-            <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 scrollbar-none">
+            <div className="flex items-center flex-wrap gap-1.5 w-full xl:w-auto">
               {fields.map((f) => (
                 <button
                   key={f.value}

@@ -110,14 +110,14 @@ export const ScholarshipDetailModal: React.FC<ScholarshipDetailModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer z-20"
             aria-label="Close dialog"
             id="close-scholarship-detail"
           >
             <X className="w-5 h-5" />
           </button>
 
-          <div className="flex flex-wrap items-center gap-2 mb-3">
+          <div className="flex flex-wrap items-center gap-2 mb-3 pr-10">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-400/20 text-emerald-300 border border-emerald-400/30">
               <ShieldCheck className="w-3.5 h-3.5" />
               {scholarship.verificationStatus}

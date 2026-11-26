@@ -85,8 +85,8 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
-        className={`flex items-center justify-center gap-1.5 ${
-          compact ? 'w-10 h-10 p-0' : 'w-full px-2.5 py-2'
+        className={`flex items-center justify-center gap-1 ${
+          compact ? 'w-10 h-10 p-0' : 'w-full px-2 py-2'
         } rounded-xl text-xs font-bold transition-all border cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900 ${
           isOpen
             ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700 text-blue-900 dark:text-blue-200'

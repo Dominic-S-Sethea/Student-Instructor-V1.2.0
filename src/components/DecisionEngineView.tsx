@@ -114,7 +114,7 @@ export const DecisionEngineView: React.FC<Props> = ({
       const estMonthly = rec.roiAnalysis.projectedMonthlySalaryUSD;
       const salaryLabel =
         estMonthly > 0
-          ? `Planning estimate: ~$${estMonthly.toLocaleString()} / mo`
+          ? `~$${estMonthly.toLocaleString()} / mo`
           : 'Not specified (verify current market survey)';
 
       setDossier({

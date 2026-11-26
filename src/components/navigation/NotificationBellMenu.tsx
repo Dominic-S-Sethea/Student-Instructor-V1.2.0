@@ -68,7 +68,7 @@ export const NotificationBellMenu: React.FC<NotificationBellMenuProps> = ({
     placement === 'sidebar'
       ? compact
         ? 'left-full bottom-0 ml-2'
-        : 'left-0 bottom-full mb-2'
+        : 'right-0 lg:left-0 lg:right-auto bottom-full mb-2'
       : 'right-0 mt-2';
 
   return (
@@ -81,8 +81,8 @@ export const NotificationBellMenu: React.FC<NotificationBellMenuProps> = ({
         aria-expanded={open}
         title={isKhmer ? 'ការជូនដំណឹង' : 'Notifications'}
         className={`relative ${
-          compact ? 'w-10 h-10 flex items-center justify-center' : 'p-2'
-        } rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900`}
+          compact ? 'w-10 h-10 flex items-center justify-center' : 'w-8 h-8 flex items-center justify-center'
+        } rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-slate-900`}
       >
         <Bell className="w-4 h-4" />
         {unreadCount > 0 && (

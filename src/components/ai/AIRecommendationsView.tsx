@@ -163,34 +163,38 @@ export const AIRecommendationsView: React.FC<AIRecommendationsViewProps> = ({
         </div>
 
         <div className="flex items-center space-x-2 w-full md:w-auto">
-          <div className="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200 text-xs">
+          <div className="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200 text-xs overflow-x-auto">
             <button
+              type="button"
               onClick={() => setFilterType('all')}
-              className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+              className={`px-3 py-1 rounded-lg font-medium transition-colors whitespace-nowrap cursor-pointer ${
                 filterType === 'all' ? 'bg-white text-stone-900 shadow-xs font-bold' : 'text-stone-600 hover:text-stone-900'
               }`}
             >
               All ({recommendations.length})
             </button>
             <button
+              type="button"
               onClick={() => setFilterType('learning')}
-              className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+              className={`px-3 py-1 rounded-lg font-medium transition-colors whitespace-nowrap cursor-pointer ${
                 filterType === 'learning' ? 'bg-white text-stone-900 shadow-xs font-bold' : 'text-stone-600 hover:text-stone-900'
               }`}
             >
               Learning
             </button>
             <button
+              type="button"
               onClick={() => setFilterType('career')}
-              className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+              className={`px-3 py-1 rounded-lg font-medium transition-colors whitespace-nowrap cursor-pointer ${
                 filterType === 'career' ? 'bg-white text-stone-900 shadow-xs font-bold' : 'text-stone-600 hover:text-stone-900'
               }`}
             >
               Career
             </button>
             <button
+              type="button"
               onClick={() => setFilterType('scholarship')}
-              className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+              className={`px-3 py-1 rounded-lg font-medium transition-colors whitespace-nowrap cursor-pointer ${
                 filterType === 'scholarship' ? 'bg-white text-stone-900 shadow-xs font-bold' : 'text-stone-600 hover:text-stone-900'
               }`}
             >
@@ -199,9 +203,10 @@ export const AIRecommendationsView: React.FC<AIRecommendationsViewProps> = ({
           </div>
 
           <button
+            type="button"
             onClick={() => fetchRecommendations(true)}
             disabled={isLoading}
-            className="px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold flex items-center space-x-1.5 transition-colors border border-stone-200"
+            className="px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold flex items-center space-x-1.5 transition-colors border border-stone-200 whitespace-nowrap cursor-pointer"
             title="Re-run AI recommendation engine"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -219,8 +224,16 @@ export const AIRecommendationsView: React.FC<AIRecommendationsViewProps> = ({
       ) : filteredRecs.length === 0 ? (
         <div className="p-12 text-center text-stone-500 bg-white rounded-2xl border border-stone-200">
           <Filter className="w-8 h-8 text-stone-300 mx-auto mb-2" />
-          <p className="font-semibold text-sm">No recommendations in this category</p>
-          <p className="text-xs text-stone-400 mt-1">Switch filter back to "All" to view learning and career paths.</p>
+          <p className="font-semibold text-sm">
+            {filterType === 'all'
+              ? 'No personalized recommendations yet'
+              : 'No recommendations in this category'}
+          </p>
+          <p className="text-xs text-stone-400 mt-1">
+            {filterType === 'all'
+              ? 'Ask Study Advisor a question or complete a STEM Discovery Lab quest, then click Refresh.'
+              : 'Switch filter back to "All" to view learning, career, and scholarship paths.'}
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

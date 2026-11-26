@@ -66,8 +66,8 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
     <div className="border-t border-slate-200 dark:border-slate-800 p-3 space-y-2.5 bg-slate-50/70 dark:bg-slate-900/95 shrink-0">
       {/* Row 1: Theme Toggle, Language Selector, Settings Gear, Notifications */}
       <div
-        className={`flex items-center gap-1.5 ${
-          collapsed ? 'flex-col' : 'justify-between'
+        className={`flex items-center ${
+          collapsed ? 'flex-col gap-1.5' : 'justify-between gap-1'
         }`}
       >
         <button
@@ -76,14 +76,14 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
           onClick={handleToggleTheme}
           aria-label={isDark ? 'Switch to Calm Light Mode' : 'Switch to Dark Study Mode'}
           title={isDark ? 'Light Study Mode' : 'Dark Study Mode'}
-          className={`inline-flex items-center justify-center gap-1.5 ${
-            collapsed ? 'w-10 h-10 p-0' : 'px-2.5 py-2'
+          className={`inline-flex items-center justify-center gap-1 ${
+            collapsed ? 'w-10 h-10 p-0' : 'px-2 py-2'
           } rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-bold transition-colors cursor-pointer shrink-0 ${focusRing}`}
         >
           {isDark ? (
-            <Sun className="w-4 h-4 text-amber-400 shrink-0" />
+            <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
           ) : (
-            <Moon className="w-4 h-4 text-slate-600 shrink-0" />
+            <Moon className="w-3.5 h-3.5 text-slate-600 shrink-0" />
           )}
           {!collapsed && <span>{isDark ? 'Light' : 'Dark'}</span>}
         </button>
@@ -97,8 +97,8 @@ export const SidebarUtilityFooter: React.FC<SidebarUtilityFooterProps> = ({
           aria-label={isKhmer ? 'ការកំណត់ប្រព័ន្ធ' : 'Platform Settings'}
           aria-current={isSettingsActive ? 'page' : undefined}
           title={isKhmer ? 'ការកំណត់ប្រព័ន្ធ (Settings)' : 'Platform Settings'}
-          className={`inline-flex items-center justify-center w-9 h-9 ${
-            collapsed ? 'w-10 h-10' : ''
+          className={`inline-flex items-center justify-center ${
+            collapsed ? 'w-10 h-10' : 'w-8 h-8'
           } rounded-xl border text-xs font-bold transition-colors cursor-pointer shrink-0 ${focusRing} ${
             isSettingsActive
               ? 'border-blue-600 bg-blue-600 text-white shadow-xs'

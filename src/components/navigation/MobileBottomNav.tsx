@@ -37,7 +37,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   return (
     <nav
       aria-label="Mobile quick navigation"
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-1 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-1 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]"
     >
       <div className="grid grid-cols-5 gap-1 max-w-lg mx-auto">
         {PRIMARY_NAV_ITEMS.map((item) => {
