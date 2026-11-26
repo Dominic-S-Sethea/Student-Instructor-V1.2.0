@@ -40,6 +40,71 @@ function normalizeSqlKey(sql: string): string {
     .replace(/\bIN\s*\(\s*\?(?:\s*,\s*\?)*\s*\)/gi, 'IN (?)');
 }
 
+/** Splits a SQL script into individual statements while respecting SQL comments and single-quoted literals. */
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let current = '';
+  let inSingleQuote = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < sql.length; i += 1) {
+    const ch = sql[i];
+    const next = sql[i + 1];
+
+    if (inLineComment) {
+      if (ch === '\n') inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      if (ch === '*' && next === '/') {
+        inBlockComment = false;
+        i += 1;
+      }
+      continue;
+    }
+    if (inSingleQuote) {
+      current += ch;
+      if (ch === "'") {
+        if (next === "'") {
+          current += next;
+          i += 1;
+        } else {
+          inSingleQuote = false;
+        }
+      }
+      continue;
+    }
+
+    if (ch === '-' && next === '-') {
+      inLineComment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      inBlockComment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === "'") {
+      inSingleQuote = true;
+      current += ch;
+      continue;
+    }
+    if (ch === ';') {
+      const trimmed = current.trim();
+      if (trimmed) statements.push(trimmed);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+
+  const tail = current.trim();
+  if (tail) statements.push(tail);
+  return statements;
+}
+
 function getExplainDb(): DatabaseSync | null {
   if (explainDb) return explainDb;
   try {
@@ -56,7 +121,7 @@ function getExplainDb(): DatabaseSync | null {
         .sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
       for (const file of files) {
         const sql = fs.readFileSync(path.join(migDir, file), 'utf8');
-        for (const stmt of sql.split(';').map((s) => s.trim()).filter(Boolean)) {
+        for (const stmt of splitSqlStatements(sql)) {
           try {
             db.exec(`${stmt};`);
           } catch {

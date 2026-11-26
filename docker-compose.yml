@@ -5,6 +5,19 @@ services:
       dockerfile: Dockerfile
     image: cdes-student-instructor:1.2.0
     restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
     ports:
       - "${PORT:-3000}:3000"
     environment:
@@ -15,6 +28,7 @@ services:
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
       TRUST_PROXY: ${TRUST_PROXY:-1}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       JWT_SECRET: ${JWT_SECRET:?Set a strong 32+ character JWT_SECRET in your runtime environment}
       RESEARCH_SALT: ${RESEARCH_SALT:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -26,7 +40,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 5s

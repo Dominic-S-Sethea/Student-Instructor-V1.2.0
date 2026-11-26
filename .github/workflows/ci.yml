@@ -3,21 +3,22 @@
 #
 # Job order & gates:
 #   1. install                 — npm ci (reproducible lockfile contract)
-#   2. lint+typecheck          — npm run lint (root + tsconfig.server.json)
-#   3. build                   — vite (dist/public) + esbuild (dist/server/server.cjs) + DB assets
-#   4. test                    — npm test + npm run test:coverage (all suites, GEMINI_API_KEY="")
-#   5. verify-start            — production smoke: /api/health 200 (ready, schemaVersion>=10, integrity=ok)
+#   2. lint                    — npm run lint (frontend + server strict tsc)
+#   3. build                   — vite (dist/public) + esbuild (server.cjs + retention.cjs) + DB assets
+#   4. test                    — deduplicated V8 coverage (all suites) + catalog verify + stress test
+#   5. verify-start            — reuses dist artifact; verifies /api/health, /live, /ready, schema>=12
 #   6. dependency-audit-gate   — npm audit hard gate (high/critical) + baseline regression check
 #   7. secret-scan-gate        — gitleaks v8 with .github/.gitleaks.toml + SARIF upload
-#   8. staging-deploy          — mirrors prod build; verifies /api/health + clean teardown
+#   8. docker-build            — verifies multi-stage Dockerfile builds cleanly
+#   9. staging-deploy          — reuses dist artifact; verifies staging startup & clean teardown
 # ============================================================================
 name: CI
 
 on:
   push:
-    branches: [ main, feat/ci-cd-scaffolding ]
+    branches: [ main, "feat/**" ]
   pull_request:
-    branches: [ main, feat/ci-cd-scaffolding ]
+    branches: [ main ]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -25,8 +26,6 @@ concurrency:
 
 permissions:
   contents: read
-  security-events: write
-  id-token: write
 
 env:
   NODE_VERSION: "22"
@@ -87,7 +86,7 @@ jobs:
           retention-days: 7
 
   test:
-    name: Unit + integration + SEC-001 + coverage
+    name: Unit + integration + coverage + catalog + stress
     runs-on: ubuntu-latest
     needs: install
     steps:
@@ -98,12 +97,24 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
-      - name: Run full test suite & V8 coverage
+      - name: Run full test suite with deduplicated V8 coverage
+        env:
+          GEMINI_API_KEY: ""
+        run: npm run test:coverage
+      - name: Verify catalog integrity & stress test
         env:
           GEMINI_API_KEY: ""
         run: |
-          npm test
-          npm run test:coverage
+          npm run verify:catalog
+          npm run test:stress
+      - name: Upload coverage summary artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-summary
+          path: coverage/summary.json
+          if-no-files-found: ignore
+          retention-days: 14
 
   verify-start:
     name: Verify start script + /api/health
@@ -116,12 +127,17 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: npm ci
-      - run: npm run build
+      - run: npm ci --omit=dev
+      - name: Download built dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
       - name: Smoke start (aiEnabled=false, migrations & integrity verified)
         run: |
           export NODE_ENV=production
           export GEMINI_API_KEY=""
+          export JWT_SECRET="ci-smoke-test-secret-key-minimum-32-chars-${{ github.run_id }}"
           export DATABASE_PATH="/tmp/verify-start-cdes-${{ github.run_id }}.db"
           rm -f "${DATABASE_PATH}"*
           npm start > verify-start.log 2>&1 &
@@ -141,6 +157,9 @@ jobs:
             sleep 1
           done
 
+          curl -fsS http://127.0.0.1:3000/api/health/live > /dev/null
+          curl -fsS http://127.0.0.1:3000/api/health/ready > /dev/null
+
           python3 - <<'PY'
           import json
           d = json.load(open('/tmp/verify-start-health.json'))
@@ -150,7 +169,7 @@ jobs:
           db = d.get('database', {})
           assert db.get('integrity') == 'ok', d
           assert db.get('foreignKeys') is True, d
-          assert int(db.get('schemaVersion', 0)) >= 10, d
+          assert int(db.get('schemaVersion', 0)) >= 12, d
           print('health payload OK:', json.dumps(d, sort_keys=True))
           PY
 
@@ -198,34 +217,6 @@ jobs:
           path: audit-baseline.json
           retention-days: 14
 
-  baseline-sync:
-    name: Refresh committed audit baseline (main)
-    runs-on: ubuntu-latest
-    needs: dependency-audit-gate
-    permissions:
-      contents: write
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-      - name: Fresh baseline from current audit
-        run: |
-          npm audit --omit=dev --json > audit-baseline.json || true
-      - name: Commit refreshed baseline
-        run: |
-          git config user.name "CI Bot"
-          git config user.email "ci@cdes.local"
-          git add audit-baseline.json
-          if git diff --quiet HEAD -- audit-baseline.json; then
-            echo "baseline unchanged"
-          else
-            git commit -s -m "ci: refresh dependency audit baseline" || echo "no changes to commit"
-          fi
-
   secret-scan-gate:
     name: Secret scan · gitleaks
     runs-on: ubuntu-latest
@@ -255,6 +246,15 @@ jobs:
         with:
           sarif_file: results.sarif
 
+  docker-build:
+    name: Docker · multi-stage image build
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production Docker image
+        run: docker build --target runtime -t cdes-student-instructor:ci .
+
   staging-deploy:
     name: Staging deploy · /api/health (aiEnabled=false)
     runs-on: ubuntu-latest
@@ -267,8 +267,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: npm ci
-      - run: npm run build
+      - run: npm ci --omit=dev
+      - name: Download built dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
       - name: Provision staging config (mirrors prod)
         run: |
           DB_PATH="/tmp/staging-cdes-${{ github.run_id }}.db"
@@ -276,6 +280,7 @@ jobs:
           echo "NODE_ENV=staging" >> "$GITHUB_ENV"
           echo "DATABASE_PATH=$DB_PATH" >> "$GITHUB_ENV"
           echo "COOKIE_SECURE=false" >> "$GITHUB_ENV"
+          echo "JWT_SECRET=ci-staging-secret-key-minimum-32-chars-${{ github.run_id }}" >> "$GITHUB_ENV"
       - name: Start production build in staging
         run: |
           npm start > staging.log 2>&1 &
@@ -303,7 +308,7 @@ jobs:
           db = d.get('database', {})
           assert db.get('integrity') == 'ok', d
           assert db.get('foreignKeys') is True, d
-          assert int(db.get('schemaVersion', 0)) >= 10, d
+          assert int(db.get('schemaVersion', 0)) >= 12, d
           print('staging health OK:', json.dumps(d, sort_keys=True))
           PY
 

@@ -80,7 +80,8 @@ async function run(): Promise<void> {
     assert.strictEqual(errors5xx, 0, 'Concurrent mixed workload must produce zero 5xx errors');
     assert.strictEqual(non2xx, 0, 'Concurrent mixed workload must produce zero non-2xx responses');
     const p95Ms = p95(latencies);
-    assert.ok(p95Ms < 500, `Expected p95 < 500ms, got ${p95Ms.toFixed(1)}ms`);
+    const maxP95Ms = process.env.NODE_V8_COVERAGE ? 1500 : 500;
+    assert.ok(p95Ms < maxP95Ms, `Expected p95 < ${maxP95Ms}ms, got ${p95Ms.toFixed(1)}ms`);
 
     const db = getDatabase();
     const integrity = (db.prepare('PRAGMA integrity_check').get() as { integrity_check?: string })?.integrity_check;

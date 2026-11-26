@@ -100,8 +100,11 @@ export function getDatabase(): TrackedDatabase {
   return databaseInstance;
 }
 
-/** Verify live DB connectivity, integrity, FK enforcement, and schema version. */
-export function verifyDatabaseHealth(): {
+const QUICK_CHECK_TTL_MS = 15 * 60 * 1000;
+let cachedIntegrity: { value: string; checkedAtMs: number } | null = null;
+
+/** Verify live DB connectivity, FK enforcement, schema version, and cached/on-demand integrity. */
+export function verifyDatabaseHealth(options: { runQuickCheck?: boolean } = {}): {
   ok: boolean;
   journalMode: string;
   foreignKeys: boolean;
@@ -125,7 +128,23 @@ export function verifyDatabaseHealth(): {
 
     const journalRow = db.prepare('PRAGMA journal_mode').get() as { journal_mode?: string } | undefined;
     const fkRow = db.prepare('PRAGMA foreign_keys').get() as { foreign_keys?: number } | undefined;
-    const intRow = db.prepare('PRAGMA quick_check').get() as { quick_check?: string } | undefined;
+
+    const nowMs = Date.now();
+    const cacheStale = !cachedIntegrity || nowMs - cachedIntegrity.checkedAtMs > QUICK_CHECK_TTL_MS;
+    let integrity: string;
+    if (options.runQuickCheck || (cacheStale && readinessState.integrity !== 'ok')) {
+      const intRow = db.prepare('PRAGMA quick_check').get() as { quick_check?: string } | undefined;
+      integrity = intRow?.quick_check || 'unknown';
+      cachedIntegrity = { value: integrity, checkedAtMs: nowMs };
+    } else if (cachedIntegrity) {
+      integrity = cachedIntegrity.value;
+    } else {
+      integrity = readinessState.integrity;
+      if (integrity === 'ok') {
+        cachedIntegrity = { value: integrity, checkedAtMs: nowMs };
+      }
+    }
+
     let schemaVersion = readinessState.schemaVersion;
     try {
       const migRow = db
@@ -147,7 +166,6 @@ export function verifyDatabaseHealth(): {
 
     const journalMode = journalRow?.journal_mode || 'unknown';
     const foreignKeys = Number(fkRow?.foreign_keys || 0) === 1;
-    const integrity = intRow?.quick_check || 'unknown';
 
     return {
       ok: readinessState.ready && integrity === 'ok' && foreignKeys,
@@ -181,6 +199,7 @@ export function closeDatabase(): void {
     openedDbPath = null;
   }
   txDepth = 0;
+  cachedIntegrity = null;
   closeExplainDb();
   dbMetrics.reset();
   resetDatabaseReadiness();
